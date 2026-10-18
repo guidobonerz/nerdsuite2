@@ -147,3 +147,7 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# nerdsuite: the server built (go build -o bin/), the binaries of tools/dist.mjs
+/bin/
+/build/
