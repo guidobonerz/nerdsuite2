@@ -1,17 +1,13 @@
-# Build and test on Linux, Windows and macOS; the binaries for a new version (one file per system: the
-# Go server with the IDE built in, tools/dist.mjs).
-#   every push and pull request   the server (Go: vet, build, tests) and the IDE (Node: its tests)
-#   a run by hand (Actions tab)   also the binaries, as artifacts (version dev-<commit>)
-#   tags v* (a new version)       the binaries are built, each starts on its system (tools/smoke.mjs),
-#                                 then a release with them
+# A new version, and only that: a pushed tag v* (git tag v1.2.0 && git push origin v1.2.0). On Linux,
+# Windows and macOS the server (Go: vet, build, tests) and the IDE (Node: its tests) are tested, the
+# binaries are built (one file per system: the Go server with the IDE built in, tools/dist.mjs), each
+# starts on its system (tools/smoke.mjs), then a release with them. Pushes to branches and pull
+# requests run nothing.
 name: CI
 
 on:
   push:
-    branches: [main, develop]
     tags: ['v*']
-  pull_request:
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -60,12 +56,11 @@ jobs:
       - name: IDE - tests
         run: npm test
 
-  # the binaries of Windows and Linux, packed with UPX; macOS in the job after it. For a tag v* its name
-  # is the version; a run by hand: dev-<commit>. The version is in the file names
+  # the binaries of Windows and Linux, packed with UPX; macOS in the job after it. The tag is the
+  # version, in the file names
   # (nerdsuite-v1.0-windows-amd64.exe); the artifacts keep names without it
   dist:
     name: Binaries
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -80,8 +75,7 @@ jobs:
           echo "$RUNNER_TEMP/upx-4.2.4-amd64_linux" >> "$GITHUB_PATH"
       - name: build
         run: |
-          VERSION=${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-          node tools/dist.mjs --upx --only windows-amd64,linux-amd64,linux-arm64 --version "${VERSION:-dev-${GITHUB_SHA::7}}"
+          node tools/dist.mjs --upx --only windows-amd64,linux-amd64,linux-arm64 --version "${{ github.ref_name }}"
       - uses: actions/upload-artifact@v4
         with: { name: nerdsuite-windows-amd64.exe, path: build/dist/nerdsuite-*-windows-amd64.exe, if-no-files-found: error }
       - uses: actions/upload-artifact@v4
@@ -94,7 +88,6 @@ jobs:
   # (codesign -s -), which Apple silicon requires; no Developer ID, so no notarization
   dist-macos:
     name: Binary macOS
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: macos-latest
     steps:
@@ -105,8 +98,7 @@ jobs:
         with: { node-version: 22 }
       - name: build
         run: |
-          VERSION=${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-          node tools/dist.mjs --no-upx --only darwin-arm64,darwin-amd64 --version "${VERSION:-dev-${GITHUB_SHA::7}}"
+          node tools/dist.mjs --no-upx --only darwin-arm64,darwin-amd64 --version "${{ github.ref_name }}"
           lipo -info build/dist/nerdsuite-*-macos
           codesign --verify --verbose build/dist/nerdsuite-*-macos
       - uses: actions/upload-artifact@v4
@@ -133,13 +125,11 @@ jobs:
         with: { name: '${{ matrix.file }}', path: dist }
       - shell: bash
         run: |
-          VERSION=${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-          node tools/smoke.mjs dist/nerdsuite-*-${{ matrix.system }} ${VERSION:+--version $VERSION}
+          node tools/smoke.mjs dist/nerdsuite-*-${{ matrix.system }} --version "${{ github.ref_name }}"
 
   # the release of a version: the binaries of the three systems
   release:
     name: Release
-    if: startsWith(github.ref, 'refs/tags/v')
     needs: smoke
     runs-on: ubuntu-latest
     permissions:

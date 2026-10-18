@@ -8,7 +8,7 @@ export default {
   '§1063': '{0} sub{1} · called with \'call\'',
   '§1064': '{0} fallback{1} when nothing matches',
   '§1065': '{0} hidden card{1}',
-  '§1066': '{0} map{1} of this place still use text characters.',
+  '§1066': '{0} map{1} of this screen still use text characters.',
   '§1067': 'In the animation{0} {1}.',
   '§1068': '{0} {1} row{2} of {3}',
   '§1069': '+ {0} semitone{1}',

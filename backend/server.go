@@ -17,6 +17,7 @@ import (
 	"nerdsuite/backend/core"
 	"nerdsuite/backend/emu"
 	"nerdsuite/backend/kickass"
+	"nerdsuite/backend/romfont"
 	"nerdsuite/backend/toolchain"
 	"nerdsuite/backend/ultimate"
 	"nerdsuite/backend/vice"
@@ -40,12 +41,13 @@ type Server struct {
 	kick     *kickass.API
 	tc       *toolchain.API
 	ult      *ultimate.API
+	fonts    *romfont.API
 }
 
 func New(o Options) *Server {
 	st := core.NewSettings(o.Settings)
 	env := core.Env{Settings: st, TmpDir: o.TmpDir}
-	s := &Server{opts: o, vice: vice.New(env), emu: emu.New(env), kick: kickass.New(env), tc: toolchain.New(env), ult: ultimate.New(env)}
+	s := &Server{opts: o, vice: vice.New(env), emu: emu.New(env), kick: kickass.New(env), tc: toolchain.New(env), ult: ultimate.New(env), fonts: romfont.New(env)}
 
 	// the settings list: the tools, where the server finds them; the emulator of each platform
 	tools := []tool{
@@ -118,6 +120,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		s.settings.ServeHTTP(w, r)
 	case under("/api/ultimate"):
 		s.ult.ServeHTTP(w, r)
+	case under("/api/fonts"):
+		s.fonts.ServeHTTP(w, r)
 	case under("/api/toolchain"):
 		s.tc.ServeHTTP(w, r)
 	case under("/api/kickass"):

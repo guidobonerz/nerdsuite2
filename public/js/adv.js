@@ -275,7 +275,13 @@ export const MAX_CHAPTERS = 50, MAX_DISKS = 9, CHAPTER_TITLE = 40;
 // The cursor sprite points with one pixel, its hot spot: what the sprite draws around
 // it is what the hit test picks. Without a declared 'hotspot' it is the middle of the
 // drawn pixels, which is the center of a crosshair.
-export const SPRITE_COLS = 24, SPRITE_ROWS = 21;
+// the size of a sprite of the machine of the project (video.js sprite, set by c64.js): the C64's 24 x 21 in
+// blocks of 64 bytes (3 a row and a pad byte), a player of the Atari 8 x 16 in 16 bytes (one a row)
+export let SPRITE_COLS = 24, SPRITE_ROWS = 21, SPRITE_BLOCK = 64;
+export function setSpriteGeometry({ cols = 24, rows = 21, block = 64 } = {}) {
+  SPRITE_COLS = cols; SPRITE_ROWS = rows; SPRITE_BLOCK = block;
+}
+export const spriteRowBytes = () => SPRITE_COLS >> 3;
 // multicolor art has 12 double wide pixels; the hot spot still counts hires pixels
 export function cursorHotspot(lines = [], multicolor = false) {
   const w = spriteWidth(multicolor), k = multicolor ? 2 : 1;
@@ -1949,3 +1955,7 @@ export function getAttr(node, key) {
   const m = node.members.find(x => x.kind === 'attr' && x.key === key);
   return m ? (m.str ?? m.values) : null;
 }
+
+// the screens of a nerdsuite project: its canvases - every screen is a file of its own (gfxfile.js),
+// nerdsuite has no places
+export const screensOf = game => game?.canvases ?? [];

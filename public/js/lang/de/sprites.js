@@ -141,7 +141,7 @@ export default {
   '§0865': 'Zuletzt verwendet',
   '§0866': 'Objekte und Laufbereich',
   '§0867': 'Kamerafenster',
-  '§0868': 'Noch keine Orte',
+  '§0868': 'Noch keine Bildschirme',
   '§0869': 'Kamera-Vorschau',
   '§0870': 'Soft-Scrolling abspielen',
   '§0871': 'Hotspot (H) - das Pixel, das zeigt, Rechtsklick: automatisch',

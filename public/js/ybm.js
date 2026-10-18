@@ -5,7 +5,7 @@
 //
 //   'YBM1'  4 bytes, the magic
 //   n       4 bytes, little endian: the length of the header
-//   header  n bytes, JSON: { format: 'kla' | 'art', picture: bytes of the picture,
+//   header  n bytes, JSON: { format: 'kla' | 'art' | 'tbm' (the TED), picture: bytes of the picture,
 //           image: { type: 'image/png' | 'image/jpeg' | 'image/gif', size: its bytes } | null,
 //           reference: { x, y, scale, opacity, front, shown } | null }
 //   picture the bytes of the .kla or .art file

@@ -19,6 +19,10 @@
 // bytes of bitmap, 1000 of screen, 1000 of color RAM, the background - and Art Studio (.art)
 // for hires - load address, bitmap, screen, 7 bytes of padding.
 //
+// The TED (Plus/4, C16: video.js bitmap 'ted') has the same modes in its 121 colours, a block of
+// multicolor with two colours of its own (01, 10): 11 is $ff16, a colour of the whole picture like the
+// background (st.bg2) - painting in it paints 11. Its pictures are .tbm files (tedbitmap.js).
+//
 // The canvas is drawn on by this module; the bar, the toolbox and the side panel are Preact
 // views (pui.js), rendered again by update().
 
@@ -36,10 +40,11 @@ import { referenceLayer } from './trace.js';
 import { encodeYbm, decodeYbm, isYbm } from './ybm.js';
 import { aaShape, coverage, shadeOf, edgeCover } from './aa.js';
 import { tr } from './i18n.js';
+import { video, videoMachine, colorMask, colorName, ATARI_REGS, antic2Text } from './video.js';
+import { encodeTbm, decodeTbm, isTbm, tedPrg, TBM_SIZE } from './tedbitmap.js';
+import { encodeAtariPicture, decodeAtariPicture, isAtariPicture, atariPictureXex, ATARI_ROWS, SCREEN_BYTES } from './ataribitmap.js';
 import { keepUi, pick as pickUi, put as putUi } from './uistate.js';
 
-const COLOR_NAMES = ['black', 'white', 'red', 'cyan', 'purple', 'green', 'blue', 'yellow',
-  'orange', 'brown', '§0616', '§0617', 'grey', '§0618', '§0619', '§0620'];
 const ZOOM = [1, 2, 3, 4, 5, 6, 8];
 const UNDO_LIMIT = 60;
 const PULSE_MS = 1200;              // the border of the pixel cursor fades from black to white and back in this time
@@ -62,6 +67,7 @@ export function createBitmapEditor(el, store, actions, bar) {
     pix: null,                  // 200 rows: hires 320 values 0/1, multicolor 160 values 0-3
     slots: null,                // per cell: multicolor [pen1, pen2, pen3], hires [fg, bg] (the same screen byte) and the color RAM of multicolor
     bg: 0,                      // multicolor: the background of the picture
+    bg2: 0,                     // the TED's multicolor: $ff16, the colour of 11 in the whole picture
     pen: 1,                     // the pen of the left button: 0 background, 1 color
     penColor: [0, 1],           // the colors of the two pens: [background, color]
     tool: 'pencil', cell: 3, grid: true,
@@ -97,33 +103,112 @@ export function createBitmapEditor(el, store, actions, bar) {
     redraw: () => draw(), rerender: () => update(), behind: false });
 
   const pw = () => (st.mc ? 160 : 320);
-  const ph = () => 200;
+  const ph = () => (atari() ? ATARI_ROWS : 200);
+  // the Atari (GRAPHICS 15 and 8): no colours of a block - the registers COLOR0-4 of the whole picture (st.regs);
+  // a block's slots are them, a colour that is no register is not painted (a clash)
+  const atari = () => video().bitmap === 'atari';
+  const atariSlots = () => (st.mc ? [st.regs[0], st.regs[1], st.regs[2]] : [antic2Text(st.regs), st.regs[2]]);
+  function useRegs() {
+    const s = atariSlots();
+    st.bg = st.mc ? st.regs[4] : 0;
+    st.slots.forEach(sl => sl.splice(0, sl.length, ...s));
+  }
   const cellOf = p => ({ c: Math.floor(p.x / (st.mc ? 4 : 8)), r: p.y >> 3 });
   const fgValue = () => st.pen;
-  const pixelColor = (v, k) => (st.mc ? (v ? st.slots[k][v - 1] : st.bg) : st.slots[k][v ? 0 : 1]);
+  // the TED: 11 of multicolor is the picture's (st.bg2), a block has two colours of its own
+  const ted = () => video().bitmap === 'ted';
+  const ownSlots = () => (st.mc && ted() ? 2 : st.mc ? 3 : 2);
+  const pixelColor = (v, k) => (st.mc ? (!v ? st.bg : v === 3 && ted() ? st.bg2 : st.slots[k][v - 1]) : st.slots[k][v ? 0 : 1]);
+  // the slot of a colour in a block, 0 when it has none (the TED's 11: the picture's colour)
+  const slotOf = (slots, color) => (st.mc && ted() && color === st.bg2 ? 3 : slots.slice(0, ownSlots()).indexOf(color) + 1);
+  const SLOTS = () => (ted() ? [1, 2] : [1, 2, 3]);
+  // the first colours of a new picture: the TED's in its luminances
+  // a machine whose bitmap comes later (video.js koala: the Atari, the CPC, the BBC): a Koala file of 16 of its
+  // colours - a nibble of the file is the index into that list
+  const koala = () => (video().bitmap === 'koala' ? video().koala ?? null : null);
+  // the colours a shade of antialiasing may take: the Koala's 16, the Atari's registers, else all
+  const among = () => (atari() ? [st.mc ? st.regs[4] : st.regs[2], ...atariSlots()] : koala());
+  const fromNibble = n => koala()?.[n & 15] ?? (n & 15);
+  const toNibble = c => (koala() ? Math.max(0, koala().indexOf(c)) : c & 15);
+  const firstColors = mc => (ted() ? (mc ? [0x71, 0x32, 0x46] : [0x71, 0x00]) : mc ? [1, 2, 3].map(fromNibble) : [1, 0].map(fromNibble));
 
   function blank(mc) {
     st.mc = mc;
     st.pix = Array.from({ length: ph() }, () => new Uint8Array(pw()));
-    st.slots = Array.from({ length: CELLS }, () => (mc ? [1, 2, 3] : [1, 0]));
+    st.slots = Array.from({ length: CELLS }, () => firstColors(mc));
     st.bg = 0;
-    st.penColor = [0, 1];
+    st.bg2 = ted() ? 0x46 : 0;
+    st.penColor = ted() ? [0, 0x71] : [0, 1].map(fromNibble);
+    if (!ted()) st.bg = fromNibble(0);
+    if (atari()) {
+      st.regs ??= [...ATARI_REGS];
+      useRegs();
+      st.penColor = [st.mc ? st.regs[4] : st.regs[2], atariSlots()[0]];
+    }
     st.pen = 1;
     st.sel = null; st.undo = []; st.redo = [];
   }
 
   // --- the file formats ---------------------------------------------------------------------------
 
+  // the pixels of a bitmap (8000 bytes, a cell 8 bytes) and back
+  function readBitmap(bitmap) {
+    for (let k = 0; k < CELLS; k++) {
+      const c = k % COLS, r = Math.floor(k / COLS);
+      for (let y = 0; y < 8; y++) {
+        const b = bitmap[k * 8 + y], row = st.pix[r * 8 + y];
+        if (st.mc) for (let x = 0; x < 4; x++) row[c * 4 + x] = (b >> (6 - 2 * x)) & 3;
+        else for (let x = 0; x < 8; x++) row[c * 8 + x] = (b >> (7 - x)) & 1;
+      }
+    }
+  }
+  function bitmapBytes() {
+    const out = new Uint8Array(8000);
+    for (let k = 0; k < CELLS; k++) {
+      const c = k % COLS, r = Math.floor(k / COLS);
+      for (let y = 0; y < 8; y++) {
+        const row = st.pix[r * 8 + y];
+        let b = 0;
+        if (st.mc) for (let x = 0; x < 4; x++) b |= row[c * 4 + x] << (6 - 2 * x);
+        else for (let x = 0; x < 8; x++) b |= row[c * 8 + x] << (7 - x);
+        out[k * 8 + y] = b;
+      }
+    }
+    return out;
+  }
+  // a TED picture (.tbm): two colours a block, the picture's $ff15 and $ff16
+  function decodeTed(bytes) {
+    const t = decodeTbm(bytes);
+    blank(t.mc);
+    st.bg = t.bg; st.bg2 = t.bg2;
+    if (t.mc) st.penColor[0] = st.bg;
+    st.slots = t.cells.map(([c1, c2]) => (t.mc ? [c1, c2, t.bg2] : [c1, c2]));
+    readBitmap(t.bitmap);
+  }
+  const tedPicture = () => ({ mc: st.mc, bitmap: bitmapBytes(), cells: st.slots.map(s => [s[0], s[1]]), bg: st.mc ? st.bg : 0, bg2: st.bg2 });
+
+  // an Atari picture: .mic (GRAPHICS 15) or .gr8 (GRAPHICS 8) - by the extension, else by its size (ataribitmap.js)
+  const atariMc = (bytes, path) => (atariExt(path) ? atariExt(path) === 'mic' : bytes.length !== SCREEN_BYTES + 3);
+  function decodeAtari(bytes, mc) {
+    const pic = decodeAtariPicture(bytes, mc);
+    st.regs = pic.regs;
+    blank(mc);
+    pic.rows.forEach((row, y) => st.pix[y].set(row));
+  }
+  const atariPicture = () => ({ mc: st.mc, rows: st.pix, regs: st.regs });
+
   function decode(bytes) {
+    if (ted()) return decodeTed(bytes);
+    if (atari()) return decodeAtari(bytes, atariMc(bytes, st.loading));
     const mc = bytes.length === KOALA_SIZE;
     if (!mc && bytes.length !== ART_SIZE) throw new Error(`${bytes.length} bytes: not a Koala (${KOALA_SIZE}) or Art Studio (${ART_SIZE}) picture`);
     blank(mc);
     const bitmap = bytes.subarray(2, 8002), screen = bytes.subarray(8002, 9002), color = mc ? bytes.subarray(9002, 10002) : null;
-    st.bg = mc ? bytes[10002] & 15 : 0;
+    st.bg = fromNibble(mc ? bytes[10002] : 0);
     if (mc) st.penColor[0] = st.bg;
     for (let k = 0; k < CELLS; k++) {
       const c = k % COLS, r = Math.floor(k / COLS);
-      st.slots[k] = mc ? [screen[k] >> 4, screen[k] & 15, color[k] & 15] : [screen[k] >> 4, screen[k] & 15];
+      st.slots[k] = (mc ? [screen[k] >> 4, screen[k], color[k]] : [screen[k] >> 4, screen[k]]).map(fromNibble);
       for (let y = 0; y < 8; y++) {
         const b = bitmap[k * 8 + y], row = st.pix[r * 8 + y];
         if (mc) for (let x = 0; x < 4; x++) row[c * 4 + x] = (b >> (6 - 2 * x)) & 3;
@@ -133,6 +218,8 @@ export function createBitmapEditor(el, store, actions, bar) {
   }
 
   function encode() {
+    if (ted()) return encodeTbm(tedPicture());
+    if (atari()) return encodeAtariPicture(atariPicture());
     const bytes = new Uint8Array(st.mc ? KOALA_SIZE : ART_SIZE);
     bytes[0] = 0x00; bytes[1] = 0x60;                 // $6000, the usual load address of both
     for (let k = 0; k < CELLS; k++) {
@@ -144,10 +231,10 @@ export function createBitmapEditor(el, store, actions, bar) {
         else for (let x = 0; x < 8; x++) b |= row[c * 8 + x] << (7 - x);
         bytes[2 + k * 8 + y] = b;
       }
-      bytes[8002 + k] = (s[0] << 4) | (s[1] & 15);
-      if (st.mc) bytes[9002 + k] = s[2] & 15;
+      bytes[8002 + k] = (toNibble(s[0]) << 4) | toNibble(s[1]);
+      if (st.mc) bytes[9002 + k] = toNibble(s[2]);
     }
-    if (st.mc) bytes[10002] = st.bg;
+    if (st.mc) bytes[10002] = toNibble(st.bg);
     return bytes;
   }
 
@@ -159,11 +246,15 @@ export function createBitmapEditor(el, store, actions, bar) {
   }
 
   async function listFiles() {
-    st.files = listBinaries().filter(f => /\.(kla|koa|art)$/i.test(f));
+    st.files = listBinaries().filter(f => (ted() ? /\.tbm$/i : atari() ? /\.(mic|gr8)$/i : /\.(kla|koa|art)$/i).test(f));
   }
+
+  // the Atari's file of a picture: GRAPHICS 15 .mic, GRAPHICS 8 .gr8 - by the extension of the path
+  const atariExt = path => (/\.gr8$/i.test(path ?? '') ? 'gr8' : /\.mic$/i.test(path ?? '') ? 'mic' : null);
 
   async function openFile(path) {
     try {
+      st.loading = path;
       decode(readBinary(path));
       st.file = path; setDirty(false);
     } catch (e) {
@@ -176,13 +267,14 @@ export function createBitmapEditor(el, store, actions, bar) {
   async function save(as = false, { quiet = false } = {}) {
     if (!st.pix) return;
     let path = st.file;
-    const ext = st.mc ? 'kla' : 'art';
+    const ext = ted() ? 'tbm' : atari() ? (st.mc ? 'mic' : 'gr8') : st.mc ? 'kla' : 'art';
     if (!path || as || !path.toLowerCase().endsWith('.' + ext)) {
       const v = await promptDialog({
         title: tr('§0627'), icon: 'save', ok: 'Save',
-        text: st.mc ? '§0628' : '§0629',
-        fields: [{ name: 'path', label: '§1263', value: (path ?? st.suggest ?? `${LAYOUT.bitmap}/picture.kla`).replace(/\.\w+$/, '.' + ext), mono: true,
-          validate: p => (!/^[\w\-./]+\.(kla|koa|art)$/i.test(p) || p.includes('..') ? tr('§0630', ext) : null) }],
+        text: ted() ? `A TED picture (.tbm, ${TBM_SIZE} bytes): the memory $1800-$3f3f of the Plus/4 - LOAD "NAME",8,1 puts it where the TED reads it.`
+          : atari() ? `An Atari picture (.${ext}): its ${SCREEN_BYTES} bytes of screen memory, row after row, and its colour registers.` : st.mc ? '§0628' : '§0629',
+        fields: [{ name: 'path', label: '§1263', value: (path ?? st.suggest ?? `${LAYOUT.bitmap}/picture.${ext}`).replace(/\.\w+$/, '.' + ext), mono: true,
+          validate: p => (!(ted() ? /^[\w\-./]+\.tbm$/i : atari() ? new RegExp(`^[\\w\\-./]+\\.${ext}$`, 'i') : /^[\w\-./]+\.(kla|koa|art)$/i).test(p) || p.includes('..') ? tr('§0630', ext) : null) }],
       });
       if (!v) return;
       path = v.path;
@@ -215,17 +307,25 @@ export function createBitmapEditor(el, store, actions, bar) {
   async function importPicture(bytes, name) {
     const ybm = isYbm(bytes) ? decodeYbm(bytes) : null;
     if (ybm) bytes = ybm.picture;
-    const mc = bytes.length === KOALA_SIZE;
-    if (!mc && bytes.length !== ART_SIZE) throw new Error(tr('§1952', bytes.length, KOALA_SIZE, ART_SIZE));
+    const mc = atari() ? atariMc(bytes, name) : bytes.length === KOALA_SIZE;
+    if (atari()) {
+      if (!isAtariPicture(bytes, mc)) throw new Error(`${bytes.length} bytes: not an Atari picture (.mic or .gr8: ${SCREEN_BYTES} bytes and its colours)`);
+    } else if (ted() ? !isTbm(bytes) : !mc && bytes.length !== ART_SIZE) throw new Error(ted() ? `${bytes.length} bytes: not a TED picture (.tbm, ${TBM_SIZE} bytes)` : tr('§1952', bytes.length, KOALA_SIZE, ART_SIZE));
     if (!(await mayDiscard('§1003'))) return;
-    decode(bytes);
-    st.file = null; st.suggest = `${LAYOUT.bitmap}/${importName(name, 'picture')}.${mc ? 'kla' : 'art'}`;
+    if (atari()) decodeAtari(bytes, mc); else decode(bytes);
+    st.file = null; st.suggest = `${LAYOUT.bitmap}/${importName(name, 'picture')}.${ted() ? 'tbm' : atari() ? (mc ? 'mic' : 'gr8') : mc ? 'kla' : 'art'}`;
     setDirty(true);
     if (ybm) await reference.restore(ybm.image && { ...ybm.image, reference: ybm.reference });
     render();
     snackbar(tr(ybm?.image ? '§2118' : '§1953', name, mc ? '§1011' : '§1010'));
   }
-  const importFormats = () => (!isOpen() ? [] : [
+  const importFormats = () => (!isOpen() ? [] : atari() ? [
+    { label: 'An Atari picture, GRAPHICS 15 (.mic)', icon: 'wallpaper', accept: '.mic', open: importPicture },
+    { label: 'An Atari picture, GRAPHICS 8 (.gr8)', icon: 'wallpaper', accept: '.gr8', open: importPicture },
+  ] : ted() ? [
+    { label: 'A TED picture (.tbm)', icon: 'wallpaper', accept: '.tbm', open: importPicture },
+    { label: '§2117', icon: 'wallpaper', accept: '.ybm', open: importPicture },
+  ] : [
     { label: '§1002', icon: 'wallpaper', accept: '.kla,.koa', open: importPicture },
     { label: '§0991', icon: 'wallpaper', accept: '.art', open: importPicture },
     { label: '§2117', icon: 'wallpaper', accept: '.ybm', open: importPicture },
@@ -246,7 +346,7 @@ export function createBitmapEditor(el, store, actions, bar) {
       }
     });
     // the color RAM of a hires picture: that of the set pixels, so 11 shows like two set pixels
-    const slots = st.slots.map(sl => [sl[0], sl[1], sl[2] ?? sl[0]]);
+    const slots = st.slots.map(sl => [sl[0], sl[1], ted() ? st.bg2 : sl[2] ?? sl[0]]);
     return { pix, slots, bg: st.bg, mc };
   }
 
@@ -255,6 +355,7 @@ export function createBitmapEditor(el, store, actions, bar) {
     snapshot();
     Object.assign(st, converted(mc));
     st.penColor = [mc ? st.bg : st.penColor[0], st.penColor[1]];
+    if (atari()) { useRegs(); st.penColor = [mc ? st.regs[4] : st.regs[2], atariSlots()[0]]; }   // GRAPHICS 15 <-> 8: the registers show it
     st.pen = 1;
     st.sel = null; setDirty(true);
     render();
@@ -262,7 +363,7 @@ export function createBitmapEditor(el, store, actions, bar) {
 
   // --- undo ------------------------------------------------------------------------------------
 
-  const copy = () => ({ pix: st.pix.map(r => r.slice()), slots: st.slots.map(s => [...s]), bg: st.bg, mc: st.mc, penColor: [...st.penColor] });
+  const copy = () => ({ pix: st.pix.map(r => r.slice()), slots: st.slots.map(s => [...s]), bg: st.bg, bg2: st.bg2, regs: st.regs && [...st.regs], mc: st.mc, penColor: [...st.penColor] });
   // state: the picture as it was, taken earlier (a stroke that may change nothing takes its step
   // when it does)
   function snapshot(state = copy()) {
@@ -276,7 +377,7 @@ export function createBitmapEditor(el, store, actions, bar) {
     if (!s) return;
     to.push(copy());
     const modeChange = s.mc !== st.mc;
-    Object.assign(st, { pix: s.pix, slots: s.slots, bg: s.bg, mc: s.mc, penColor: s.penColor, sel: null });
+    Object.assign(st, { pix: s.pix, slots: s.slots, bg: s.bg, bg2: s.bg2 ?? st.bg2, regs: s.regs ?? st.regs, mc: s.mc, penColor: s.penColor, sel: null });
     setDirty(true);                      // the picture differs from its file again (an undo after a save)
     draw(); status(); update();
   }
@@ -302,17 +403,18 @@ export function createBitmapEditor(el, store, actions, bar) {
       if (!st.mc) {
         st.pix[p.y][p.x] = pen;
         const slot = pen ? 0 : 1;
-        if (slots[slot] !== color) { slots[slot] = color; st.recolored++; }
+        if (slots[slot] !== color && !atari()) { slots[slot] = color; st.recolored++; }   // the Atari: the registers stay
       } else if (!pen || color === st.bg) {
         st.pix[p.y][p.x] = 0;
       } else {
-        let v = slots.indexOf(color) + 1;
+        let v = slotOf(slots, color);
+        if (!v && atari()) { st.clashes++; continue; }   // no register shows the colour
         if (!v) {
           const under = st.pix[p.y][p.x], n = valueCounts(c.c, c.r);
           n[under]--;                                    // this pixel is repainted: its slot is free when no other pixel shows it
-          const free = [1, 2, 3].find(i => !n[i]);
+          const free = SLOTS().find(i => !n[i]);
           if (free) v = free;
-          else if (under) { v = under; st.recolored++; }   // a full block: the slot painted over takes the color, all its pixels with it
+          else if (under && SLOTS().includes(under)) { v = under; st.recolored++; }   // a full block: the slot painted over takes the color, all its pixels with it
           else { st.clashes++; continue; }               // over the background, which is the picture's: no slot for a fourth color
           slots[v - 1] = color;
         }
@@ -372,7 +474,7 @@ export function createBitmapEditor(el, store, actions, bar) {
     for (const p of list) {
       const key = p.y * 320 + p.x, before = stroke.get(key);
       if (before !== undefined && p.cov <= before) continue;
-      const c = shadeOf(p.cov, pen, bg);
+      const c = shadeOf(p.cov, pen, bg, among());
       if (c === bg) continue;
       stroke.set(key, p.cov);
       if (c === pen) core.push(p); else shades.push({ ...p, color: c, own: before !== undefined });
@@ -388,6 +490,7 @@ export function createBitmapEditor(el, store, actions, bar) {
     const c = cellOf(p), k = c.r * COLS + c.c, slots = st.slots[k], v0 = st.pix[p.y][p.x];
     if (v0 && !own) return;
     if (!st.mc) {
+      if (slots[0] !== color && atari()) return;
       if (slots[0] !== color) {
         for (let y = c.r * 8; y < c.r * 8 + 8; y++) for (let x = c.c * 8; x < c.c * 8 + 8; x++) if (st.pix[y][x] && (x !== p.x || y !== p.y)) return;
         slots[0] = color;
@@ -395,11 +498,12 @@ export function createBitmapEditor(el, store, actions, bar) {
       st.pix[p.y][p.x] = 1;
       return;
     }
-    let v = slots.indexOf(color) + 1;
+    let v = slotOf(slots, color);
+    if (!v && atari()) return;
     if (!v) {
       const n = valueCounts(c.c, c.r);
       n[v0]--;
-      v = [1, 2, 3].find(i => !n[i]);
+      v = SLOTS().find(i => !n[i]);
       if (!v) return;
       slots[v - 1] = color;
     }
@@ -502,7 +606,7 @@ export function createBitmapEditor(el, store, actions, bar) {
     const colors = st.pix.map((row, y) => Array.from(row, (v, x) => pixelColor(v, block(x, y))));
     const before = d.snapped ? null : copy();
     for (const e of edgeCover(colors, cells, { isBg: (v, x, y) => !st.pix[y][x], w, h, skip: d.shaded })) {
-      const bg = colors[e.y][e.x], color = shadeOf(e.cov, e.fg, bg);
+      const bg = colors[e.y][e.x], color = shadeOf(e.cov, e.fg, bg, among());
       if (color === bg || color === e.fg) continue;
       paintShade(e, color, false);
       if (!st.pix[e.y][e.x]) continue;
@@ -515,22 +619,24 @@ export function createBitmapEditor(el, store, actions, bar) {
   // pixels show, hires - the two; a color keeps the slot it had. What does not fit takes the
   // background of the block (st.lost counts it)
   function recode(c, r, colors) {
+    if (atari()) return recodeAtari(c, r, colors);
     const bw = st.mc ? 4 : 8, k = r * COLS + c, slots = st.slots[k];
     const back = st.mc ? st.bg : slots[1];
     const at = (x, y) => { const v = colors[r * 8 + y][c * bw + x]; return v === BACK ? back : v; };
     const count = new Map();
+    const shared = v => st.mc && (v === st.bg || (ted() && v === st.bg2));   // the picture's colours: no slot of the block
     for (let y = 0; y < 8; y++) for (let x = 0; x < bw; x++) {
       const v = at(x, y);
-      if (!st.mc || v !== st.bg) count.set(v, (count.get(v) ?? 0) + 1);
+      if (!shared(v)) count.set(v, (count.get(v) ?? 0) + 1);
     }
-    const n = st.mc ? 3 : 2;
+    const n = ownSlots();
     const kept = [...count.keys()].sort((a, b) => count.get(b) - count.get(a) || slots.indexOf(b) - slots.indexOf(a)).slice(0, n);
     // the colors that are in their slot stay there, the others take the slots left
-    const next = [...slots], taken = new Set();
-    for (const col of kept) { const i = slots.indexOf(col); if (i >= 0) { next[i] = col; taken.add(i); } }
+    const next = [...slots], taken = new Set(), own = ownSlots();
+    for (const col of kept) { const i = slots.slice(0, own).indexOf(col); if (i >= 0) { next[i] = col; taken.add(i); } }
     for (const col of kept) {
       if (next.some((x, i) => x === col && taken.has(i))) continue;
-      const i = next.findIndex((_, j) => !taken.has(j));
+      const i = next.findIndex((_, j) => j < own && !taken.has(j));
       next[i] = col; taken.add(i);
     }
     // hires with one color: it is the background of the block
@@ -539,9 +645,20 @@ export function createBitmapEditor(el, store, actions, bar) {
     for (let y = 0; y < 8; y++) for (let x = 0; x < bw; x++) {
       const col = at(x, y);
       let v;
-      if (st.mc) v = col === st.bg ? 0 : next.indexOf(col) + 1;
+      if (st.mc) v = col === st.bg ? 0 : ted() && col === st.bg2 ? 3 : next.slice(0, own).indexOf(col) + 1;
       else v = col === next[1] ? 0 : col === next[0] ? 1 : -1;
       if (v < 0 || (st.mc && v === 0 && col !== st.bg)) { st.lost++; v = 0; }
+      st.pix[r * 8 + y][c * bw + x] = v;
+    }
+  }
+
+  // the Atari: a block takes its pixels' colours as the registers show them, the others the background
+  function recodeAtari(c, r, colors) {
+    const bw = st.mc ? 4 : 8, pens = st.mc ? [st.bg, ...atariSlots()] : [atariSlots()[1], atariSlots()[0]];
+    for (let y = 0; y < 8 && r * 8 + y < ph(); y++) for (let x = 0; x < bw; x++) {
+      const col = colors[r * 8 + y][c * bw + x];
+      let v = col === BACK ? 0 : pens.indexOf(col);
+      if (v < 0) { st.lost++; v = 0; }
       st.pix[r * 8 + y][c * bw + x] = v;
     }
   }
@@ -549,7 +666,7 @@ export function createBitmapEditor(el, store, actions, bar) {
   // clear: the screen RAM and the color RAM of the blocks the range covers whole go to 0 as well;
   // a block the range only cuts keeps its colors, its pixels outside the range still show them
   function clearBlocks(area) {
-    if (!area) return;
+    if (!area || atari()) return;               // the Atari: its colours are the registers of the picture
     const bw = st.mc ? 4 : 8;
     const c0 = Math.ceil(area.x / bw), c1 = Math.floor((area.x + area.w) / bw);
     const r0 = Math.ceil(area.y / 8), r1 = Math.floor((area.y + area.h) / 8);
@@ -584,7 +701,7 @@ export function createBitmapEditor(el, store, actions, bar) {
     if (st.tool === 'pick') {
       const v = st.pix[p.y][p.x], c = cellOf(p), k = c.r * COLS + c.c;
       st.pen = v ? 1 : 0;                               // the pixel's pen, with its color
-      if (v) st.penColor[1] = st.mc ? st.slots[k][v - 1] : st.slots[k][0];
+      if (v) st.penColor[1] = st.mc ? pixelColor(v, k) : st.slots[k][0];
       else if (!st.mc) st.penColor[0] = st.slots[k][1];
       setTool('pencil'); return;
     }
@@ -715,7 +832,7 @@ export function createBitmapEditor(el, store, actions, bar) {
       const row = st.pix[y], r = y >> 3;
       for (let x = 0; x < w; x++) {
         const k = r * COLS + Math.floor(x / (st.mc ? 4 : 8));
-        const [R, G, B] = pal[pixelColor(row[x], k) & 15];
+        const [R, G, B] = pal[pixelColor(row[x], k) & colorMask()];
         for (let q = 0; q < px; q++) {
           const o = (y * 320 + x * px + q) * 4;
           d[o] = R; d[o + 1] = G; d[o + 2] = B; d[o + 3] = 255;
@@ -730,11 +847,11 @@ export function createBitmapEditor(el, store, actions, bar) {
     if (dg && dragTool() && dg.aa) {     // antialiased: each pixel in its shade (the blocks decide when it is drawn)
       const [bg, pen] = st.penColor;          // the pens: [background, color]
       for (const p of aaCover(st.tool, dg.start, dg.end, dg, dragCells(dg))) {
-        const c = shadeOf(p.cov, pen, bg);
+        const c = shadeOf(p.cov, pen, bg, among());
         if (c !== bg) { ctx.fillStyle = PALETTE[c]; ctx.fillRect(p.x * px * s, p.y * s, px * s, s); }
       }
     } else if (dg && dragTool()) {       // the preview of a drag tool, in the pen color
-      ctx.fillStyle = PALETTE[st.penColor[dg.value] & 15];
+      ctx.fillStyle = PALETTE[st.penColor[dg.value] & colorMask()];
       for (const p of dragCells(dg)) if (p.x >= 0 && p.y >= 0 && p.x < w && p.y < hgt) ctx.fillRect(p.x * px * s, p.y * s, px * s, s);
     }
     reference.draw(ctx, s, true);
@@ -763,7 +880,7 @@ export function createBitmapEditor(el, store, actions, bar) {
       // black to white and back, so it shows on any color
       const paints = st.tool !== 'select' && st.tool !== 'pick' && !dg;
       const covers = brushed([st.hover]).filter(q => q.x >= 0 && q.y >= 0 && q.x < pw() && q.y < ph());
-      if (paints) { ctx.fillStyle = PALETTE[st.penColor[st.pen] & 15]; covers.forEach(q => ctx.fillRect(q.x * px * s, q.y * s, px * s, s)); }
+      if (paints) { ctx.fillStyle = PALETTE[st.penColor[st.pen] & colorMask()]; covers.forEach(q => ctx.fillRect(q.x * px * s, q.y * s, px * s, s)); }
       const v = Math.round(127.5 - 127.5 * Math.cos(Date.now() / PULSE_MS * 2 * Math.PI));
       ctx.strokeStyle = `rgb(${v}, ${v}, ${v})`; ctx.lineWidth = 1;
       outlineCells(ctx, covers, px * s, s);   // the brush in its shape, size and pixel width
@@ -773,21 +890,49 @@ export function createBitmapEditor(el, store, actions, bar) {
   function status() {
     if (!ui || !st.pix) return;
     const p = st.hover;
-    const parts = [`${st.mc ? 'multicolor 160 × 200' : 'hires 320 × 200'}${st.dirty ? ' · changed' : ''}`];
+    const parts = [`${atari() ? (st.mc ? 'GRAPHICS 15 · 160 × 192' : 'GRAPHICS 8 · 320 × 192') : st.mc ? 'multicolor 160 × 200' : 'hires 320 × 200'}${st.dirty ? ' · changed' : ''}`];
     if (p) {
       const c = cellOf(p), s = st.slots[c.r * COLS + c.c];
-      parts.push(`pixel ${p.x},${p.y} · block ${c.c},${c.r}: ${s.slice(0, st.mc ? 3 : 2).map((v, i) => `${st.mc ? i + 1 : (i ? 'bg' : 'fg')} ${COLOR_NAMES[v & 15]}`).join(', ')}`);
+      if (atari()) parts.push(`pixel ${p.x},${p.y}: ${colorName(pixelColor(st.pix[p.y][p.x], c.r * COLS + c.c))}`);
+      else parts.push(`pixel ${p.x},${p.y} · block ${c.c},${c.r}: ${s.slice(0, ownSlots()).map((v, i) => `${st.mc ? i + 1 : (i ? 'bg' : 'fg')} ${colorName(v & colorMask())}`).join(', ')}`);
     }
     if (st.sel) parts.push(`range ${st.sel.w} × ${st.sel.h}`);
     if (st.recolored) parts.push(`${st.recolored} block${st.recolored > 1 ? 's' : ''} recolored`);
-    if (st.clashes) parts.push(`${st.clashes} pixel${st.clashes > 1 ? 's' : ''} not painted: the block already shows three other colors`);
+    if (st.clashes) parts.push(`${st.clashes} pixel${st.clashes > 1 ? 's' : ''} not painted: the block already shows ${ownSlots() === 2 && st.mc ? 'two' : 'three'} other colors`);
     if (st.lost) parts.push(tr('§1954', st.lost, st.lost > 1 ? 's' : ''));
     statusLine.value = parts.join(' · ');
   }
 
   // --- the side panel: the pens and the colors -----------------------------------------------
 
+  // the Atari: the colour registers are the pens - GRAPHICS 15 COLOR4 (00), COLOR0 (01), COLOR1 (10), COLOR2 (11);
+  // GRAPHICS 8 COLOR2 (0) and COLOR1, its luminance on the hue of COLOR2 (1). A row is the pen, its swatch
+  // sets the register for the whole picture
+  function atariRows() {
+    const regRows = st.mc ? [[4, 'COLOR4: background (00)'], [0, 'COLOR0 (01)'], [1, 'COLOR1 (10)'], [2, 'COLOR2 (11)']]
+      : [[2, 'COLOR2: background (0)'], [1, 'COLOR1: luminance of the pixels (1)']];
+    const shown = r => (!st.mc && r === 1 ? antic2Text(st.regs) : st.regs[r]);
+    return regRows.map(([r, label], k) => ({
+      label, color: shown(r), active: k === 0 ? st.pen === 0 : st.pen === 1 && st.penColor[1] === shown(r),
+      tip: `${label} - the register of the whole picture; click to paint with it`,
+      onselect: () => { if (k === 0) st.pen = 0; else { st.pen = 1; st.penColor[1] = shown(r); } update(); draw(); },
+      onpick: c => {
+        snapshot();
+        const was = shown(r);
+        st.regs[r] = c;
+        useRegs();
+        if (st.penColor[1] === was) st.penColor[1] = shown(r);
+        st.penColor[0] = st.mc ? st.regs[4] : st.regs[2];
+        draw(); update(); status();
+      },
+    }));
+  }
+
   function sideView() {
+    if (atari()) return [rot.on && section('§1731', rot.view(), rot.actions()), section('§0639', [
+      h('div', { class: 'section__hint' }, st.mc ? 'GRAPHICS 15: 160 × 192 pixels in the four colour registers of the whole picture.'
+        : 'GRAPHICS 8: 320 × 192 pixels, the luminance of COLOR1 on COLOR2.'),
+      colorChooser(atariRows())]), reference.panel()];
     const key = pen => ` (key ${pen + 1})`;
     // the background row colors the whole picture: multicolor the register, hires the background
     // slot of every block (the clear pixels); set pixels keep their colors
@@ -797,11 +942,16 @@ export function createBitmapEditor(el, store, actions, bar) {
       if (pen === 0) { if (st.mc) st.bg = k; else st.slots.forEach(sl => { sl[1] = k; }); }
       draw(); update(); status();
     };
-    const row = (label, pen, tip) => ({ label, color: st.penColor[pen], active: st.pen === pen, tip: tip + key(pen),
+    // the colours of the machine's bitmap (video.js colorChoices 'bitmap': the C64's 16, the TED's 121, 16 of the Atari's)
+    const row = (label, pen, tip) => ({ label, color: st.penColor[pen], count: 'bitmap', active: st.pen === pen, tip: tip + key(pen),
       onselect: () => { st.pen = pen; update(); draw(); }, onpick: pick(pen) });
+    // the TED's 11: the colour of the whole picture ($ff16) - the color pen paints 11 in it
+    const bg2 = { label: 'Multicolor ($ff16)', color: st.bg2, tip: 'The colour of 11 in the whole picture: painting in it paints 11, a block keeps its two colours',
+      onpick: k => { snapshot(); st.bg2 = k; st.slots.forEach(sl => { sl[2] = k; }); draw(); update(); status(); } };
     const rows = st.mc ? [
       row('§0636', 0, '§1120'),
       row('§0637', 1, '§1119'),
+      ...(ted() ? [bg2] : []),
     ] : [
       row('§0636', 0, '§0950'),
       row('§0637', 1, '§0638'),
@@ -855,13 +1005,30 @@ export function createBitmapEditor(el, store, actions, bar) {
   // or Art Studio (its mode), the same with its reference image (.ybm), or a PNG of its 320 x 200 pixels
   function exportFormats() {
     if (!isOpen() || !st.pix) return [];
-    const ext = st.mc ? 'kla' : 'art', name = st.file ?? 'picture';
+    const name = st.file ?? 'picture';
+    if (atari()) return [
+      { label: st.mc ? 'Atari picture, GRAPHICS 15 (.mic)' : 'Atari picture, GRAPHICS 8 (.gr8)', name: exportName(name, st.mc ? 'mic' : 'gr8'), description: 'Atari picture', bytes: encode },
+      // a program the Atari runs: it shows the picture until a key is pressed (ataribitmap.js)
+      { label: 'An Atari program that shows the picture (.xex)', icon: 'play_arrow', name: exportName(name, 'xex'), description: 'Atari program', bytes: () => atariPictureXex(atariPicture()) },
+      { label: '§1016', icon: 'wallpaper', name: exportName(name, 'png'), type: 'image/png', description: 'PNG picture',
+        bytes: () => { draw(); return pngOf(img); } },
+    ];
+    if (ted()) return [
+      { label: 'TED picture (.tbm)', name: exportName(name, 'tbm'), description: 'Plus/4 picture', bytes: encode },
+      { label: '§2116', icon: 'wallpaper', name: exportName(name, 'ybm'), description: 'Yopaca picture',
+        bytes: () => { const r = reference.bundle(); return encodeYbm({ picture: encode(), format: 'tbm', image: r && { bytes: r.bytes, type: r.type }, reference: r?.reference }); } },
+      // a program the Plus/4 and the C16 run: LOAD and RUN show the picture until a key is pressed
+      { label: 'A Plus/4 program that shows the picture (.prg)', icon: 'play_arrow', name: exportName(name, 'prg'), description: 'Plus/4 program', bytes: () => tedPrg(tedPicture()) },
+      { label: '§1016', icon: 'wallpaper', name: exportName(name, 'png'), type: 'image/png', description: 'PNG picture',
+        bytes: () => { draw(); return pngOf(img); } },
+    ];
+    const ext = st.mc ? 'kla' : 'art';
     return [
-      { label: st.mc ? '§0990' : '§0991', name: exportName(name, ext), description: 'C64 picture', bytes: encode },
+      { label: st.mc ? '§0990' : '§0991', name: exportName(name, ext), description: koala() ? 'Koala picture' : 'C64 picture', bytes: encode },
       { label: '§2116', icon: 'wallpaper', name: exportName(name, 'ybm'), description: 'Yopaca picture',
         bytes: () => { const r = reference.bundle(); return encodeYbm({ picture: encode(), format: ext, image: r && { bytes: r.bytes, type: r.type }, reference: r?.reference }); } },
-      // a program the C64 runs: LOAD and RUN show the picture until a key is pressed (bitmapprg.js)
-      { label: '§0992', icon: 'play_arrow', name: exportName(name, 'prg'), description: 'C64 program',
+      // a program the C64 runs: LOAD and RUN show the picture until a key is pressed (bitmapprg.js) - on a C64
+      koala() ? null : { label: '§0992', icon: 'play_arrow', name: exportName(name, 'prg'), description: 'C64 program',
         bytes: () => { const b = encode();
           return bitmapPrg({ bitmap: b.subarray(2, 8002), screen: b.subarray(8002, 9002), colors: st.mc ? b.subarray(9002, 10002) : null, bg: st.mc ? st.bg : 0, mc: st.mc }); } },
       { label: '§1016', icon: 'wallpaper', name: exportName(name, 'png'), type: 'image/png', description: 'PNG picture',
@@ -911,7 +1078,9 @@ export function createBitmapEditor(el, store, actions, bar) {
   async function open(file = null) {
     if (!isOpen()) return render();
     await listFiles();
-    if (!file && !st.pix && !st.file) file = st.files.find(f => /\.(kla|koa)$/i.test(f)) ?? st.files[0] ?? null;
+    // another machine (video.js): its own pictures, the one of the other one is let go
+    if (st.machine !== videoMachine()) { st.machine = videoMachine(); st.pix = null; st.file = null; st.suggest = null; setDirty(false); }
+    if (!file && !st.pix && !st.file) file = st.files.find(f => /\.(kla|koa|tbm)$/i.test(f)) ?? st.files[0] ?? null;
     if (file && file !== st.file) return openFile(file);
     render();
   }

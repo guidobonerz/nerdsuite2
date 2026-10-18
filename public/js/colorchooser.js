@@ -1,16 +1,17 @@
 // colorchooser.js - pens and their colors in one list
 //
 // Every row is a pen: its name, ':' and the name of its color, and a swatch. Clicking the
-// row makes it the pen, clicking the swatch opens a 4 x 4 palette of the C64 colors. A
+// row makes it the pen, clicking the swatch opens the palette of the machine (video.js: 4 x 4 the
+// C64's, 16 hues x 8 luminances the TED's). A
 // disabled row (a multicolor pen in hires mode) is greyed and cannot be the pen, but its
 // color can still be set.
 
 import { h, render, useState } from './pui.js';
 import { PALETTE } from './c64.js';
-import { COLOR_NAMES } from './adv.js';
 import { tr } from './i18n.js';
+import { colorName as nameOf, colorChoices, colorMask } from './video.js';
 
-const colorName = k => COLOR_NAMES[k][0].toUpperCase() + COLOR_NAMES[k].slice(1);
+const colorName = k => { const n = nameOf(k); return n[0].toUpperCase() + n.slice(1); };
 export const colorLabel = k => tr('§1097', String(k).padStart(2, '0'), colorName(k));
 
 let popup = null;                 // the host of the open palette, its owner in dataset.owner
@@ -22,11 +23,15 @@ export function closeColorPopup() {
   popup = null;
 }
 
-// the 4 x 4 colors; the footer names the color under the pointer
+// the colours a count stands for: 16 the palette, 8 the colour of a multicolor cell (video.js colorChoices)
+const choicesOf = count => colorChoices(count === 8 || count === 'mc' ? 'mc' : typeof count === 'string' ? count : 'all');
+
+// the colors of the machine; the footer names the color under the pointer
 function Palette({ value, count, onpick }) {
   const [hover, setHover] = useState(null);
+  const { list, cols } = choicesOf(count), cell = cols > 8 ? 22 : 44;
   return h('div', { class: 'cc-popup', role: 'dialog', style: { position: 'static' } },
-    h('div', { class: 'cc-popup__grid' }, Array.from({ length: count }, (_, k) => h('button', {
+    h('div', { class: 'cc-popup__grid', style: { gridTemplateColumns: `repeat(${cols}, ${cell}px)`, gridAutoRows: `${cell}px` } }, list.map(k => h('button', {
       class: `cc-popup__color ${k === value ? 'cc-popup__color--selected' : ''}`, type: 'button',
       style: { background: PALETTE[k] }, 'aria-label': colorLabel(k),
       onpointerenter: () => setHover(k), onpointerleave: () => setHover(null),
@@ -35,8 +40,8 @@ function Palette({ value, count, onpick }) {
     h('div', { class: 'cc-popup__footer' }, colorLabel(hover ?? value)));
 }
 
-// the palette below the anchor: count colors (16, or 8 for the char color of multicolor
-// chars), value outlined; onpick(k). owner: who opened it - its swatch closes it again
+// the palette below the anchor: count colors (16 the palette, 8 the char color of multicolor
+// chars, or a kind of video.js colorChoices), value outlined; onpick(k). owner: who opened it - its swatch closes it again
 export function openColorPopup(anchor, value, onpick, count = 16, owner = '') {
   closeColorPopup();
   popup = document.createElement('div');
@@ -69,14 +74,14 @@ export function colorChooser(rows) {
     onkeydown: e => { if ((e.key === 'Enter' || e.key === ' ') && !r.disabled && e.target === e.currentTarget) { e.preventDefault(); r.onselect?.(); } },
   },
   h('span', { class: 'cc-row__label' }, r.label),
-  h('span', { class: 'cc-row__value' }, `:${colorName(r.color & 15)}`),
+  h('span', { class: 'cc-row__value' }, `:${colorName(r.color & colorMask())}`),
   h('button', {
-    class: 'cc-row__swatch', type: 'button', style: { background: PALETTE[r.color & 15] },
+    class: 'cc-row__swatch', type: 'button', style: { background: PALETTE[r.color & colorMask()] },
     'data-tip': tr('§0405', r.label.toLowerCase()),
     onclick: e => {
       e.stopPropagation();
       if (popup && popup.dataset.owner === r.label) return closeColorPopup();
-      openColorPopup(e.currentTarget, r.color & 15, r.onpick, r.count ?? 16, r.label);
+      openColorPopup(e.currentTarget, r.color & colorMask(), r.onpick, r.count ?? 16, r.label);
     },
   }))));
 }

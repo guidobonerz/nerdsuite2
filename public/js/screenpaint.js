@@ -17,7 +17,7 @@
 // slow one) is kept with the depth of the undo stack, and when the store travels the charset follows.
 
 import { LAYOUT } from './layout.js';
-import { symbols, getAttr, newId } from './adv.js';
+import { symbols, getAttr, newId, screensOf } from './adv.js';
 import { PALETTE, romCharset } from './c64.js';
 import { charsetKey, charsetByKey, setCharsetBytes, scriptDirectory, scriptRelative, onCharsetChange } from './chr.js';
 import { tilesetByKey, tilesetKey, tilesetCharset, setTileset } from './tileset.js';
@@ -26,6 +26,7 @@ import { tools, BRUSH_TOOLS, DRAG_TOOLS, brushCells, lineCells, dragCells as dra
 import { glyphBytes, usedCounts, packer, duplicates, bitAt, setBit, pairAt, setPair } from './charpack.js';
 import { h, section as uiSection, button, snackbar, promptDialog, icon } from './pui.js';
 import { tr } from './i18n.js';
+import { colorMask, mcCell as mcColor, mcCellColor, mcPair, isMcCell } from './video.js';
 
 // the tools of the pixel mode (drawtools.js): no select, no text, no object - pixels only
 const PIXEL_TOOLS = tools(['pencil', 'line', 'rect', 'circle', 'curve', 'fill', 'pick'], { erase: '§0621', pick: '§0622' });
@@ -46,7 +47,7 @@ export function createPixelPainter(env) {
   const ecm = () => !!info()?.ecm;
   const limit = () => (ecm() ? 64 : 256);
   const glyphOf = code => (ecm() ? code & 63 : code);
-  const mcCell = color => mcPlace() && color >= 8;         // the cell is shown multicolor
+  const mcCell = color => mcPlace() && isMcCell(color);   // the cell is shown multicolor (bit 3 of its colour)
   let stroke = null;                                       // the stroke in progress: { key, pack, missing, painted, step }
   let refused = new Set();                                 // 'c,r' of the cells the last stroke could not give a char
   let strokes = 0;
@@ -103,10 +104,10 @@ export function createPixelPainter(env) {
       }
       // the color of the cell after this pixel: the pen's color recolors it, a shared pen makes a
       // hires cell multicolor, the background leaves it alone
-      if (p === 'color') cell.color = mcPlace() ? (st.color & 7) | 8 : st.color & 15;   // a multicolor place: the cell is multicolor
-      else if (p !== 'bg' && mcPlace() && cell.color < 8) cell.color |= 8;
+      if (p === 'color') cell.color = mcPlace() ? mcColor(st.color) : st.color & colorMask();   // a multicolor place: the cell is multicolor
+      else if (p !== 'bg' && mcPlace() && !isMcCell(cell.color)) cell.color = mcColor(cell.color);
       const mc = mcCell(cell.color);
-      if (mc) setPair(cell.bytes, (px.x & 7) >> 1, px.y & 7, p === 'bg' ? 0 : p === 'mc1' ? 1 : p === 'mc2' ? 2 : 3);
+      if (mc) setPair(cell.bytes, (px.x & 7) >> 1, px.y & 7, mcPair(p));   // the pair of the pen on this machine (video.js)
       else setBit(cell.bytes, px.x & 7, px.y & 7, p === 'bg' ? 0 : 1);
     }
     const out = [];
@@ -275,7 +276,7 @@ export function createPixelPainter(env) {
     if (pn === 'bg') return i.bg;
     if (pn === 'mc1') return i.multicolor[0];
     if (pn === 'mc2') return i.multicolor[1];
-    return mcPlace() ? st.color & 7 : st.color;
+    return mcPlace() ? mcCellColor(st.color) : st.color;
   };
 
   // over the canvas: the pixels of a drag, the cells without a char, the pixel under the pointer
@@ -284,7 +285,7 @@ export function createPixelPainter(env) {
     const q = s / 8;
     if (st.drag?.px && dragTool()) {
       ctx.globalAlpha = 0.85;
-      ctx.fillStyle = PALETTE[penColor(st.drag.pen) & 15];
+      ctx.fillStyle = PALETTE[penColor(st.drag.pen) & colorMask()];
       for (const p of dragPixels(st.drag)) {
         const wide = mcCell(env.cellValue(p.x >> 3, p.y >> 3).color);
         ctx.fillRect((wide ? p.x & ~1 : p.x) * q, p.y * q, wide ? 2 * q : q, q);
@@ -384,14 +385,14 @@ export function createPixelPainter(env) {
   // a place of the ROM font: a charset file of its own, a copy of the ROM set, and the place names it
   async function makeCharset() {
     const rm = env.place(), S = symbols(store.game);
-    const known = new Set(S.places.map(r => getAttr(r, 'charset')).filter(Boolean).map(charsetKey));
+    const known = new Set(screensOf(store.game).map(r => getAttr(r, 'charset')).filter(Boolean).map(charsetKey));
     const base = `${scriptDirectory()}${LAYOUT.charset}/${rm.name}`;
     let path = `${base}.chr`;
     for (let k = 2; known.has(path); k++) path = `${base}${k}.chr`;
     const v = await promptDialog({
       title: tr('§1626', rm.name), icon: 'grid_view', ok: '§0124', text: tr('§1627', S.charset, rm.name),
       fields: [{ name: 'path', label: '§1263', value: path, mono: true,
-        validate: p => (!/^[\w\-./]+\.(chr|bin|raw)$/i.test(p) || p.includes('..') ? '§0660' : known.has(p) ? '§0208' : null) }],
+        validate: p => (!/^[\w\-./]+\.(chr|fnt|bin|raw)$/i.test(p) || p.includes('..') ? '§0660' : known.has(p) ? '§0208' : null) }],
     });
     if (!v) return;
     setCharsetBytes(v.path, romCharset(S.charset).slice());

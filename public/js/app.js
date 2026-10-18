@@ -41,6 +41,8 @@ import {
 import { setWriterTag } from './filetag.js';
 import { keepUi, loadUi, watchUi } from './uistate.js';
 import { readSettings, writeSettings, machineOf, MACHINES, SETTINGS } from './nsbuild.js';
+import { hasEditor, setVideoMachine, GFX_VIEWS } from './video.js';
+import { loadMachineFont, onFontChange } from './romfonts.js';
 import { buildWith, currentToolchain, loadToolchains, projectToolchain, toolchains, chainLabel, emulatorRuns, runCommand, ultimate, ultimateRuns, runOnUltimate } from './toolchain.js';
 import * as vice from './vice.js';
 
@@ -244,6 +246,8 @@ if (globalThis.locationbar?.visible === false || matchMedia('(display-mode: stan
 }
 
 function setView(name, { route = true, place = null } = {}) {
+  // an editor the machine of the project has not (video.js): the code
+  if (isOpen() && !hasEditor(readSettings().machine, name)) name = 'code';
   if (name !== view) stopPreview();
   view = name;
   document.body.dataset.view = name;
@@ -742,6 +746,13 @@ function updateDots() {
 
 function updateChrome() {
   document.documentElement.classList.toggle('no-project', !isOpen());
+  // the graphics editors of the machine (video.js): no sprites on a CPC, no bitmap on a VIC-20 ...
+  const machine = readSettings().machine;
+  document.querySelectorAll('.md-nav-rail__item[data-view]').forEach(b => { b.hidden = isOpen() && !hasEditor(machine, b.dataset.view); });
+  if (isOpen() && !hasEditor(machine, view)) { setView('code'); return; }
+  // its colours and colour rules in the editors (video.js): the open one draws in them again
+  loadMachineFont(isOpen() ? machine : 'c64');                     // its ROM font, from an emulator here (romfonts.js)
+  if (setVideoMachine(isOpen() ? machine : 'c64') && GFX_VIEWS.includes(view)) { setView(view, { route: false }); return; }
   document.body.classList.toggle('no-game', !store.game);
   const start = $('#start-screen');
   if (start) start.hidden = isOpen();
@@ -773,6 +784,8 @@ function updateChrome() {
 }
 
 store.on(() => updateChrome());
+// the ROM font of the machine came from the server: the editors draw with it
+onFontChange(() => { if (GFX_VIEWS.includes(view)) setView(view, { route: false }); });
 toolchains.subscribe(() => updateChrome());
 ultimate.subscribe(() => updateChrome());
 loadToolchains();
@@ -825,9 +838,9 @@ const search = $('#search');
 let matchIndex = -1;
 const SEARCH = {
   code: { placeholder: 'Find in the source', next: dir => findInCode(search.value, dir) },
-  screen: { placeholder: 'Find a screen', list: async () => { const { symbols } = await import('./adv.js'); return store.game ? [...symbols(store.game).places, ...(store.game.canvases ?? [])].map(r => ({ label: r.name, go: () => screenEditor.open(r.id) })) : []; } },
+  screen: { placeholder: 'Find a screen', list: async () => { const { screensOf } = await import('./adv.js'); return screensOf(store.game).map(r => ({ label: r.name, go: () => screenEditor.open(r.id) })); } },
   sprites: { placeholder: 'Find a sprite', list: async () => { const { symbols } = await import('./adv.js'); return store.game ? symbols(store.game).costumes.map(c => ({ label: c.name, go: () => { spriteEditor.select(c.id, 'stand'); spriteEditor.open(); } })) : []; } },
-  chars: { placeholder: 'Find a charset', list: () => allFiles().filter(f => /\.(chr|bin|raw)$/i.test(f)).map(f => ({ label: f, go: () => { charEditor.selectKey(f); charEditor.open(); } })) },
+  chars: { placeholder: 'Find a charset', list: () => allFiles().filter(f => /\.(chr|fnt|bin|raw)$/i.test(f)).map(f => ({ label: f, go: () => { charEditor.selectKey(f); charEditor.open(); } })) },
   tiles: { placeholder: 'Find a tileset', list: () => allFiles().filter(f => /\.til$/i.test(f)).map(f => ({ label: f, go: () => { tileEditor.selectKey(f); tileEditor.open(); } })) },
   bitmap: { placeholder: 'Find a picture', list: () => allFiles().filter(f => /\.(kla|art)$/i.test(f)).map(f => ({ label: f, go: () => bitmapEditor.select(f) })) },
   sound: { placeholder: 'Find a song', list: () => allFiles().filter(f => /\.sng$/i.test(f)).map(f => ({ label: f, go: () => soundEditor.select(f) })) },

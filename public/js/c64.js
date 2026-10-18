@@ -7,17 +7,30 @@
 import { walkPoints, walkAreaWith, clampToArea, zoneOutline } from './walkarea.js';
 import {
   symbols, getAttr, objectHome, objectStartPlace, placeRows, gameRows, DEFAULT_SPRITES, SPRITE_COLS, SPRITE_ROWS, SPRITE_DEFAULTS, MC_PIXELS, spriteWidth,
-  costumeFrame, costumeSize, viewAnim, defaultFrame, layerMulticolor, animSequence } from './adv.js';
+  costumeFrame, costumeSize, viewAnim, defaultFrame, layerMulticolor, animSequence, setSpriteGeometry } from './adv.js';
 import { numValue, placeWidth, setObjAttr, behindRects, behindPolygons } from './advgen.js';
 import { resolveMap } from './petscii.js';
 import { charsetData, CHARSET_SIZE } from './chr.js';
 import { CHARGEN } from './chargen.js';
+import { VIC2_COLORS, onVideoChange, colorMask, mcPens, isMcCell, video, ATARI_REGS, atariCellColors } from './video.js';
+import { atariFont } from './atarifont.js';
+import { machineFont } from './romfonts.js';
 
-export const PALETTE = ['#000000', '#ffffff', '#880000', '#aaffee', '#cc44cc', '#00cc55', '#0000aa', '#eeee77',
-  '#dd8855', '#664400', '#ff7777', '#333333', '#777777', '#aaff66', '#0088ff', '#bbbbbb'];
+// the colours of the machine of the project (video.js): the C64's, the VIC-20's, the 128 of the TED ...
+// One array that changes its contents, so every editor that imports it draws in the new colours
+export const PALETTE = [...VIC2_COLORS];
 
 // the palette as pixels of an ImageData (little endian: 0xAABBGGRR)
-const PIXELS = PALETTE.map(c => (0xff000000 | parseInt(c.slice(5, 7), 16) << 16 | parseInt(c.slice(3, 5), 16) << 8 | parseInt(c.slice(1, 3), 16)) >>> 0);
+const PIXELS = [];
+const toPixel = c => (0xff000000 | parseInt(c.slice(5, 7), 16) << 16 | parseInt(c.slice(3, 5), 16) << 8 | parseInt(c.slice(1, 3), 16)) >>> 0;
+function usePalette(colors) {
+  // as many entries as a colour value can reach (video.js colorMask): the CPC's 27 in 32, the rest black
+  const all = [...colors, ...Array(Math.max(0, colorMask() + 1 - colors.length)).fill('#000000')];
+  PALETTE.splice(0, PALETTE.length, ...all);
+  PIXELS.splice(0, PIXELS.length, ...all.map(toPixel));
+}
+usePalette(VIC2_COLORS);
+onVideoChange(v => { usePalette(v.palette.colors); setSpriteGeometry(v.sprite); });   // the sprites of the machine too (adv.js)
 
 // the font of C64 text in the page (css/app.css)
 export const C64_FONT = '"C64 Pro Mono"';
@@ -28,7 +41,7 @@ export function constMap(game) {
 
 export function colorIndex(v, consts, fallback = 0) {
   const n = numValue(v, consts);
-  return n == null ? fallback : n & 15;
+  return n == null ? fallback : n & colorMask();
 }
 
 export function placeInfo(game, place) {
@@ -53,6 +66,7 @@ export function placeInfo(game, place) {
   };
   if (info.ecm) info.multicolor = null;                         // the VIC shows nothing with both
   info.chr = info.chrFile ? charsetData(info.chrFile) : null;      // custom charset bytes once loaded
+  if (video().cells === 'atari') atariLook(info, place, consts);
   // the behind areas as the engine keeps them (strips of cells), and as the editor draws them
   info.behind = behindRects(place, consts, width, info.rows);
   info.behindPolys = behindPolygons(place, consts);
@@ -71,8 +85,39 @@ export function placeInfo(game, place) {
   }
   const bg = place.members.find(m => m.kind === 'background');
   Object.assign(info, resolveMap(bg?.lines ?? [], bg?.colors, width, info.rows, info.textcolor, info.charset));
+  info.colors = cellColors(info, info.chars, info.colors);
   return info;
 }
+
+// an Atari screen (video.js 'atari'): the colours of its cells come from its chars and its five colour registers
+// ('registers' COLOR0-COLOR4), the 256 codes are 128 glyphs of its font - ANTIC 2 (no 'multicolor') shows codes
+// 128-255 inverse, ANTIC 4 the same glyphs in COLOR3 for their 11 pairs
+const atariViews = new WeakMap();                 // font -> { 2: its 256 codes in ANTIC 2, 4: in ANTIC 4 }
+function atariView(font, antic4) {
+  if (!atariViews.has(font)) atariViews.set(font, {});
+  const views = atariViews.get(font), key = antic4 ? 4 : 2;
+  if (!views[key]) {
+    const out = new Uint8Array(2048);
+    out.set(font.subarray(0, 1024));
+    for (let k = 0; k < 1024; k++) out[1024 + k] = antic4 ? font[k] : font[k] ^ 0xff;
+    views[key] = out;
+  }
+  return views[key];
+}
+function atariLook(info, place, consts) {
+  const regs = getAttr(place, 'registers')?.map((v, k) => colorIndex(v, consts, ATARI_REGS[k])) ?? [...ATARI_REGS];
+  while (regs.length < 5) regs.push(ATARI_REGS[regs.length]);
+  const antic4 = !!info.multicolor;
+  info.atari = { regs, antic4 };
+  info.chr = atariView(info.chr ?? atariFont(), antic4);
+  info.bg = antic4 ? regs[4] : regs[2];
+  info.border = regs[4];
+  info.textcolor = antic4 ? regs[2] : regs[1];
+  info.multicolor = antic4 ? [regs[0], regs[1]] : null;
+  info.ecm = null;
+}
+// the colours of the cells of chars on an Atari screen (patches, brushes); others keep theirs
+export const cellColors = (info, chars, colors) => (info.atari ? atariCellColors(chars, info.atari.regs, info.atari.antic4) : colors);
 
 // the areas an actor is behind, like the engine (ds_behind in depth.s): the sprites of an actor
 // are one box, its lower edge the feet. It is behind an area while its feet are below the area's
@@ -342,7 +387,14 @@ export function objectRect(obj, consts, game = null) {
 
 // the character ROM of a case set ('upper' or 'lower') as it is (chargen.js): what the char editor
 // resets to and traces
-export const romFont = set => CHARGEN.subarray(set === 'upper' ? 0 : CHARSET_SIZE, set === 'upper' ? CHARSET_SIZE : 2 * CHARSET_SIZE);
+// - the ROM of the machine of the project (romfonts.js): another Commodore's in the same two sets, a machine of
+// other codes its 256 chars whatever the set
+export const romFont = set => machineRom(set) ?? CHARGEN.subarray(set === 'upper' ? 0 : CHARSET_SIZE, set === 'upper' ? CHARSET_SIZE : 2 * CHARSET_SIZE);
+function machineRom(set) {
+  const f = machineFont();
+  if (f.data.buffer === CHARGEN.buffer) return null;                  // the C64's
+  return f.kind === 'codes' ? f.data : f.data.subarray(set === 'upper' ? 0 : CHARSET_SIZE, set === 'upper' ? CHARSET_SIZE : 2 * CHARSET_SIZE);
+}
 
 // the game's panel glyphs at $1d-$1f in every ROM set the engine copies: the vertical line and the
 // arrow buttons of the panel instead of ] and the up and left arrows (panelGlyphs in
@@ -359,13 +411,13 @@ const GAME_ROM = (() => {
 })();
 // the ROM set as the game shows it: the ROM with the panel glyphs over it - for the places with
 // the ROM font, the panel, the text font, a new charset made from the ROM
-export const romCharset = set => GAME_ROM.subarray(set === 'upper' ? 0 : CHARSET_SIZE, set === 'upper' ? CHARSET_SIZE : 2 * CHARSET_SIZE);
+export const romCharset = set => machineRom(set) ?? GAME_ROM.subarray(set === 'upper' ? 0 : CHARSET_SIZE, set === 'upper' ? CHARSET_SIZE : 2 * CHARSET_SIZE);
 
 // one character cell: screen code, position, size, colors. chr: the bytes of the place's
 // charset file, else the ROM characters of the case set charset; mc: [$d022, $d023] of a
 // multicolor place; ecm: [$d022, $d023, $d024] of an extended color place
 export function drawCell(ctx, code, x, y, s, fg, bg, charset, chr = null, mc = null, ecm = null) {
-  if (ecm) drawGlyph(ctx, chr ?? romCharset(charset), code & 63, x, y, s, fg & 15, ecmBack(code, bg, ecm));
+  if (ecm) drawGlyph(ctx, chr ?? romCharset(charset), code & 63, x, y, s, fg & colorMask(), ecmBack(code, bg, ecm));
   else drawGlyph(ctx, chr ?? romCharset(charset), code, x, y, s, fg, bg, mc);
 }
 
@@ -378,8 +430,9 @@ export const ecmBack = (code, bg, ecm) => (code & 0xc0 ? ecm[(code >> 6) - 1] : 
 // size of 8n is drawn at 8 pixels a cell and scaled n times; any other size at its own size, where
 // a C64 pixel has the edges round(k * s / 8) in its cell: a scaling drawImage rounds the edges of
 // 2.5 pixels one way or the other, and a cell drawn alone would not match the same cell in a screen. bg: the background color; mc: [$d022, $d023] of a
-// multicolor place, where a color of 8-15 makes a cell multicolor: bit pairs 00 background,
-// 01 mc[0], 10 mc[1], 11 color & 7; ecm: [$d022-$d024] of an extended color place (ecmBack)
+// multicolor place, where a color with bit 3 makes a cell multicolor: its bit pairs in the colours of
+// the machine (video.js mcPens: the C64 00 background, 01 mc[0], 10 mc[1], 11 color & 7); ecm:
+// [$d022-$d024] of an extended color place (ecmBack)
 let blitCanvas = null, blitImg = null;
 function blit(ctx, data, chars, colors, width, height, bg, mc, x, y, size, ecm = null) {
   size = Math.round(size);
@@ -389,11 +442,11 @@ function blit(ctx, data, chars, colors, width, height, bg, mc, x, y, size, ecm =
   if (blitImg?.width !== W || blitImg.height !== H) blitImg = new ImageData(W, H);
   const px = new Uint32Array(blitImg.data.buffer);
   const edge = Array.from({ length: 9 }, (_, k) => Math.round(k * s / 8));
-  const back = PIXELS[bg & 15];
+  const m = colorMask(), back = PIXELS[bg & m];
   const pens = Array.from({ length: width * height }, (_, k) => {
     const fg = colors[k];
-    if (ecm) return [PIXELS[ecmBack(chars[k], bg, ecm) & 15], PIXELS[fg & 15]];
-    return mc && fg & 8 ? [back, PIXELS[mc[0] & 15], PIXELS[mc[1] & 15], PIXELS[fg & 7]] : [back, PIXELS[fg & 15]];
+    if (ecm) return [PIXELS[ecmBack(chars[k], bg, ecm) & m], PIXELS[fg & m]];
+    return mc && isMcCell(fg) ? mcPens(bg, mc, fg).map(c => PIXELS[c & m]) : [back, PIXELS[fg & m]];
   });
   for (let r = 0; r < height; r++) {
     for (let row = 0; row < 8; row++) {
@@ -427,9 +480,9 @@ function blit(ctx, data, chars, colors, width, height, bg, mc, x, y, size, ecm =
 export function drawGlyph(ctx, data, code, x, y, s, fg, bg, mc = null) {
   s = Math.round(s);
   const edge = Array.from({ length: 9 }, (_, k) => Math.round(k * s / 8));
-  const multi = mc && fg & 8, step = multi ? 2 : 1;
-  const pens = multi ? [bg, mc[0], mc[1], fg & 7] : [bg, fg];
-  ctx.fillStyle = PALETTE[bg & 15];
+  const multi = mc && isMcCell(fg), step = multi ? 2 : 1, m = colorMask();
+  const pens = multi ? mcPens(bg, mc, fg) : [bg, fg];
+  ctx.fillStyle = PALETTE[bg & m];
   ctx.fillRect(x, y, s, s);
   for (let r = 0; r < 8; r++) {
     const byte = data[(code & 0xff) * 8 + r];
@@ -440,7 +493,7 @@ export function drawGlyph(ctx, data, code, x, y, s, fg, bg, mc = null) {
       let e = c + step;
       while (e < 8 && value(e) === v) e += step;
       if (v) {
-        ctx.fillStyle = PALETTE[pens[v] & 15];
+        ctx.fillStyle = PALETTE[pens[v] & m];
         ctx.fillRect(x + edge[c], y + edge[r], edge[e] - edge[c], edge[r + 1] - edge[r]);
       }
       c = e;
@@ -459,8 +512,8 @@ export function patchCells(game, patch, place, info) {
   const lines = [...patch.lines];
   while (lines.length && !lines[lines.length - 1]) lines.pop();
   const width = Math.max(0, ...lines.map(l => l.length));
-  return { width, height: lines.length,
-           ...resolveMap(lines, patch.colors, width, lines.length, inPlace ? info.textcolor : 15, info.charset) };
+  const m = resolveMap(lines, patch.colors, width, lines.length, inPlace ? info.textcolor : 15, info.charset);
+  return { width, height: lines.length, ...m, colors: cellColors(info, m.chars, m.colors) };
 }
 
 // draw a place. opts: cell (px per char), patches (names to overlay), overlays (bool),

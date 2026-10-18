@@ -15,10 +15,18 @@
   background: transparent; color: var(--md-sys-color-on-surface-variant); font: inherit; font-size: 13px; cursor: pointer; user-select: none;
 }
 .ns-tab:hover { background: var(--md-sys-color-surface-container); }
+/* the selected tab of the code editor: in a dirty orange (its editor has no border of its own) */
+:root { --code-tab-active: #b3641f; --code-tab-active-text: #fff7ef; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --code-tab-active: #9a5418; --code-tab-active-text: #fff1e2; } }
+:root[data-theme="dark"] { --code-tab-active: #9a5418; --code-tab-active-text: #fff1e2; }
 .ns-tab--active {
-  background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); border-color: var(--md-sys-color-outline-variant);
+  background: var(--code-tab-active); color: var(--code-tab-active-text); border-color: var(--code-tab-active);
   margin-bottom: -1px; height: 33px; font-weight: 500;
 }
+.ns-tab--active:hover { background: var(--code-tab-active); }
+.ns-tab--active .ns-tab__main .msr { color: inherit; }
+.ns-tab--active .ns-tab__dot { background: currentColor; }
+.ns-tab--active .ns-tab__close:hover { background: rgba(255, 255, 255, .18); }
 .ns-tab .msr { font-size: 15px; }
 .ns-tab__name { font-family: var(--md-font-mono); font-size: 12.5px; }
 .ns-tab__main .msr { font-size: 12px; color: var(--md-sys-color-primary); }
@@ -359,6 +367,16 @@
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --code-focus: #ff9a1f; } }
 :root[data-theme="dark"] { --code-focus: #ff9a1f; }
 /* an outline inside the edge: all four sides (the code view of nerdsuite has no top border) */
-.code-view:focus-within { border-color: var(--md-sys-color-outline-variant); box-shadow: none; outline: 1px solid var(--code-focus); outline-offset: -1px; }
+.code-view:focus-within { border-color: var(--md-sys-color-outline-variant); box-shadow: none; outline: none; }   /* the selected tab shows it (.ns-tab--active) */
 .code-area:focus { box-shadow: none; outline: none; border-color: var(--code-focus); }   /* a code area by itself (no code view around it) */
 .code-view .code-area:focus-visible { outline: none; }
+
+/* the line of the caret in the code editor (codeeditor.js): a thin light green line above and below it */
+:root { --code-caret-line: #5fcf6f; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --code-caret-line: #8ee59a; } }
+:root[data-theme="dark"] { --code-caret-line: #8ee59a; }
+.code-view .code-caret-line {
+  position: absolute; left: 0; right: 0; top: 0; box-sizing: border-box; pointer-events: none; z-index: 1;
+  border-top: 1px solid var(--code-caret-line); border-bottom: 1px solid var(--code-caret-line);
+}
+.code-view .code-caret-line[hidden] { display: none; }

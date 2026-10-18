@@ -49,7 +49,7 @@ export default {
   '§1471': 'the whole picture {0}',
   '§1472': '(new)',
   '§1473': 'tile {0} of {1}',
-  '§1474': 'The {0} tile(s) after it move up a number, in the tile maps of the places too.',
+  '§1474': 'The {0} tile(s) after it move up a number, in the tile maps of the screens too.',
   '§1475': 'tile {0}',
   '§1476': 'It is used {0} times, in {1}.',
   '§1477': 'position {0} of the order list',

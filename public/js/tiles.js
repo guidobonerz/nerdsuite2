@@ -11,7 +11,7 @@
 import { LAYOUT } from './layout.js';
 import { listBinaries } from './project.js';
 import { exportName, importName } from './export.js';
-import { symbols, getAttr, PLACE_COLS, gameRows } from './adv.js';
+import { symbols, getAttr, PLACE_COLS, gameRows, screensOf } from './adv.js';
 import { colorChooser } from './colorchooser.js';
 import { defaultTools, wheelZoom } from './drawtools.js';
 import { PALETTE, placeInfo, drawCell } from './c64.js';
@@ -25,6 +25,7 @@ import {
   confirmRemove,
 } from './pui.js';
 import { tr } from './i18n.js';
+import { video, mcCell, mcCellColor, pickerColors, hasMulticolor } from './video.js';
 import { keepUi, pick as pickUi, put as putUi } from './uistate.js';
 
 const ZOOM = [4, 6, 8, 10, 12];             // screen pixels per C64 pixel of the tile
@@ -74,20 +75,20 @@ export function createTileEditor(el, store, actions, bar) {
     lookKey = key;
     return lookNow;
   }
-  const multicolor = () => !!ts()?.multicolor;
+  const multicolor = () => hasMulticolor() && !!ts()?.multicolor;
   // the brush color as the tileset keeps it: 8-15 in a multicolor tileset
-  const brushColor = () => (multicolor() ? (st.color & 7) | 8 : st.color);
+  const brushColor = () => (multicolor() ? mcCell(st.color) : st.color);
 
   function knownKeys() {
     const keys = new Set(st.files);
     if (store.game) for (const [, , f] of tilePlaces(store.game)) keys.add(tilesetKey(f));
-    for (const r of store.game ? S().allPlaces : []) { const f = getAttr(r, 'tiles'); if (f) keys.add(tilesetKey(f)); }
+    for (const r of screensOf(store.game)) { const f = getAttr(r, 'tiles'); if (f) keys.add(tilesetKey(f)); }
     if (st.key) keys.add(st.key);
     return [...keys].sort();
   }
   const refreshFiles = () => { st.files = listBinaries().filter(f => /\.til$/i.test(f)); };
   // the charsets of the project a tileset can be bound to (project paths), '' the ROM set
-  const charsetKeys = (...more) => [...new Set([...listBinaries().filter(f => /\.(chr|bin|raw)$/i.test(f)), ...more.filter(Boolean)])].sort();
+  const charsetKeys = (...more) => [...new Set([...listBinaries().filter(f => /\.(chr|fnt|bin|raw)$/i.test(f)), ...more.filter(Boolean)])].sort();
   const charsetOptions = keys => [{ value: '', label: tr('§0852', S().charset) }, ...keys.map(k => ({ value: k, label: k }))];
   // the charset of the place of the preview: a new tileset takes it
   function placeCharsetKey() {
@@ -204,7 +205,7 @@ export function createTileEditor(el, store, actions, bar) {
     snapshot();
     change(x => {
       x.multicolor = !x.multicolor;
-      for (const tile of x.tiles) tile.colors = tile.colors.map(c => (x.multicolor ? c | 8 : c & 7));
+      for (const tile of x.tiles) tile.colors = tile.colors.map(c => (x.multicolor ? mcCell(c) : mcCellColor(c)));
     });
     render();
   }
@@ -325,7 +326,7 @@ export function createTileEditor(el, store, actions, bar) {
     const multi = l.mc && brushColor() & 8;
     for (let code = 0; code < 256; code++) {
       drawCell(ctx, code, 2 + (code % 16) * pickPx(), 2 + (code >> 4) * pickPx(), 8 * PICK_PX,
-        multi ? brushColor() : 1, multi ? l.bg : 11, l.charset, l.chr, multi ? l.mc : null);
+        multi ? brushColor() : pickerColors().fg, multi ? l.bg : pickerColors().bg, l.charset, l.chr, multi ? l.mc : null);
     }
     ctx.strokeStyle = '#ffd54f';
     ctx.lineWidth = 2;
@@ -444,15 +445,15 @@ export function createTileEditor(el, store, actions, bar) {
 
   function sideView() {
     const t = ts(), l = look(), mc = multicolor();
-    const places = store.game ? S().places : [];
+    const places = screensOf(store.game);
     return [
       section('§0854', null,
         t ? h('div', { style: { marginBottom: '14px' } }, select({ label: '§0461', value: tilesetCharset(st.key) ?? '', dense: true,
           options: charsetOptions(charsetKeys(tilesetCharset(st.key))), onchange: v => setCharset(v || '') })) : '',
         dom(ui.picker),
         h('div', { style: { marginTop: '10px' } }, colorChooser([
-          { label: '§0637', color: mc ? st.color & 7 : st.color, count: mc ? 8 : 16, active: true,
-            tip: mc ? '§1396' : '§1397', onpick: v => { st.color = mc ? v | 8 : v; update(); drawPicker(); } },
+          { label: '§0637', color: mc ? mcCellColor(st.color) : st.color, count: mc ? 'mc' : video().cells === 'vic' ? 'cell' : 16, active: true,
+            tip: mc ? '§1396' : '§1397', onpick: v => { st.color = mc ? mcCell(v) : v; update(); drawPicker(); } },
         ])),
         h('div', { class: 'section__hint', style: { margin: '10px 0 0' } }, '§1398')),
       section('§1399', null,
@@ -477,7 +478,7 @@ export function createTileEditor(el, store, actions, bar) {
       ts() ? [h('span', { class: 'screen-bar__sep' }), defaultTools({
         undo: () => travel(undo, redo), redo: () => travel(redo, undo), zoom,
         grid: { on: st.grid, toggle: () => { st.grid = !st.grid; update(); draw(); } },
-        multicolor: { on: multicolor(), toggle: toggleMode },
+        multicolor: !hasMulticolor() ? undefined : { on: multicolor(), toggle: toggleMode },
         clear: { tip: '§1404', run: clearTile },
       }), h('span', { class: 'screen-bar__sep' }),
       iconButton('add', '§1405', () => addTile()),
@@ -559,7 +560,7 @@ export function createTileEditor(el, store, actions, bar) {
     save: () => ({ ...pickUi(st, KEEP), place: st.placeId ? store.node(st.placeId)?.name ?? null : null }),
     load(s) {
       putUi(st, s, KEEP);
-      st.placeId = (s.place && store.game && S().allPlaces.find(p => p.name === s.place)?.id) || null;
+      st.placeId = (s.place && screensOf(store.game).find(p => p.name === s.place)?.id) || null;
       lookKey = null;
       if (!el.hidden) render();
     },

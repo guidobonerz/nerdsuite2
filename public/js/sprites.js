@@ -13,8 +13,9 @@
 // only changes the editor.
 
 import { t, tr } from './i18n.js';
+import { video, colorMask, colorValue } from './video.js';
 import {
-  symbols, newId, COLOR_NAMES, UI_DEFAULTS, SPRITE_COLS, SPRITE_ROWS, DEFAULT_SPRITES, builtinCursor,
+  symbols, newId, COLOR_NAMES, UI_DEFAULTS, SPRITE_COLS, SPRITE_ROWS, SPRITE_BLOCK, DEFAULT_SPRITES, builtinCursor,
   cursorHotspot, decodeSprite, encodeSprite, convertSprite, costumeFrame, DEFAULT_ANIM_SPEED, MAX_ANIM_FRAMES,
   costumeSize, MAX_ACTOR_SPRITES, DIRECTIONS, defaultFrame, DEFAULT_IDLE, MAX_IDLE, layerMulticolor, mostLayers, animView,
   mirrorPartner, animPlays, animSequence, ANIM_PLAYS, MAX_VARY,
@@ -37,6 +38,9 @@ import { shadePixels } from './aa.js';
 import { tools, RANGE, rotation, rangeForKey, DRAG_TOOLS, BRUSH_TOOLS, defaultBrush, brushCells, brushMax, brushTools, radiusMax, radiusTools, defaultTools, toolForKey, lineCells, dragCells as dragXY } from './drawtools.js';
 import { paintArea, dragMods, dragTo, curveWaits, followCurve, DRAW_POLY, WAIT_TOOLS, waits, strokeDown, closePolygon, wheelZoom, outlineCells } from './drawtools.js';
 import { keepUi, pick as pickUi, put as putUi } from './uistate.js';
+
+// a colour as the model writes it: a name of the C64's 16, a number beyond them (video.js)
+const cv = k => colorValue(k, COLOR_NAMES);
 
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 // words of the costume syntax that cannot name a frame, layer or animation
@@ -328,7 +332,7 @@ export function createSpriteEditor(el, store, actions, bar) {
   // move - in this frame (the range, the marked frames) or, with the checkbox, in every frame
   function swapSection() {
     const pens = [[2, '§0637'], [1, '§0650'], [3, '§0651']], pal = colors();
-    const swatch = v => h('span', { class: 'swap-swatch', style: { background: PALETTE[pal[v] & 15] } });
+    const swatch = v => h('span', { class: 'swap-swatch', style: { background: PALETTE[pal[v] & colorMask()] } });
     const many = frames().length > 1, all = many && st.swapAll;
     const pairs = [];
     for (let i = 0; i < pens.length; i++) {
@@ -386,8 +390,8 @@ export function createSpriteEditor(el, store, actions, bar) {
     const [w, hh] = costumeSize(c);
     store.mutate(() => {
       const x = costume();
-      const list = Array.from({ length: Math.max(k + 1, x.colors?.length ?? 0) }, (_, i) => x.colors?.[i] ?? COLOR_NAMES[shown[i] ?? bodyColor()]);
-      list[k] = COLOR_NAMES[v];
+      const list = Array.from({ length: Math.max(k + 1, x.colors?.length ?? 0) }, (_, i) => x.colors?.[i] ?? cv(shown[i] ?? bodyColor()));
+      list[k] = cv(v);
       x.colors = list.slice(0, w * hh);
     }, { source: 'sprites' });
     refresh();
@@ -400,8 +404,8 @@ export function createSpriteEditor(el, store, actions, bar) {
     else {
       store.mutate(() => who.forEach(a => {
         const at = a.attrs.find(x => x.key === 'color');
-        if (at) at.values = [COLOR_NAMES[k]];
-        else a.attrs.push({ key: 'color', values: [COLOR_NAMES[k]] });
+        if (at) at.values = [cv(k)];
+        else a.attrs.push({ key: 'color', values: [cv(k)] });
       }), { source: 'sprites' });
     }
     refresh();
@@ -411,8 +415,8 @@ export function createSpriteEditor(el, store, actions, bar) {
   function setColor(key, k) {
     store.mutate(g => {
       const it = g.items.find(x => x.kind === 'color' && x.key === key);
-      if (it) it.value = COLOR_NAMES[k];
-      else insertTop(g, { id: newId(), kind: 'color', key, value: COLOR_NAMES[k] }, [['color'], ['control', 'media', 'platform', 'charset']]);
+      if (it) it.value = cv(k);
+      else insertTop(g, { id: newId(), kind: 'color', key, value: cv(k) }, [['color'], ['control', 'media', 'platform', 'charset']]);
     }, { source: 'sprites' });
     update();
   }
@@ -466,21 +470,23 @@ export function createSpriteEditor(el, store, actions, bar) {
 
   // C64 sprite blocks (.bin): 64 bytes each (63 without the pad byte), a load address before them
   // is dropped. The file does not tell the mode and how many sprites a frame is: the dialog asks
+  // - an Atari's players (adv.js SPRITE_BLOCK of 16 bytes: 16 rows of a byte), one after the other
   async function importBlocks(bytes, name) {
-    let d = bytes.length % 64 === 2 || (bytes.length % 64 && bytes.length % 63 === 2) ? bytes.subarray(2) : bytes;
-    if (d.length % 64 && d.length % 63 === 0) {                   // 63 byte blocks: the pad byte back
+    const c64 = SPRITE_BLOCK === 64, B = SPRITE_BLOCK;
+    let d = !c64 ? bytes : bytes.length % 64 === 2 || (bytes.length % 64 && bytes.length % 63 === 2) ? bytes.subarray(2) : bytes;
+    if (c64 && d.length % 64 && d.length % 63 === 0) {             // 63 byte blocks: the pad byte back
       const n = d.length / 63, out = new Uint8Array(n * 64);
       for (let k = 0; k < n; k++) out.set(d.subarray(k * 63, k * 63 + 63), k * 64);
       d = out;
     }
-    const blocks = Math.floor(d.length / 64);
+    const blocks = Math.floor(d.length / B);
     if (!blocks) throw new Error(tr('§1997', bytes.length));
     const sizes = ['1x1', '2x1', '1x2', '2x2', '3x2', '2x3'].filter(s => s[0] * s[2] <= Math.min(blocks, MAX_ACTOR_SPRITES));
     const v = await promptDialog({
       title: tr('§1008'), icon: 'person', ok: 'Import',
       text: tr('§1998', name, blocks, blocks > 1 ? 's' : ''),
       fields: [
-        { name: 'mode', label: '§1009', radios: [{ value: 'hires', label: '§1010' }, { value: 'mc', label: '§1011' }] },
+        { name: 'mode', label: '§1009', radios: [{ value: 'hires', label: '§1010' }, ...(c64 ? [{ value: 'mc', label: '§1011' }] : [])] },
         { name: 'size', label: '§1012', options: sizes.map(s => ({ value: s, label: s.replace('x', ' × ') })) },
       ],
     });
@@ -488,7 +494,7 @@ export function createSpriteEditor(el, store, actions, bar) {
     const [sw, sh] = v.size.split('x').map(Number), mc = v.mode === 'mc', per = sw * sh;
     const count = Math.min(Math.floor(blocks / per), 255);
     const frames = Array.from({ length: count }, (_, k) => ({ name: `frame${k + 1}`, ...(k ? {} : { default: true }),
-      lines: blocksToArt(d.subarray(k * per * 64, (k + 1) * per * 64), mc, sw, sh) }));
+      lines: blocksToArt(d.subarray(k * per * B, (k + 1) * per * B), mc, sw, sh) }));
     const node = addImported(name, { frames, layers: [], ...(mc ? { multicolor: true } : {}), ...(per > 1 ? { size: [String(sw), String(sh)] } : {}) });
     const rest = blocks - count * per;
     snackbar(tr('§1999', name, node.name, count, count > 1 ? 's' : '', rest ? tr('§2000', rest, rest > 1 ? 's' : '') : ''));
@@ -513,12 +519,12 @@ export function createSpriteEditor(el, store, actions, bar) {
     const layers = [];
     if (layered.length) {
       const first = p.sprites[layered[0][1].find(i => i >= 0)];
-      layers.push({ name: 'overlay', ...(first.multicolor ? { multicolor: true } : { hires: true }), color: COLOR_NAMES[first.color],
+      layers.push({ name: 'overlay', ...(first.multicolor ? { multicolor: true } : { hires: true }), color: cv(first.color),
         frames: layered.map(([k, o]) => ({ name: frames[k].name, lines: blocksToArt(blocks(o.map(i => (i >= 0 ? i : -1))), first.multicolor, sw, sh) })) });
     }
     const used = [...new Set(groups.flat().map(k => p.sprites[k]?.color ?? 0))];
     const parts = sw * sh;
-    const colors = used.length === 1 ? { colors: Array(parts).fill(COLOR_NAMES[used[0]]) } : {};
+    const colors = used.length === 1 ? { colors: Array(parts).fill(cv(used[0])) } : {};
     const shared = spriteColors(store.game);
     let take = false;
     if (mc && (shared[0] !== p.colors.mc1 || shared[1] !== p.colors.mc2)) {
@@ -526,15 +532,15 @@ export function createSpriteEditor(el, store, actions, bar) {
         title: tr('§1692'), icon: 'person', ok: 'Import',
         text: tr('§1697', name, frames.length),
         fields: [{ name: 'shared', label: '§1698', value: 'file', radios: [
-          { value: 'file', label: tr('§1699', COLOR_NAMES[p.colors.mc1], COLOR_NAMES[p.colors.mc2]) },
-          { value: 'game', label: tr('§1700', COLOR_NAMES[shared[0]], COLOR_NAMES[shared[1]]) }] }],
+          { value: 'file', label: tr('§1699', cv(p.colors.mc1), cv(p.colors.mc2)) },
+          { value: 'game', label: tr('§1700', cv(shared[0]), cv(shared[1])) }] }],
       });
       if (!v) return;
       take = v.shared === 'file';
     }
     if (take) { setColor('sprite1', p.colors.mc1); setColor('sprite2', p.colors.mc2); }
     const node = addImported(name, { frames, layers, ...(mc ? { multicolor: true } : {}), ...(parts > 1 ? { size: [String(sw), String(sh)] } : {}), ...colors });
-    const notes = [used.length > 1 ? tr('§1701', used.map(c => COLOR_NAMES[c]).join(', ')) : '', p.anims ? tr('§1702', p.anims) : ''].join('');
+    const notes = [used.length > 1 ? tr('§1701', used.map(c => cv(c)).join(', ')) : '', p.anims ? tr('§1702', p.anims) : ''].join('');
     snackbar(tr('§1694', name, node.name, frames.length, layers.length ? tr('§1703', layered.length) : '', notes));
   }
 
@@ -748,7 +754,7 @@ export function createSpriteEditor(el, store, actions, bar) {
 
   function setLayerColor(k) {
     const name = st.layer;
-    store.mutate(() => { costume().layers.find(l => l.name === name).color = COLOR_NAMES[k]; }, { source: 'sprites' });
+    store.mutate(() => { costume().layers.find(l => l.name === name).color = cv(k); }, { source: 'sprites' });
     refresh();
     update();
   }
@@ -1011,7 +1017,8 @@ export function createSpriteEditor(el, store, actions, bar) {
     if (!ui) return;
     const mc = multicolor(), c = st.hover, l = layer();
     const what = costume() ? ` · frame ${st.frame}${l ? ` · layer ${l.name}` : ''}${frameLayers().length ? ` · ${picked().length} of ${frameLayers().length + 1} selected` : ''}` : '';
-    const mode = (mc ? '§0895' : '§0896') + what;
+    // the size of the machine's sprite (adv.js): the C64's texts, else its own
+    const mode = (SPRITE_COLS === 24 && SPRITE_ROWS === 21 ? (mc ? '§0895' : '§0896') : `player · ${SPRITE_COLS} × ${SPRITE_ROWS} pixels`) + what;
     const marked = costume() && markedFrames(costume());
     const hs = st.target === 'cursor' ? ` · hot spot ${hotspot().join(', ')}${spriteNode('cursor')?.hotspot ? '' : ' (automatic)'}` : '';
     const range = (st.sel ? ` · range ${st.sel.w} × ${st.sel.h}` : '') + (marked ? ` · ${marked.length} frame${marked.length > 1 ? 's' : ''} marked` : '');
@@ -1323,12 +1330,14 @@ export function createSpriteEditor(el, store, actions, bar) {
       { label: '§0636', color: st.bg, active: st.pen === 0, onselect: () => setPen(0),
         tip: tr('§0974', key(0)), onpick: k => { st.bg = k; refresh(); update(); } },
       ...colorRows,
-      { label: '§0650', color: pal[1], active: mc && st.pen === 1, disabled: !mc, onselect: () => setPen(1),
-        tip: mc ? tr('§0915', key(1)) : '§0916',
-        onpick: k => setColor('sprite1', k) },
-      { label: '§0651', color: pal[3], active: mc && st.pen === 3, disabled: !mc, onselect: () => setPen(3),
-        tip: mc ? tr('§0917', key(3)) : '§0918',
-        onpick: k => setColor('sprite2', k) },
+      // the shared colors of the C64's multicolor sprites ($d025, $d026); an Atari player has one color
+      ...(video().cells !== 'vic2' ? [] : [
+        { label: '§0650', color: pal[1], active: mc && st.pen === 1, disabled: !mc, onselect: () => setPen(1),
+          tip: mc ? tr('§0915', key(1)) : '§0916',
+          onpick: k => setColor('sprite1', k) },
+        { label: '§0651', color: pal[3], active: mc && st.pen === 3, disabled: !mc, onselect: () => setPen(3),
+          tip: mc ? tr('§0917', key(3)) : '§0918',
+          onpick: k => setColor('sprite2', k) }]),
     ]);
 
     const playBtn = st.target === 'cursor' ? null : iconButton(st.playing ? 'pause' : 'play_arrow', '§0919', () => { st.playing = !st.playing; update(); });
@@ -1639,7 +1648,8 @@ export function createSpriteEditor(el, store, actions, bar) {
       defaultTools({
         undo: () => store.undo(), redo: () => store.redo(), zoom,
         grid: { on: st.grid, toggle: () => { st.grid = !st.grid; update(); draw(); } },
-        multicolor: { on: mc, toggle: () => setMode(!mc) },
+        // the C64's multicolor sprites ($d025, $d026); the other machines get their sprites with their stages
+        multicolor: video().cells === 'vic2' ? { on: mc, toggle: () => setMode(!mc) } : undefined,
         clear: { tip: '§0945', run: () => apply('clear') },
       }),
       h('span', { class: 'screen-bar__sep' }),
@@ -1672,7 +1682,9 @@ export function createSpriteEditor(el, store, actions, bar) {
     const count = c ? c.frames.length * sw * sh : frames().length;
     return [
       { label: '§1017', name, description: 'yopaca sprite', bytes: () => (c ? costumeToFile(c, consts) : spriteToFile(sprite)) },
-      { label: tr('§1018', count), name: name.replace(/\.spr$/, '.bin'), description: 'C64 sprite data', bytes: blocks },
+      SPRITE_BLOCK === 64 ? { label: tr('§1018', count), name: name.replace(/\.spr$/, '.bin'), description: 'C64 sprite data', bytes: blocks }
+        // an Atari's players: a byte a row, 16 rows a part, part after part (the bytes a program copies into the player memory)
+        : { label: `${count} player part${count > 1 ? 's' : ''} of ${SPRITE_COLS} × ${SPRITE_ROWS} (.bin, a byte a row)`, name: name.replace(/\.spr$/, '.bin'), description: 'Atari player data', bytes: blocks },
       { label: tr('§2005', st.frame), icon: 'wallpaper', name: name.replace(/\.spr$/, `_${st.frame}.png`), type: 'image/png', description: 'PNG picture',
         bytes: () => {
           const cv = pixelCanvas(SPRITE_COLS * sw, SPRITE_ROWS * sh, 4, () => {});

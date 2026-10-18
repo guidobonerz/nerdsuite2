@@ -107,10 +107,14 @@ export function setCharsetBytes(key, data) {
 export const isCharsetDirty = key => dirty.has(key);
 export const dirtyCharsets = () => [...dirty];
 
+// an Atari font (.fnt) is 1024 bytes: its 128 characters (bit 7 of a code inverts or picks a colour)
+export const FONT_SIZE = 1024;
+export const fileSizeOf = key => (/\.fnt$/i.test(key) ? FONT_SIZE : CHARSET_SIZE);
+
 export async function saveCharset(key) {
-  writeBinary(key, cache.get(key));
+  writeBinary(key, cache.get(key).subarray(0, fileSizeOf(key)));
   dirty.delete(key);
-  sizes.set(key, CHARSET_SIZE);
+  sizes.set(key, fileSizeOf(key));
   notify();                                  // the char editor drops the mark of the changed file
 }
 

@@ -128,7 +128,7 @@ export default {
   '§0865': 'Recent',
   '§0866': 'Objects and walkbox',
   '§0867': 'Camera window',
-  '§0868': 'No places yet',
+  '§0868': 'No screens yet',
   '§0869': 'Camera preview',
   '§0870': 'Play soft scroll',
   '§0871': 'Hot spot (H) - the pixel that points, right click: automatic',
