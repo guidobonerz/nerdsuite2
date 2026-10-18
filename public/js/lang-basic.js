@@ -36,7 +36,7 @@ export function keywords(dialect = 'v2') {
 
 export function controlCodes(dialect = 'v2') {
   if (dialect === 'atari' || dialect === 'turbo') return ATASCII_CODES;
-  if (dialect === 'loco') return [];
+  if (!COMMODORE.has(dialect)) return [];          // Locomotive, ZX81, TRS-80, BBC BASIC: {$xx} only
   const c = petscii.CONTROL_CODES ?? {};
   const list = Array.isArray(c) ? c : Object.entries(c).map(([name, v]) => ({ name, code: typeof v === 'number' ? v : v?.code, desc: v?.desc }));
   return list.map(x => (typeof x === 'string' ? { name: x } : x)).filter(x => x.name);
@@ -210,7 +210,7 @@ export function lineTokens(line, dialect = 'v2', { labels = null } = {}) {
   let data = false;
   while (k < line.length) {
     const ch = line[k];
-    if (ch === "'" && dialect === 'loco') { push('tok-comment', line.slice(k)); break; }   // Locomotive: ' is REM
+    if (ch === "'" && (dialect === 'loco' || dialect === 'trs80')) { push('tok-comment', line.slice(k)); break; }   // Locomotive, Level II: ' is REM
     if (ch === '"') {
       const end = line.indexOf('"', k + 1);
       const str = end < 0 ? line.slice(k) : line.slice(k, end + 1);

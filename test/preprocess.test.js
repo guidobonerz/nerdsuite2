@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { preprocess, activeLines, embedData, parseDefines } from '../public/js/basic/preprocess.js';
+import { preprocess, activeLines, embedData, parseDefines, resolveEmbeds } from '../public/js/basic/preprocess.js';
 
 const texts = r => r.lines.map(l => l.text);
 
@@ -45,6 +45,16 @@ test('@embed: DATA lines with the bytes of a file, numbered on, or in the label 
   const l = preprocess('  data @embed binary "data.bin", 1, 3', { readFile, labelMode: true });
   assert.deepEqual(texts(l), ['  data 2,3,4']);
   assert.match(preprocess('10 data @embed charset "gfx/chars.chr"\n11 end', { readFile }).errors[0].msg, /its 128 DATA lines need the numbers 10-137, line 11 comes first/);
+});
+
+test('resolveEmbeds: the source with its @embed lines as DATA lines, the directives kept', () => {
+  const src = '#define debug\n@if debug\n10 data @embed binary "data.bin", 1, 3\n@end\n100 end';
+  const r = resolveEmbeds(src, { readFile });
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.count, 1);
+  assert.equal(r.text, '#define debug\n@if debug\n10 data 2,3,4\n@end\n100 end');
+  assert.equal(resolveEmbeds('  data @embed binary "data.bin"', { readFile, labelMode: true }).text, '  data 1,2,3,4,5');
+  assert.match(resolveEmbeds('10 data @embed binary "none.bin"', { readFile }).errors[0].msg, /there is no none\.bin/);
 });
 
 test('@embed sprite: a frame of the sprite editor by its name or index', () => {

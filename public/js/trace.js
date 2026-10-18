@@ -13,6 +13,7 @@
 import { h, iconButton, button, slider, segmented, field, snackbar, section, confirmRemove } from './pui.js';
 import { hasFile, readBinary, readText, writeBinary, removeFile, onProjectOpen, REFERENCE_DIR, REFERENCE_EXT } from './project.js';
 import { tr } from './i18n.js';
+import { imageType, imageExt } from './ybm.js';
 
 const INDEX = REFERENCE_DIR + 'references.json';
 const MAX_SIDE = 640;                     // the long side of a stored image, in pixels
@@ -156,6 +157,36 @@ export function referenceLayer({ key, area, redraw, rerender, behind = true }) {
     set({ scale, x: Math.round((a.w - bmp.width * scale) / 2), y: Math.round((a.h - bmp.height * scale) / 2) });
   }
 
+  // the reference as it is, for a file that takes it along (ybm.js): { bytes, type, reference }
+  // or null without one
+  function bundle() {
+    const r = current();
+    if (!r || !hasFile(r.image)) return null;
+    const type = imageType(r.image.split('.').pop());
+    if (!type) return null;
+    const { x, y, scale, opacity, front, shown } = r;
+    return { bytes: readBinary(r.image), type, reference: { x, y, scale, opacity, front, shown } };
+  }
+
+  // the reference of such a file: the image stored for the key, placed as the file says (null:
+  // the key keeps none). No undo step, like every change of the reference
+  async function restore(got) {
+    const k = key();
+    if (!k) return;
+    const old = entries()[k];
+    if (!got) {
+      if (old) { delete entries()[k]; dropImage(old.image); changed(); }
+      return;
+    }
+    const path = `${REFERENCE_DIR}${slug(k)}.${imageExt(got.type)}`;
+    writeBinary(path, got.bytes, REFERENCE_EXT);
+    images.delete(path);
+    try { images.set(path, await createImageBitmap(new Blob([got.bytes], { type: got.type }))); } catch { images.delete(path); }
+    entries()[k] = { image: path, ...got.reference };
+    if (old && old.image !== path) dropImage(old.image);
+    changed();
+  }
+
   // a key that is renamed (a sprite, a picture saved under another path): copy keeps the old one
   function rename(from, to, { copy = false } = {}) {
     const all = entries();
@@ -254,5 +285,5 @@ export function referenceLayer({ key, area, redraw, rerender, behind = true }) {
       () => set({ shown: !r.shown }), 'md-icon-button--sm'));
   }
 
-  return { draw, panel, attach, rename, importFile, current };
+  return { draw, panel, attach, rename, importFile, current, bundle, restore };
 }

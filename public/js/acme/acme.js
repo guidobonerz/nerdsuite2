@@ -8,6 +8,8 @@
  *   disassemble(bytes, addr, cpu) -> [{ addr, bytes, text }]
  */
 
+import { codeP } from '../zx81.js';
+
 const MAX_PASSES = 24;
 const MAX_DEPTH = 64;
 const MAX_ERRORS = 100;
@@ -241,8 +243,8 @@ export const CPU_ALIASES = {
 };
 CPU_ALIASES.z80 = 'z80';
 const UNSUPPORTED_CPUS = new Set(['65ce02', '4502', 'm65', 'c64dtv2']);
-/** Output formats accepted by !to and opts.format. */
-export const OUTPUT_FORMATS = ['cbm', 'plain', 'apple', 'xex', 'amsdos'];
+/** Output formats accepted by !to and opts.format (zx81: a .p file, trs80: a /CMD file). */
+export const OUTPUT_FORMATS = ['cbm', 'plain', 'apple', 'xex', 'amsdos', 'zx81', 'trs80'];
 const ALL_MNEMONICS = new Set();
 for (const t of Object.values(CPU_TABLES)) for (const m of Object.keys(t)) ALL_MNEMONICS.add(m);
 
@@ -2023,6 +2025,23 @@ class Asm {
     return Uint8Array.from(out);
   }
 
+  /** TRS-80 /CMD file: a load block ($01, length + 2, address) per 252 bytes of each written area, then the entry ($02 $02 address). */
+  buildTrs80() {
+    const out = [];
+    let a = this.minAddr;
+    while (a <= this.maxAddr) {
+      if (!this.written[a]) { a++; continue; }
+      let e = a;
+      while (e + 1 <= this.maxAddr && this.written[e + 1] && e + 1 - a < 252) e++;
+      out.push(0x01, e - a + 3, a & 255, a >> 8);
+      for (let i = a; i <= e; i++) out.push(this.mem[i]);
+      a = e + 1;
+    }
+    const exec = this.runAddr ?? this.minAddr;
+    out.push(0x02, 0x02, exec & 255, (exec >> 8) & 255);
+    return Uint8Array.from(out);
+  }
+
   /** Amstrad CPC AMSDOS binary file: 128-byte header + data. */
   buildAmsdos(data, start) {
     const h = new Uint8Array(128);
@@ -2063,6 +2082,11 @@ class Asm {
         for (let i = 0; i < len; i++) data[i] = this.written[start + i] ? this.mem[start + i] : this.initmem;
         if (format === 'xex') output = this.buildXex();
         else if (format === 'amsdos') output = this.buildAmsdos(data, start);
+        else if (format === 'trs80') output = this.buildTrs80();
+        else if (format === 'zx81') {
+          // the code in the REM line of a .p file: *= $4082 (zx81.js)
+          try { output = codeP(data, start, this.runAddr ?? start); } catch (e) { errors.push({ file: this.main, line: null, msg: e.message }); }
+        }
         else {
           const hdr = format === 'cbm' ? [start & 255, start >> 8] : format === 'apple' ? [start & 255, start >> 8, len & 255, len >> 8] : [];
           output = new Uint8Array(hdr.length + len);

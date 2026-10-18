@@ -110,6 +110,46 @@ func TestNesSnesPlans(t *testing.T) {
 	planFails(t, runRequest{Platform: "snes", Emulator: "snes9x", Name: "x", Data: make([]byte, 100), Format: "sfc"}, `32K`)
 }
 
+func TestZx81Trs80Plans(t *testing.T) {
+	p := mustPlan(t, runRequest{Platform: "zx81", Emulator: "eightyone", Name: "demo", Data: make([]byte, 200), Format: "zx81-p"})
+	matches(t, "eightyone file", p.File, `demo\.p$`)
+	eq(t, "eightyone args", p.Args, []string{p.File})
+	z := mustPlan(t, runRequest{Platform: "zx81", Emulator: "zesarux", Name: "demo", Data: make([]byte, 200), Format: "zx81-p"})
+	eq(t, "zesarux args", z.Args, []string{"--machine", "ZX81", z.File})
+	planFails(t, runRequest{Platform: "zx81", Emulator: "eightyone", Name: "x", Data: []byte{1}, Format: "zx81-p"}, `no \.p file`)
+	g := mustPlan(t, runRequest{Platform: "trs80", Emulator: "trs80gp", Name: "demo", Data: []byte{2, 2, 0, 0x70}, Format: "trs80-cmd", Machine: "3"})
+	eq(t, "trs80gp args", g.Args, []string{"-m3", g.File})
+	matches(t, "trs80gp file", g.File, `DEMO\.CMD$`)
+	b := mustPlan(t, runRequest{Platform: "trs80", Emulator: "trs80gp", Name: "demo", Data: []byte("10 CLS\r"), Format: "trs80-ascii"})
+	eq(t, "trs80gp listing", b.Args, []string{"-m1", b.File})
+	m := mustPlan(t, runRequest{Platform: "trs80", Emulator: "mame", Name: "demo", Data: []byte{2, 2, 0, 0x70}, Format: "trs80-cmd"})
+	eq(t, "mame trs80", m.Args[:3], []string{"trs80l2", "-quik", m.File})
+	planFails(t, runRequest{Platform: "trs80", Emulator: "mame", Name: "x", Data: []byte("10 CLS"), Format: "trs80-ascii"}, `trs80gp`)
+}
+
+func TestBbcPlansAndSsd(t *testing.T) {
+	p := mustPlan(t, runRequest{Platform: "bbc", Emulator: "b2", Name: "my-demo", Data: []byte{0x60}, Format: "bbc-bin", Load: intp(0x2000), Exec: intp(0x2001)})
+	eq(t, "b2 args", p.Args, []string{"-0", p.File, "-b"})
+	ssd := p.Files[0].Data
+	eq(t, "size", len(ssd), 400*256)
+	cat0, cat1 := ssd[0:256], ssd[256:512]
+	eq(t, "title", string(cat0[0:8]), "MYDEMO  ")
+	eq(t, "entries", cat1[5], byte(16))
+	eq(t, "boot option, sectors", []byte{cat1[6], cat1[7]}, []byte{0x31, 0x90})
+	// the last file first: MYDEMO at sector 3, !BOOT at sector 2
+	eq(t, "names", string(cat0[8:24]), "MYDEMO $!BOOT  $")
+	eq(t, "MYDEMO", cat1[8:16], []byte{0x00, 0x20, 0x01, 0x20, 1, 0, 0xcc, 3})
+	eq(t, "!BOOT", cat1[16:24], []byte{0, 0, 0, 0, 12, 0, 0, 2})
+	eq(t, "!BOOT text", string(ssd[512:524]), "*RUN MYDEMO\r")
+	eq(t, "code", ssd[768], byte(0x60))
+	l := mustPlan(t, runRequest{Platform: "bbc", Emulator: "beebem", Name: "demo", Data: []byte("10 PRINT 1\n"), Format: "bbc-ascii"})
+	eq(t, "beebem args", l.Args, []string{l.File})
+	eq(t, "listing in !BOOT", string(l.Files[0].Data[512:527]), "10 PRINT 1\rRUN\r")
+	m := mustPlan(t, runRequest{Platform: "bbc", Emulator: "mame", Name: "demo", Data: []byte("10 PRINT 1"), Format: "bbc-ascii"})
+	eq(t, "mame bbc", m.Args[:3], []string{"bbcb", "-flop1", m.File})
+	planFails(t, runRequest{Platform: "bbc", Emulator: "beebem", Name: "x", Data: []byte{1}, Format: "bbc-bin"}, `load address`)
+}
+
 func TestFormatCommandQuotes(t *testing.T) {
 	eq(t, "command", core.FormatCommand("a b.exe", []string{"/x", `ENTER "H:A"~`}), `"a b.exe" /x "ENTER \"H:A\"~"`)
 }
@@ -131,7 +171,7 @@ func TestStatusAndRunChecks(t *testing.T) {
 			t.Errorf("%s/%s: available %v, exe %v", e.ID, e.Platform, e.Available, e.Exe)
 		}
 	}
-	for _, id := range []string{"altirra/atari", "atari800/atari", "winape/cpc", "caprice/cpc", "mame/cpc", "stella/vcs", "mame/vcs", "mesen/nes", "fceux/nes", "mesen/snes", "bsnes/snes", "snes9x/snes"} {
+	for _, id := range []string{"altirra/atari", "atari800/atari", "winape/cpc", "caprice/cpc", "mame/cpc", "stella/vcs", "mame/vcs", "mesen/nes", "fceux/nes", "mesen/snes", "bsnes/snes", "snes9x/snes", "eightyone/zx81", "zesarux/zx81", "trs80gp/trs80", "mame/trs80", "beebem/bbc", "b2/bbc", "mame/bbc"} {
 		if !ids[id] {
 			t.Errorf("status lacks %s", id)
 		}
@@ -160,12 +200,12 @@ func TestEmulatorDefinitions(t *testing.T) {
 			t.Errorf("%s: name %q", d.ID, d.Name)
 		}
 	}
-	eq(t, "order", order, []string{"altirra", "atari800", "winape", "caprice", "stella", "mesen", "fceux", "nestopia", "bsnes", "snes9x", "mame"})
+	eq(t, "order", order, []string{"altirra", "atari800", "winape", "caprice", "stella", "mesen", "fceux", "nestopia", "bsnes", "snes9x", "eightyone", "zesarux", "trs80gp", "beebem", "b2", "mame"})
 	var platforms []string
 	for _, p := range Preferred {
 		platforms = append(platforms, p.ID)
 	}
-	eq(t, "platforms", platforms, []string{"atari", "cpc", "vcs", "nes", "snes"})
+	eq(t, "platforms", platforms, []string{"atari", "cpc", "vcs", "nes", "snes", "zx81", "trs80", "bbc"})
 }
 
 func TestHTTPRoutes(t *testing.T) {
@@ -190,7 +230,7 @@ func TestHTTPRoutes(t *testing.T) {
 	if code, v := do("POST", "/api/emu/run", "{"); code != 400 || v["error"] != "invalid JSON body" {
 		t.Errorf("bad JSON: %d %v", code, v)
 	}
-	if code, v := do("POST", "/api/emu/run", `{"platform":"zx"}`); code != 400 || v["error"] != "unknown platform 'zx' (one of atari, cpc, vcs, nes, snes)" {
+	if code, v := do("POST", "/api/emu/run", `{"platform":"zx"}`); code != 400 || v["error"] != "unknown platform 'zx' (one of atari, cpc, vcs, nes, snes, zx81, trs80, bbc)" {
 		t.Errorf("unknown platform: %d %v", code, v)
 	}
 	if code, v := do("POST", "/api/emu/run", `{"platform":"atari","format":"xex","data":5}`); code != 400 || v["error"] != "'data' must be a base64 string" {

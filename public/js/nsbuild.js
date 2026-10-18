@@ -69,7 +69,7 @@ export function assemblerFiles(over = new Map()) {
 }
 
 const baseName = p => p.split('/').pop().replace(/\.[^.]*$/, '');
-const BASIC_EXT = { 'atascii-lst': 'lst', 'cpc-ascii': 'bas' };
+const BASIC_EXT = { 'atascii-lst': 'lst', 'cpc-ascii': 'bas', 'zx81-p': 'p', 'trs80-ascii': 'bas', 'bbc-ascii': 'bas' };
 
 // build a program: { ok, kind: 'asm' | 'basic', main, name, file: { name, bytes, format }, prg (a cbm
 //   .prg: a program VICE loads), start, exec, errors: [{ file, line, col, msg, severity }], symbols,

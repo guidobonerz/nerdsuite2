@@ -29,6 +29,8 @@ const KEY = 'nerdsuite.disasm';
 const COLOR_NAMES = ['black', 'white', 'red', 'cyan', 'purple', 'green', 'blue', 'yellow', 'orange', 'brown', 'light red', 'dark grey', 'grey', 'light green', 'light blue', 'light grey'];
 // the keys that mark the selection
 const MARK_KEYS = { c: 'code', d: 'bytes', w: 'words', t: 'text', p: 'petscii', s: 'screen', h: 'chars', r: 'sprites', m: 'bitmap', i: 'tiles', u: 'none' };
+// the groups of the preview offered at once (w x h); any other: w×h
+const GROUPS = [[1, 1], [2, 1], [1, 2], [2, 2]];
 // the preview: what a thing is, and its size in bytes
 const PREVIEW = {
   chars: { name: 'Chars', w: 8, h: 8, size: 8, cols: 16, many: 256 },
@@ -47,7 +49,7 @@ export function createDisasmView(el, bar, hooks = {}) {
     result: null, cursor: 0, anchor: null, focus: 'dis',
     width: 16, text: 'petscii', markType: 'bytes',
     scrollDis: 0, scrollHex: 0, back: [], undo: [], redo: [],
-    preview: { mode: 'chars', mc: false, colors: [0, 1, 12, 15], zoom: 2, inline: true },
+    preview: { mode: 'chars', mc: false, colors: [0, 1, 12, 15], zoom: 2, inline: true, group: { w: 1, h: 1, order: 'across', custom: false } },
   };
   try { const kept = JSON.parse(localStorage.getItem(KEY) ?? '{}'); Object.assign(st, { width: kept.width ?? 16, text: kept.text ?? 'petscii', markType: kept.markType ?? 'bytes', preview: { ...st.preview, ...kept.preview } }); } catch { /* none */ }
   const version = signal(0);
@@ -507,6 +509,8 @@ export function createDisasmView(el, bar, hooks = {}) {
     const [a, b] = previewRange(), bytes = st.data.subarray(a, b + 1);
     const count = Math.ceil(bytes.length / P.size);
     const set = change => { Object.assign(st.preview, change); persist(); update(); };
+    const grp = p.group ?? { w: 1, h: 1, order: 'across' }, G = groupOf(p);
+    const groupKey = !grp.custom && GROUPS.some(([w, gh]) => w === G.w && gh === G.h) ? `${G.w}x${G.h}` : 'custom';
     const colorSelect = (k, label) => select({ label, dense: true, value: String(p.colors[k]), cls: 'ns-dis__color',
       options: COLOR_NAMES.map((n, c) => ({ value: String(c), label: `${c} ${n}` })), onchange: v => { const colors = [...p.colors]; colors[k] = Number(v); set({ colors }); } });
     return section('Preview', h('div', { class: 'ns-dis__preview' },
@@ -515,12 +519,23 @@ export function createDisasmView(el, bar, hooks = {}) {
       h('div', { class: 'ns-dis__preview-opts' },
         !P.pens && checkbox('Multicolor', p.mc, on => set({ mc: on })),
         segmented([1, 2, 3, 4].map(z => ({ value: String(z), label: `${z}×` })), String(p.zoom), v => set({ zoom: Number(v) }))),
+      // the group: chars, sprites or tiles side by side as one (a tile of 2x2 chars, a sprite of 2x1)
+      p.mode !== 'bitmap' && h('div', { class: 'ns-dis__group' },
+        h('span', { class: 'ns-dis__group-label' }, 'Group'),
+        segmented([...GROUPS.map(([w, gh]) => ({ value: `${w}x${gh}`, label: `${w}×${gh}` })), { value: 'custom', label: 'w×h' }], groupKey,
+          v => set({ group: v === 'custom' ? { ...grp, custom: true } : { ...grp, w: Number(v[0]), h: Number(v[2]), custom: false } })),
+        groupKey === 'custom' && h('div', { class: 'ns-dis__group-size' },
+          field({ label: 'w', type: 'number', dense: true, min: 1, max: 8, value: String(G.w), onchange: v => set({ group: { ...grp, w: Math.max(1, Math.min(8, Number(v) || 1)) } }) }),
+          h('span', {}, '×'),
+          field({ label: 'h', type: 'number', dense: true, min: 1, max: 8, value: String(G.h), onchange: v => set({ group: { ...grp, h: Math.max(1, Math.min(8, Number(v) || 1)) } }) })),
+        G.w * G.h > 1 && h('span', { 'data-tip': 'The order of the things in a group: left to right, then the next row - or top to bottom, then the next column' },
+          segmented([{ value: 'across', label: 'Across' }, { value: 'down', label: 'Down' }], G.down ? 'down' : 'across', v => set({ group: { ...grp, order: v } })))),
       h('div', { class: 'ns-dis__colors' },
         colorSelect(0, P.pens ? 'Pen 0' : 'Background'), (p.mc || P.pens) && colorSelect(1, P.pens ? 'Pen 1' : 'Bits 01'),
         (p.mc || P.pens) && colorSelect(2, P.pens ? 'Pen 2' : 'Bits 10'), colorSelect(3, P.pens ? 'Pen 3' : p.mc ? 'Bits 11' : 'Pixels')),
       h('div', { class: 'ns-dis__canvas' }, h('canvas', { ref: cv => { if (cv) drawPreview(cv, bytes, p); } })),
       h('div', { class: 'section__hint', 'data-i18n': 'off' },
-        `${count} ${{ chars: 'char', sprites: 'sprite', bitmap: 'bitmap' }[p.mode] ?? 'tile'}${count === 1 ? '' : 's'} from $${hex4(addr(a))} (${bytes.length} bytes) · ${st.anchor != null ? 'the selection' : 'from the cursor on'}${P.pens === 16 ? ' · pens 4-15: the C64 colors' : ''}`),
+        `${count} ${{ chars: 'char', sprites: 'sprite', bitmap: 'bitmap' }[p.mode] ?? 'tile'}${count === 1 ? '' : 's'}${G.w * G.h > 1 ? ` in ${Math.ceil(count / (G.w * G.h))} group${Math.ceil(count / (G.w * G.h)) === 1 ? '' : 's'} of ${G.w}×${G.h}` : ''} from $${hex4(addr(a))} (${bytes.length} bytes) · ${st.anchor != null ? 'the selection' : 'from the cursor on'}${P.pens === 16 ? ' · pens 4-15: the C64 colors' : ''}`),
       button(`Mark as ${typeName(P.type ?? p.mode).toLowerCase()}`, { icon: 'data_object', variant: 'tonal', disabled: !bytes.length,
         onclick: () => mark(P.type ?? p.mode, [a, b]) })));
   }
@@ -612,15 +627,26 @@ function drawRow(cv, bytes, { mc, colors }, px) {
 
 const RGB = PALETTE.map(c => [1, 3, 5].map(k => parseInt(c.slice(k, k + 2), 16)));
 
-// the bytes as chars, sprites or a bitmap of the C64: hires or multicolor, with a gap between the things
-export function drawPreview(cv, bytes, { mode, mc, colors, zoom }) {
+// the group of a preview: w x h things as one (2x2 chars: a tile of 16 x 16 pixels, 2x1 sprites: 48 x 21);
+// not for a bitmap
+export const groupOf = p => (p.mode === 'bitmap' ? { w: 1, h: 1, down: false } : {
+  w: Math.max(1, Math.min(8, p.group?.w ?? 1)), h: Math.max(1, Math.min(8, p.group?.h ?? 1)), down: p.group?.order === 'down' });
+
+// the bytes as chars, sprites or a bitmap of the C64: hires or multicolor, with a gap between the things -
+// or between the groups of them: the things of a group side by side, across (left to right, then the next
+// row) or down (top to bottom, then the next column)
+export function drawPreview(cv, bytes, p) {
+  const { mode, mc, colors, zoom } = p;
   const P = PREVIEW[mode];
   const count = Math.max(1, Math.ceil(bytes.length / P.size));
   const gap = mode === 'bitmap' ? 0 : 1;
-  const cols = Math.min(P.cols, count);
-  const rowsOf = mode === 'bitmap' ? 1 : Math.ceil(count / cols);
+  const G = groupOf(p), per = G.w * G.h;
+  const groups = Math.ceil(count / per);
+  const cols = Math.min(Math.max(1, Math.floor(P.cols / G.w)), groups);
+  const rowsOf = mode === 'bitmap' ? 1 : Math.ceil(groups / cols);
   const bh = mode === 'bitmap' ? Math.max(8, Math.ceil(bytes.length / 320) * 8) : P.h;
-  const W = cols * (P.w + gap) - gap, H = rowsOf * (bh + gap) - gap;
+  const GW = G.w * P.w, GH = G.h * bh;
+  const W = cols * (GW + gap) - gap, H = rowsOf * (GH + gap) - gap;
   cv.width = W; cv.height = H;
   cv.style.width = `${W * zoom}px`;
   const ctx = cv.getContext('2d');
@@ -628,7 +654,9 @@ export function drawPreview(cv, bytes, { mode, mc, colors, zoom }) {
   const px = img.data;
   const pens = P.pens ? [colors[0], colors[1], colors[2], colors[3], ...[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]] : mc ? [colors[0], colors[1], colors[2], colors[3]] : [colors[0], colors[3]];
   for (let n = 0; n < count; n++) {
-    const ox = (n % cols) * (P.w + gap), oy = Math.floor(n / cols) * (bh + gap);
+    const g = Math.floor(n / per), k = n % per;
+    const kx = G.down ? Math.floor(k / G.h) : k % G.w, ky = G.down ? k % G.h : Math.floor(k / G.w);
+    const ox = (g % cols) * (GW + gap) + kx * P.w, oy = Math.floor(g / cols) * (GH + gap) + ky * bh;
     for (let y = 0; y < bh; y++) for (let x = 0; x < P.w; x++) {
       let at;
       if (P.pens) at = n * P.size;

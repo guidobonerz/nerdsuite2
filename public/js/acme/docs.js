@@ -213,7 +213,7 @@ const po = (names, syntax, desc) => names.map(n => ({ name: '!' + n, syntax: syn
 
 /** Every supported pseudo opcode including aliases. */
 export const PSEUDO_OPS = [
-  ...po(['to'], '$ "file", cbm|plain|apple|xex|amsdos', 'Set output file name and format (cbm: 2-byte load address, xex: Atari, amsdos: CPC)'),
+  ...po(['to'], '$ "file", cbm|plain|apple|xex|amsdos|zx81|trs80', 'Set output file name and format (cbm: 2-byte load address, xex: Atari, amsdos: CPC, zx81: a .p file with the code in a REM line at $4082, trs80: a TRS-80 /CMD file)'),
   ...po(['byte', 'by', '8', '08'], '$ value [, value ...]', 'Insert 8-bit values'),
   ...po(['word', 'wo', '16', 'le16'], '$ value [, value ...]', 'Insert 16-bit values, little endian'),
   ...po(['be16'], '$ value [, value ...]', 'Insert 16-bit values, big endian'),
@@ -256,7 +256,7 @@ export const PSEUDO_OPS = [
   ...po(['warn'], '$ "message" [, value ...]', 'Output a warning'),
   ...po(['error'], '$ "message" [, value ...]', 'Output an error'),
   ...po(['serious'], '$ "message" [, value ...]', 'Output an error and stop assembly'),
-  ...po(['run'], '$ address', 'nerdsuite extension: entry point (xex RUNAD, amsdos exec address, result.exec)'),
+  ...po(['run'], '$ address', 'nerdsuite extension: entry point (xex RUNAD, amsdos exec address, the RAND USR of zx81, the entry of trs80, result.exec)'),
   ...po(['init'], '$ address', 'nerdsuite extension: xex INITAD segment address'),
   ...po(['endoffile', 'eof'], '$', 'Stop assembling the current source file'),
   ...po(['address', 'addr'], '$ { block }  |  $ symbol = value', 'Mark symbol definitions as addresses'),

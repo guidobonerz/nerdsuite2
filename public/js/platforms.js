@@ -6,7 +6,9 @@
 //   basic      the BASIC dialects of the machine (basic/dialects.js), the first is the default
 //   format     the output of the assembler: cbm (a .prg with its load address), xex (an Atari binary
 //              load file), amsdos (a CPC binary with its header), plain (a cartridge image: the .a26 of
-//              the VCS, the .nes of the NES with its iNES header, the LoROM .sfc of the SNES)
+//              the VCS, the .nes of the NES with its iNES header, the LoROM .sfc of the SNES; the code
+//              of the BBC Micro, *RUN from a disc), zx81 (a .p file: the code in a REM line, zx81.js),
+//              trs80 (a TRS-80 /CMD file)
 //   start      where a new assembler program starts; basicStart: the BASIC area (a SYS line)
 //   emulator   { kind: 'vice', machine } - run and debug in VICE (the binary monitor);
 //              { kind: 'emu', platform }  - run in Altirra, WinAPE, Stella … (backend/emu)
@@ -17,6 +19,9 @@ export const FAMILIES = [
   { id: 'atari', name: 'Atari', desc: '6502 · ANTIC/GTIA, TIA · Atari BASIC · run in Altirra or Stella' },
   { id: 'amstrad', name: 'Amstrad / Schneider', desc: 'Z80 · Gate Array · Locomotive BASIC · run in WinAPE' },
   { id: 'nintendo', name: 'Nintendo', desc: '6502 (2A03) and 65816 · PPU, APU · run in Mesen, FCEUX, bsnes or Snes9x' },
+  { id: 'sinclair', name: 'Sinclair', desc: 'Z80 · ZX81 BASIC · .p files · run in EightyOne or ZEsarUX' },
+  { id: 'tandy', name: 'Tandy / Radio Shack', desc: 'Z80 · Level II BASIC · /CMD files · run in trs80gp or MAME' },
+  { id: 'acorn', name: 'Acorn', desc: '6502 · BBC BASIC · .ssd discs · run in BeebEm, b2 or MAME' },
 ];
 
 export const PLATFORMS = [
@@ -44,6 +49,14 @@ export const PLATFORMS = [
     start: 0xc000, basicStart: null, screen: null, border: null, emulator: { kind: 'emu', platform: 'nes' } },
   { id: 'snes', family: 'nintendo', name: 'Super Nintendo (SNES)', short: 'SNES', cpu: '65816', cpus: ['65816'], basic: [], format: 'plain', ext: 'sfc',
     start: 0x8000, basicStart: null, screen: null, border: null, emulator: { kind: 'emu', platform: 'snes' } },
+  { id: 'zx81', family: 'sinclair', name: 'Sinclair ZX81 (16K)', short: 'ZX81', cpu: 'z80', cpus: ['z80'], basic: ['zx81'], format: 'zx81', ext: 'p',
+    start: 0x4082, basicStart: null, screen: null, border: null, emulator: { kind: 'emu', platform: 'zx81' } },
+  { id: 'trs80', family: 'tandy', name: 'TRS-80 Model I (Level II, 48K)', short: 'TRS-80', cpu: 'z80', cpus: ['z80'], basic: ['trs80'], format: 'trs80', ext: 'cmd',
+    start: 0x7000, basicStart: null, screen: 0x3c00, border: null, emulator: { kind: 'emu', platform: 'trs80', model: '1' } },
+  { id: 'trs80m3', family: 'tandy', name: 'TRS-80 Model III (48K)', short: 'TRS-80 M3', cpu: 'z80', cpus: ['z80'], basic: ['trs80'], format: 'trs80', ext: 'cmd',
+    start: 0x7000, basicStart: null, screen: 0x3c00, border: null, emulator: { kind: 'emu', platform: 'trs80', model: '3' } },
+  { id: 'bbcb', family: 'acorn', name: 'BBC Micro Model B', short: 'BBC B', cpu: '6502', cpus: ['6502'], basic: ['bbc'], format: 'plain', ext: 'bin',
+    start: 0x2000, basicStart: null, screen: 0x7c00, border: null, emulator: { kind: 'emu', platform: 'bbc', model: 'bbcb' } },
 ];
 
 export const platformOf = id => PLATFORMS.find(p => p.id === id) ?? PLATFORMS[0];
@@ -285,6 +298,76 @@ irq:    rti
         !word 0, 0, irq, 0, irq, nmi, reset, irq
 `;
   }
+  if (p.id === 'zx81') {
+    return `${head}
+; the code is in the line 1 REM of the .p file, 2 RAND USR ${p.start} starts it
+PRINT_A = $10                           ; RST $10: print the character in A (the ZX81 character set)
+
+*= ${hex(p.start)}
+start:
+        ld b, 64
+        xor a
+loop:   push af
+        push bc
+        rst PRINT_A                     ; the 64 characters of the ZX81
+        pop bc
+        pop af
+        inc a
+        djnz loop
+        ret                             ; back to BASIC
+
+!run start
+`;
+  }
+  if (p.family === 'tandy') {
+    return `${head}
+SCREEN = ${hex(p.screen)}                       ; the screen: 16 lines of 64 characters
+
+*= ${hex(p.start)}
+start:
+        ld hl, SCREEN
+        ld de, SCREEN + 1
+        ld bc, 1023
+        ld (hl), ' '
+        ldir                            ; clear the screen
+        ld hl, text
+        ld de, SCREEN + 7 * 64 + 21
+copy:   ld a, (hl)
+        or a
+        jr z, done
+        ld (de), a
+        inc hl
+        inc de
+        jr copy
+done:   jr done
+
+text:   !text "HELLO FROM NERDSUITE!", 0
+
+!run start                              ; the entry of the /CMD file
+`;
+  }
+  if (p.family === 'acorn') {
+    return `${head}
+; *RUN from the disc the build makes (!BOOT runs it)
+OSWRCH = $ffee                          ; the MOS: print the character in A
+OSNEWL = $ffe7                          ; a new line
+
+*= ${hex(p.start)}
+start:
+        ldx #0
+loop:   lda text,x
+        beq done
+        jsr OSWRCH
+        inx
+        bne loop
+done:   jsr OSNEWL
+        rts                             ; back to BASIC
+
+text:   !text "Hello from nerdsuite!", 0
+
+!run start
+`;
+  }
   // the CPC: CALL &4000 from BASIC, or RUN"MAIN with the exec address of the header
   return `${head}
 TXT_OUTPUT = $bb5a                      ; the firmware: print the character in A
@@ -320,6 +403,9 @@ text:   !text "Hello from nerdsuite!", 13, 10, 0
 export function starterBasic(p, dialect) {
   switch (dialect) {
     case 'atari': case 'turbo': return '10 REM NERDSUITE DEMO IN ATARI BASIC\n20 GRAPHICS 0\n30 PRINT "HELLO FROM NERDSUITE!"\n40 FOR I=0 TO 255:SETCOLOR 2,I/16,I-INT(I/16)*16:NEXT I\n50 GOTO 40\n';
+    case 'zx81': return '10 REM NERDSUITE DEMO IN ZX81 BASIC\n20 PRINT "HELLO FROM NERDSUITE"\n30 FOR I=0 TO 63\n40 PLOT I,21+20*SIN (I/10)\n50 NEXT I\n';
+    case 'trs80': return '10 REM NERDSUITE DEMO IN LEVEL II BASIC\n20 CLS\n30 PRINT @ 448, "HELLO FROM NERDSUITE!"\n40 FOR X=0 TO 127:SET(X,30+10*SIN(X/10)):NEXT\n50 GOTO 50\n';
+    case 'bbc': return '10 REM nerdsuite demo in BBC BASIC\n20 MODE 2\n30 PRINT "Hello from nerdsuite!"\n40 FOR C%=1 TO 7:GCOL 0,C%:MOVE 640,512:DRAW 640+400*COS(C%*PI/4),512+400*SIN(C%*PI/4):NEXT\n50 END\n';
     case 'loco': return '10 REM nerdsuite demo in Locomotive BASIC\n20 MODE 1\n30 PRINT "Hello from nerdsuite!"\n40 FOR i=0 TO 26:BORDER i:FOR d=1 TO 50:NEXT:NEXT\n50 GOTO 40\n';
     case 'v7': return '10 rem nerdsuite demo in basic 7.0\n20 color 0,1:color 4,1\n30 print "{clr}hello from nerdsuite!"\n40 for i=1 to 16:color 4,i:sleep 1:next\n50 goto 40\n';
     case 'v35': return '10 rem nerdsuite demo in basic 3.5\n20 print "{clr}hello from nerdsuite!"\n30 for i=1 to 16:color 4,i,3:for d=1 to 200:next:next\n40 goto 30\n';

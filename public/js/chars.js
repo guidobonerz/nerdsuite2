@@ -15,7 +15,8 @@ import { symbols, getAttr, newId, COLOR_NAMES, DEFAULT_ANIM_SPEED } from './adv.
 import { sizePicker } from './sizes.js';
 import { colorChooser } from './colorchooser.js';
 import { regionOp, rectBetween, clipRect, isRotation, swapValues } from './gridops.js';
-import { tools, RANGE_SMOOTH as RANGE, rotation, rangeForKey, DRAG_TOOLS, BRUSH_TOOLS, defaultBrush, brushCells, brushMax, brushTools, radiusMax, radiusTools, defaultTools, toolForKey, lineCells, dragCells as dragXY } from './drawtools.js';
+import { shadePixels } from './aa.js';
+import { tools, RANGE, rotation, rangeForKey, DRAG_TOOLS, BRUSH_TOOLS, defaultBrush, brushCells, brushMax, brushTools, radiusMax, radiusTools, defaultTools, toolForKey, lineCells, dragCells as dragXY } from './drawtools.js';
 import { paintArea, dragMods, dragTo, curveWaits, followCurve, DRAW_POLY, WAIT_TOOLS, waits, strokeDown, closePolygon, wheelZoom, outlineCells } from './drawtools.js';
 import { PALETTE, colorIndex, drawGlyph, romCharset as romCharsetOf, romFont } from './c64.js';
 import {
@@ -212,6 +213,22 @@ export function createCharEditor(el, store, actions, bar) {
     const d = data().slice();
     storeTile(d, grid);
     setCharsetBytes(st.key, d);
+    later(tileChars());
+  }
+
+  // the smooth tool: antialiasing under its brush (aa.js shadePixels) - a background pixel in a
+  // corner of an edge takes the pen nearest to the mix of the drawn color and the background
+  // (hires: the one pen, so mostly nothing). d.shaded: the shades of this stroke; the undo step is
+  // taken with the first of them, a stroke that shades nothing leaves no empty step behind
+  function smoothPixels(cells, d) {
+    const grid = pixels(), [w, h] = [grid[0].length, grid.length];
+    const shades = shadePixels(grid, cells, { w, h, pens: pens().filter(Boolean), colorOf: v => pixelColor(v) & 15, bg: colors().bg & 15, skip: d.shaded });
+    if (!shades.length) return;
+    if (!d.snapped) { snapshot(); d.snapped = true; }
+    for (const { x, y, v } of shades) { grid[y][x] = v; d.shaded.add(y * w + x); }
+    const bytes = data().slice();
+    storeTile(bytes, grid);
+    setCharsetBytes(st.key, bytes);
     later(tileChars());
   }
 
@@ -632,8 +649,9 @@ export function createCharEditor(el, store, actions, bar) {
     const value = e.button === 2 ? 0 : st.pen;
     if (st.tool === 'pick') { setPen(pixels()[cell.y][cell.x]); setTool('pencil'); return; }
     if (st.tool === 'select') { st.drag = { start: cell, end: cell }; draw(); return; }
-    if (!WAIT_TOOLS.has(st.tool)) snapshot();      // the curve and the polygon when they draw: a dropped one changes nothing
+    if (!WAIT_TOOLS.has(st.tool) && st.tool !== 'smooth') snapshot();   // the curve and the polygon when they draw, the smoother with its first shade: a stroke of nothing is no step
     if (st.tool === 'pencil') { st.drag = { last: cell, value }; paintCells(brushed([cell]), value); }
+    else if (st.tool === 'smooth') { st.drag = { last: cell, shaded: new Set() }; smoothPixels(brushed([cell]), st.drag); }
     else if (dragTool()) { st.drag = { start: cell, end: cell, value, ...dragMods(e) }; draw(); }
     else if (st.tool === 'fill') paintCells(floodCells(pixels(), cell, value), value);
   }
@@ -651,6 +669,7 @@ export function createCharEditor(el, store, actions, bar) {
     if (st.hover?.x === cell.x && st.hover?.y === cell.y) return;
     st.hover = cell;
     if (d && st.tool === 'pencil') { paintCells(brushed(lineCells(d.last, cell)), d.value); d.last = cell; }
+    else if (d && st.tool === 'smooth') { smoothPixels(brushed(lineCells(d.last, cell)), d); d.last = cell; }
     else if (d) dragTo(d, cell, e);
     later();
   }

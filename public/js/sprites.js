@@ -33,7 +33,8 @@ import { speedSlider } from './animui.js';
 import { referenceLayer } from './trace.js';
 import { colorChooser } from './colorchooser.js';
 import { regionOp, rectBetween, clipRect, swapValues } from './gridops.js';
-import { tools, RANGE_SMOOTH as RANGE, rotation, rangeForKey, DRAG_TOOLS, BRUSH_TOOLS, defaultBrush, brushCells, brushMax, brushTools, radiusMax, radiusTools, defaultTools, toolForKey, lineCells, dragCells as dragXY } from './drawtools.js';
+import { shadePixels } from './aa.js';
+import { tools, RANGE, rotation, rangeForKey, DRAG_TOOLS, BRUSH_TOOLS, defaultBrush, brushCells, brushMax, brushTools, radiusMax, radiusTools, defaultTools, toolForKey, lineCells, dragCells as dragXY } from './drawtools.js';
 import { paintArea, dragMods, dragTo, curveWaits, followCurve, DRAW_POLY, WAIT_TOOLS, waits, strokeDown, closePolygon, wheelZoom, outlineCells } from './drawtools.js';
 import { keepUi, pick as pickUi, put as putUi } from './uistate.js';
 
@@ -237,6 +238,17 @@ export function createSpriteEditor(el, store, actions, bar) {
       if (grid[y]?.[x] !== undefined && grid[y][x] !== value) { grid[y][x] = value; changed = true; }
     }
     if (changed) commit({ [st.frame]: grid }, multicolor(), key);
+  }
+
+  // the smooth tool: antialiasing under its brush (aa.js shadePixels) - a background pixel in a
+  // corner of an edge takes the pen nearest to the mix of the drawn color and the background
+  // (hires: the one pen, so mostly nothing). A stroke is one undo step; d.shaded: its shades
+  function smoothPixels(cells, d, key) {
+    const grid = pixels(), cols = colors(), [w, h] = [grid[0].length, grid.length];
+    const shades = shadePixels(grid, cells, { w, h, pens: multicolor() ? [1, 2, 3] : [2], colorOf: v => cols[v], bg: st.bg, skip: d.shaded });
+    if (!shades.length) return;
+    for (const { x, y, v } of shades) { grid[y][x] = v; d.shaded.add(y * w + x); }
+    commit({ [st.frame]: grid }, multicolor(), key);
   }
 
   // Ctrl+C: the frame of the layer drawn on, or the range selected on the canvas
@@ -1057,6 +1069,7 @@ export function createSpriteEditor(el, store, actions, bar) {
     stroke++;
     switch (st.tool) {
       case 'pencil': st.drag = { last: cell, value }; paintCells(brushed([cell]), value, 'sprite:' + stroke); break;
+      case 'smooth': st.drag = { last: cell, shaded: new Set() }; smoothPixels(brushed([cell]), st.drag, 'sprite:' + stroke); break;
       case 'line': case 'rect': case 'circle': case 'curve': case 'polygon':
         st.drag = { start: cell, end: cell, value, ...dragMods(e) }; draw(); break;
       case 'fill': paintCells(floodCells(pixels(), cell, value), value); break;
@@ -1080,6 +1093,9 @@ export function createSpriteEditor(el, store, actions, bar) {
     if (h0?.x === cell.x && h0?.y === cell.y && h0?.px === cell.px) return;
     if (d && st.tool === 'pencil') {
       paintCells(brushed(lineCells(d.last, cell)), d.value, 'sprite:' + stroke);
+      d.last = cell;
+    } else if (d && st.tool === 'smooth') {
+      smoothPixels(brushed(lineCells(d.last, cell)), d, 'sprite:' + stroke);
       d.last = cell;
     } else if (d) dragTo(d, cell, e);
     draw();

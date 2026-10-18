@@ -1,6 +1,6 @@
 # NerdSuite
 
-An IDE in the browser for programs of 8 bit machines: the Commodore family (C64, C128, VIC-20, Plus/4, C16, PET), the Atari 8-bit computers and the Atari 2600, the Amstrad / Schneider CPC, and the Nintendo NES and SNES. It has the layout, look and feel of [yopaca](../yopaca) and takes its graphics editors and its composer; in place of yopaca's story it has a tabbed code editor for assembler and BASIC, and a debugger that drives the VICE emulator.
+An IDE in the browser for programs of 8 bit machines: the Commodore family (C64, C128, VIC-20, Plus/4, C16, PET), the Atari 8-bit computers and the Atari 2600, the Amstrad / Schneider CPC, the Nintendo NES and SNES, the Sinclair ZX81, the Tandy TRS-80 Model I and III and the BBC Micro. It has the layout, look and feel of [yopaca](../yopaca) and takes its graphics editors and its composer; in place of yopaca's story it has a tabbed code editor for assembler and BASIC, and a debugger that drives the VICE emulator.
 
 | View | What it does |
 |---|---|
@@ -43,8 +43,11 @@ The server serves the IDE, the example project (`examples/demo`) and the bridges
 | Amstrad / Schneider | CPC 464, CPC 6128 | Z80 | Locomotive BASIC | AMSDOS binary on a .dsk | WinAPE (or Caprice32) |
 | Nintendo | NES | 6502 (2A03) | - | .nes cartridge (iNES, mapper 0) | Mesen, FCEUX, Nestopia (or MAME) |
 | Nintendo | SNES | 65816 | - | .sfc cartridge (LoROM, 32K) | Mesen, bsnes, Snes9x (or MAME) |
+| Sinclair | ZX81 (16K) | Z80 | ZX81 BASIC | .p file (code in a 1 REM line at $4082) | EightyOne (or ZEsarUX) |
+| Tandy / Radio Shack | TRS-80 Model I, Model III | Z80 | Level II BASIC | /CMD file | trs80gp (or MAME) |
+| Acorn | BBC Micro Model B | 6502 | BBC BASIC II | a .ssd disc that boots it | BeebEm, b2 (or MAME) |
 
-The assembler is the same for all of them: ACME's syntax, with `!cpu z80` for the CPC and `!cpu 65816` for the SNES (long addresses, `[dp]`, `sr,s`, `mvn`/`mvp`, `brl`; `!al`/`!as` and `!rl`/`!rs` set the size of the immediates, as ACME's). `!to` picks the output (`cbm`, `plain`, `xex`, `amsdos`); without it the platform's. Two pseudo ops are nerdsuite's own: `!run ADDR` (the RUNAD segment of a .xex, the exec address of an AMSDOS header) and `!init ADDR` (INITAD). Atari BASIC and Locomotive BASIC are not tokenized: the build gives the listing the machine ENTERs or LOADs as text. The debugger needs VICE's binary monitor: the other platforms run in their emulator, found by the environment variables `ALTIRRA`, `STELLA`, `WINAPE`, `MESEN` (or `ATARI800`, `CAPRICE`, `FCEUX`, `NESTOPIA`, `BSNES`, `SNES9X`, `MAME`). The 64K of the assembler hold a NES cartridge of mapper 0 and the first 32K bank of a SNES ROM. The graphics editors and the composer make Commodore data (VIC-II, SID); for the other machines the hex view and the exports give the bytes.
+The assembler is the same for all of them: ACME's syntax, with `!cpu z80` for the CPC and `!cpu 65816` for the SNES (long addresses, `[dp]`, `sr,s`, `mvn`/`mvp`, `brl`; `!al`/`!as` and `!rl`/`!rs` set the size of the immediates, as ACME's). `!to` picks the output (`cbm`, `plain`, `xex`, `amsdos`, `zx81`, `trs80`); without it the platform's. Two pseudo ops are nerdsuite's own: `!run ADDR` (the RUNAD segment of a .xex, the exec address of an AMSDOS header) and `!init ADDR` (INITAD). Atari BASIC, Locomotive BASIC, Level II BASIC and BBC BASIC are not tokenized: the build gives the listing the machine ENTERs or LOADs as text (the BBC: !BOOT of the disc types it in). ZX81 BASIC is: the build makes a .p file (its keywords as tokens, the numbers as 5 byte floats; `{$xx}` for the block graphics, `{inv}`...`{/inv}` for inverse letters). The debugger needs VICE's binary monitor: the other platforms run in their emulator, found by the environment variables `ALTIRRA`, `STELLA`, `WINAPE`, `MESEN` (or `ATARI800`, `CAPRICE`, `FCEUX`, `NESTOPIA`, `BSNES`, `SNES9X`, `MAME`), `EIGHTYONE` or `ZESARUX`, `TRS80GP`, `BEEBEM` or `B2`. The 64K of the assembler hold a NES cartridge of mapper 0 and the first 32K bank of a SNES ROM. The graphics editors and the composer make Commodore data (VIC-II, SID); for the other machines the hex view and the exports give the bytes.
 
 ## A new project
 
@@ -117,7 +120,7 @@ The view shows the registers and flags (editable), the stack, the disassembly ar
 | `public/js/hexview.js` | the Hex view |
 | `public/js/extfiles.js` | the files from outside the project, dropped or opened from the disk, for the Hex view and the Disassembler |
 | `public/js/disasm.js`, `disasmview.js` | the Disassembler: code and data of a binary, labels, ACME source; the view and its preview |
-| `backend/emu` | Altirra, Stella, WinAPE and the others: run a build; a CPC disk image |
+| `backend/emu` | Altirra, Stella, WinAPE and the others: run a build; a CPC disk image, a BBC .ssd disc |
 | `backend/toolchain`, `backend/ultimate` | the toolchains (compiler › packer › emulator); run on an Ultimate 64 |
 | `tools/dist.mjs`, `tools/smoke.mjs` | the binaries of every system; a binary started and checked |
 | `tools/cdp.mjs` | drives a headless Chrome for checks of the UI |

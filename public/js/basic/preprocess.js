@@ -175,6 +175,26 @@ export const dataLines = bytes => {
   return out;
 };
 
+// the DATA lines of the @embed line src[i]: { texts, r } or { error } - with line numbers the first DATA
+// line has the number of the line, the others count on from it (error: they run into the next line)
+function expandEmbed(m, src, i, readFile, labelMode, errors) {
+  const l = src[i];
+  const r = embedData(m[2], m[3], m[4], readFile);
+  if (r.error) { errors.push({ line: i + 1, msg: `@embed: ${r.error}` }); return null; }
+  const data = dataLines(r.bytes);
+  const own = /^\s*(\d+)/.exec(l);
+  if (own && !labelMode) {
+    const n = Number(own[1]);
+    const next = src.slice(i + 1).map(x => /^\s*(\d+)/.exec(x)?.[1]).find(Boolean);
+    if (next != null && n + data.length - 1 >= Number(next)) {
+      errors.push({ line: i + 1, msg: `@embed: its ${data.length} DATA lines need the numbers ${n}-${n + data.length - 1}, line ${next} comes first: leave room or use the label mode` });
+    }
+    return { texts: data.map((d, k) => `${n + k} ${d}`), r };
+  }
+  const indent = /^\s*/.exec(l)[0];
+  return { texts: data.map(d => indent + d), r };
+}
+
 // the program for the tokenizer: { lines: [{ text, src }], errors, embeds: [{ line, count, note }] }
 // opts: { defines, readFile(path) -> bytes | null, labelMode }
 export function preprocess(text, { defines = '', readFile = () => null, labelMode = false } = {}) {
@@ -185,23 +205,26 @@ export function preprocess(text, { defines = '', readFile = () => null, labelMod
     if (!active[i]) { lines.push({ text: '', src: i + 1 }); return; }
     const m = EMBED.exec(l);
     if (!m) { lines.push({ text: l, src: i + 1 }); return; }
-    const r = embedData(m[2], m[3], m[4], readFile);
-    if (r.error) { errors.push({ line: i + 1, msg: `@embed: ${r.error}` }); lines.push({ text: '', src: i + 1 }); return; }
-    const data = dataLines(r.bytes);
-    // with line numbers: the first DATA line has the number of the line, the others count on from it
-    const own = /^\s*(\d+)/.exec(l);
-    if (own && !labelMode) {
-      const n = Number(own[1]);
-      const next = src.slice(i + 1).map(x => /^\s*(\d+)/.exec(x)?.[1]).find(Boolean);
-      if (next != null && n + data.length - 1 >= Number(next)) {
-        errors.push({ line: i + 1, msg: `@embed: its ${data.length} DATA lines need the numbers ${n}-${n + data.length - 1}, line ${next} comes first: leave room or use the label mode` });
-      }
-      data.forEach((d, k) => lines.push({ text: `${n + k} ${d}`, src: i + 1 }));
-    } else {
-      const indent = /^\s*/.exec(l)[0];
-      for (const d of data) lines.push({ text: indent + d, src: i + 1 });
-    }
-    embeds.push({ line: i + 1, count: data.length, bytes: r.bytes.length, note: r.note });
+    const e = expandEmbed(m, src, i, readFile, labelMode, errors);
+    if (!e) { lines.push({ text: '', src: i + 1 }); return; }
+    for (const t of e.texts) lines.push({ text: t, src: i + 1 });
+    embeds.push({ line: i + 1, count: e.texts.length, bytes: e.r.bytes.length, note: e.r.note });
   });
   return { lines, errors, embeds };
+}
+
+// the source with every DATA @embed line as its DATA lines, all else as it is (the directives too, and
+// an @embed of a branch that is off) - the Export of the code view: { text, errors, count }
+export function resolveEmbeds(text, { readFile = () => null, labelMode = false } = {}) {
+  const src = String(text).split('\n');
+  const out = [], errors = [];
+  let count = 0;
+  src.forEach((l, i) => {
+    const m = EMBED.exec(l);
+    const e = m && expandEmbed(m, src, i, readFile, labelMode, errors);
+    if (!e) { out.push(l); return; }
+    out.push(...e.texts);
+    count++;
+  });
+  return { text: out.join('\n'), errors, count };
 }

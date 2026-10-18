@@ -317,7 +317,55 @@ const SNES = [
   [0xfffc, 'RESET_VECTOR', 'CPU: reset vector', 2], [0xfffe, 'EMU_IRQ', 'CPU: emulation IRQ / BRK vector', 2],
 ];
 
-const MAPS = { c64: C64, c128: C128, vic20: VIC20, plus4: PLUS4, c16: PLUS4, pet: PET, atari8: ATARI8, vcs: VCS, nes: NES, snes: SNES, cpc464: CPC, cpc6128: CPC };
+// the ZX81: its system variables and ROM routines
+const ZX81 = [
+  [0x0008, 'ERROR_1', 'ROM: RST 8, report an error (the code follows)'], [0x0010, 'PRINT_A', 'ROM: RST $10, print the character in A'],
+  [0x02bb, 'KEYBOARD', 'ROM: scan the keyboard'], [0x07bd, 'DECODE', 'ROM: the character of a key'], [0x08f5, 'PRINT_AT', 'ROM: move the print position (B line, C column)'],
+  [0x0a2a, 'CLS', 'ROM: clear the screen'], [0x0f23, 'FAST', 'ROM: fast mode'], [0x0f2b, 'SLOW', 'ROM: slow mode'],
+  ...[[0x4009, 'VERSN', 1], [0x400a, 'E_PPC', 2], [0x400c, 'D_FILE', 2, 'the address of the display file'], [0x400e, 'DF_CC', 2], [0x4010, 'VARS', 2],
+    [0x4012, 'DEST', 2], [0x4014, 'E_LINE', 2], [0x4016, 'CH_ADD', 2], [0x4018, 'X_PTR', 2], [0x401a, 'STKBOT', 2], [0x401c, 'STKEND', 2],
+    [0x401e, 'BERG', 1], [0x401f, 'MEM', 2], [0x4022, 'DF_SZ', 1], [0x4023, 'S_TOP', 2], [0x4025, 'LAST_K', 2, 'the keys pressed'], [0x4027, 'DB_ST', 1],
+    [0x4028, 'MARGIN', 1], [0x4029, 'NXTLIN', 2, 'the next line to run'], [0x402b, 'OLDPPC', 2], [0x402d, 'FLAGX', 1], [0x402e, 'STRLEN', 2],
+    [0x4030, 'T_ADDR', 2], [0x4032, 'SEED', 2, 'the seed of RND'], [0x4034, 'FRAMES', 2, 'counts the frames down'], [0x4036, 'COORDS', 2],
+    [0x4038, 'PR_CC', 1], [0x4039, 'S_POSN', 2, 'the print position (column, line)'], [0x403b, 'CDFLAG', 1, 'bit 6: slow mode'],
+    [0x403c, 'PRBUFF', 33, 'the printer buffer'], [0x405d, 'MEMBOT', 30, 'the memory of the calculator']]
+    .map(([a, n, s, d]) => [a, n, `system variable${d ? `: ${d}` : ''}`, s]),
+  [0x407d, 'PROGRAM', 'the BASIC program (1 REM: machine code at $4082)'],
+];
+
+// the TRS-80 Model I and III: the screen, the keyboard matrix and the Level II ROM
+const TRS80 = [
+  [0x002b, 'KBCHAR', 'ROM: the key pressed, if any (A)'], [0x0033, 'VDCHAR', 'ROM: print the character in A'], [0x0049, 'KBWAIT', 'ROM: wait for a key (A)'],
+  [0x0038, 'RST_INTERRUPT', 'the interrupt entry (RST 7)'], [0x003b, 'PRCHAR', 'ROM: print the character in A on the printer'],
+  [0x0040, 'KBLINE', 'ROM: input a line (HL the buffer, B its length)'], [0x0060, 'DELAY', 'ROM: wait BC * 14.66 µs'], [0x0066, 'NMI', 'the NMI entry (RESET)'],
+  [0x01c9, 'CLS', 'ROM: clear the screen'], [0x01f8, 'CSOFF', 'ROM: the cassette motor off'], [0x0212, 'DEFCAS', 'ROM: select the cassette (A 0)'],
+  [0x0235, 'CSIN', 'ROM: read a byte from the cassette'], [0x0264, 'CSOUT', 'ROM: write a byte to the cassette'],
+  [0x0287, 'WRLDR', 'ROM: write the leader and sync byte'], [0x0296, 'RDLDR', 'ROM: read the leader and sync byte'],
+  [0x4020, 'CURSOR', 'the address of the cursor on the screen', 2], [0x40a4, 'TXTTAB', 'the start of the BASIC program', 2], [0x40b1, 'MEMSIZ', 'the top of the memory of BASIC', 2],
+  [0x3800, 'KEYBOARD', 'the keyboard matrix (read)', 0x100], [0x3c00, 'SCREEN_RAM', 'the screen: 16 lines of 64 characters', 0x400],
+  ['port', 0xff, 'CASSETTE', 'port: the cassette, the 32/64 column mode'],
+];
+
+// the BBC Micro: the MOS calls, its vectors and SHEILA ($FExx)
+const BBC = [
+  ...[[0x0200, 'USERV'], [0x0202, 'BRKV'], [0x0204, 'IRQ1V'], [0x0206, 'IRQ2V'], [0x0208, 'CLIV'], [0x020a, 'BYTEV'], [0x020c, 'WORDV'], [0x020e, 'WRCHV'],
+    [0x0210, 'RDCHV'], [0x0212, 'FILEV'], [0x0214, 'ARGSV'], [0x0216, 'BGETV'], [0x0218, 'BPUTV'], [0x021a, 'GBPBV'], [0x021c, 'FINDV'], [0x021e, 'FSCV'], [0x0220, 'EVNTV']]
+    .map(([a, n]) => [a, n, `MOS: the vector of ${n.slice(0, -1)}`, 2]),
+  [0x7c00, 'MODE7_SCREEN', 'the screen of MODE 7 (teletext)', 0x400],
+  [0xfe00, 'CRTC_ADDR', '6845: register select'], [0xfe01, 'CRTC_DATA', '6845: register data'], [0xfe08, 'ACIA_CTRL', '6850: control / status'], [0xfe09, 'ACIA_DATA', '6850: data'],
+  [0xfe10, 'SERIAL_ULA', 'serial ULA: baud rates'], [0xfe20, 'VIDEO_ULA_CTRL', 'video ULA: control'], [0xfe21, 'VIDEO_ULA_PALETTE', 'video ULA: palette'],
+  [0xfe30, 'ROMSEL', 'the paged ROM'],
+  ...range(0xfe40, ['SYSVIA_ORB', 'SYSVIA_ORA', 'SYSVIA_DDRB', 'SYSVIA_DDRA', 'SYSVIA_T1CL', 'SYSVIA_T1CH', 'SYSVIA_T1LL', 'SYSVIA_T1LH', 'SYSVIA_T2CL', 'SYSVIA_T2CH', 'SYSVIA_SR', 'SYSVIA_ACR', 'SYSVIA_PCR', 'SYSVIA_IFR', 'SYSVIA_IER', 'SYSVIA_ORA_NH'], 'system VIA'),
+  ...range(0xfe60, ['USRVIA_ORB', 'USRVIA_ORA', 'USRVIA_DDRB', 'USRVIA_DDRA', 'USRVIA_T1CL', 'USRVIA_T1CH', 'USRVIA_T1LL', 'USRVIA_T1LH', 'USRVIA_T2CL', 'USRVIA_T2CH', 'USRVIA_SR', 'USRVIA_ACR', 'USRVIA_PCR', 'USRVIA_IFR', 'USRVIA_IER', 'USRVIA_ORA_NH'], 'user VIA'),
+  [0xfe80, 'FDC', '8271: the disc controller', 8], [0xfec0, 'ADC', 'uPD7002: the analogue inputs', 4],
+  ...[[0xffce, 'OSFIND', 'open or close a file'], [0xffd1, 'OSGBPB', 'read or write bytes of a file'], [0xffd4, 'OSBPUT', 'write a byte to a file'], [0xffd7, 'OSBGET', 'read a byte of a file'],
+    [0xffda, 'OSARGS', 'the arguments of a file'], [0xffdd, 'OSFILE', 'load or save a file'], [0xffe0, 'OSRDCH', 'read a character'], [0xffe3, 'OSASCI', 'print a character, CR as a new line'],
+    [0xffe7, 'OSNEWL', 'print a new line'], [0xffee, 'OSWRCH', 'print the character in A'], [0xfff1, 'OSWORD', 'an OSWORD call (A, XY: the block)'], [0xfff4, 'OSBYTE', 'an OSBYTE call (A, X, Y)'],
+    [0xfff7, 'OSCLI', 'run a * command (XY: the text)']].map(([a, n, d]) => [a, n, `MOS: ${d}`]),
+];
+
+const MAPS = { c64: C64, c128: C128, vic20: VIC20, plus4: PLUS4, c16: PLUS4, pet: PET, atari8: ATARI8, vcs: VCS, nes: NES, snes: SNES, cpc464: CPC, cpc6128: CPC,
+  zx81: ZX81, trs80: TRS80, trs80m3: TRS80, bbcb: BBC };
 
 // --- lookups ---------------------------------------------------------------------------------------
 

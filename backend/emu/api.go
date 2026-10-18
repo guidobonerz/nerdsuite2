@@ -200,6 +200,9 @@ func (a *API) run(body map[string]any) (runAnswer, error) {
 		name = jsString(body, "name")
 	}
 	machine, _ := body["machine"].(string)
+	if machine == "" {
+		machine, _ = body["model"].(string) // the front end sends the model of its platform (platforms.js)
+	}
 	p, err := planRun(runRequest{
 		Platform: platform, Emulator: def.ID, Name: name, Data: data, Format: format,
 		Load: jsInteger(body["load"]), Exec: jsInteger(body["exec"]), Machine: machine,

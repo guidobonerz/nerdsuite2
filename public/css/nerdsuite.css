@@ -243,6 +243,11 @@
 .ns-dis__swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--ns-type); flex: none; }
 .ns-dis__preview { display: flex; flex-direction: column; gap: 8px; }
 .ns-dis__preview-opts { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* the group of the preview: 1×1 … w×h, its size, the order of its things */
+.ns-dis__group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.ns-dis__group-label { font-size: 12px; color: var(--md-sys-color-on-surface-variant); }
+.ns-dis__group-size { display: flex; align-items: center; gap: 4px; }
+.ns-dis__group-size .md-field { width: 64px; }
 .ns-dis__colors { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .ns-dis__canvas { overflow: auto; max-height: 420px; padding: 6px; border-radius: var(--md-shape-sm); background: var(--md-sys-color-surface-container); }
 .ns-dis__canvas canvas { display: block; image-rendering: pixelated; }

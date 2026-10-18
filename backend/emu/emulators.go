@@ -1,5 +1,5 @@
 // Package emu: the launcher of the emulators that are not VICE (Atari 8-bit, Amstrad CPC, Atari 2600,
-// NES, SNES) and the CPC disc images it builds for them.
+// NES, SNES, ZX81, TRS-80, BBC Micro) and the disc images it builds for them (CPC .dsk, BBC .ssd).
 //
 //	GET  /api/emu/status -> { emulators: [{ id, platform, exe, available, running }] }
 //	POST /api/emu/run { platform, emulator?, name, data /*base64*/, format, load?, exec?, machine? }
@@ -16,6 +16,10 @@
 //
 // NES and SNES (from their docs, not installed here): Mesen x.nes / x.sfc, fceux x.nes, nestopia x.nes,
 // bsnes x.sfc, snes9x x.sfc, mame nes -cart x.nes, mame snes -cart x.sfc.
+// ZX81, TRS-80 and BBC Micro (from their docs, not installed here, not tried): EightyOne x.p,
+// zesarux --machine ZX81 x.p, trs80gp -m1|-m3 x.cmd|x.bas, mame trs80l2|trs80m3 -quik x.cmd,
+// BeebEm x.ssd, b2 -0 x.ssd -b, mame bbcb -flop1 x.ssd -autoboot_command "*EXEC !BOOT\n" - the
+// .ssd has the boot option 3: !BOOT does *RUN of the program or holds the BASIC listing and RUN.
 // Not installed here (command lines from their docs): atari800 -run x.xex,
 // cap32 -a "run\"PROG" x.dsk, mame cpc6128 -flop1 x.dsk -autoboot_command ..., mame a2600 -cart x.a26.
 //
@@ -52,7 +56,12 @@ var Emulators = []core.ToolDef{
 	emulator(core.ToolDef{ID: "nestopia", Platforms: []string{"nes"}, Env: "NESTOPIA", Defaults: []string{}, Dir: apps("nestopia"), DirNames: []string{"nestopia.exe"}, Path: []string{"nestopia"}}),
 	emulator(core.ToolDef{ID: "bsnes", Platforms: []string{"snes"}, Env: "BSNES", Defaults: []string{}, Dir: apps("bsnes"), DirNames: []string{"bsnes.exe"}, Path: []string{"bsnes"}}),
 	emulator(core.ToolDef{ID: "snes9x", Platforms: []string{"snes"}, Env: "SNES9X", Defaults: []string{}, Dir: apps("snes9x"), DirNames: []string{"snes9x-x64.exe", "snes9x.exe"}, Path: []string{"snes9x-x64", "snes9x"}}),
-	emulator(core.ToolDef{ID: "mame", Platforms: []string{"cpc", "vcs", "nes", "snes"}, Env: "MAME",
+	emulator(core.ToolDef{ID: "eightyone", Platforms: []string{"zx81"}, Env: "EIGHTYONE", Defaults: []string{}, Dir: apps("eightyone"), DirNames: []string{"EightyOne.exe"}, Path: []string{"EightyOne"}}),
+	emulator(core.ToolDef{ID: "zesarux", Platforms: []string{"zx81"}, Env: "ZESARUX", Defaults: []string{}, Dir: apps("zesarux"), DirNames: []string{"zesarux.exe"}, Path: []string{"zesarux"}}),
+	emulator(core.ToolDef{ID: "trs80gp", Platforms: []string{"trs80"}, Env: "TRS80GP", Defaults: []string{}, Dir: apps("trs80gp"), DirNames: []string{"trs80gp.exe"}, Path: []string{"trs80gp"}}),
+	emulator(core.ToolDef{ID: "beebem", Platforms: []string{"bbc"}, Env: "BEEBEM", Defaults: []string{}, Dir: apps("beebem"), DirNames: []string{"BeebEm.exe"}, Path: []string{"BeebEm", "beebem"}}),
+	emulator(core.ToolDef{ID: "b2", Platforms: []string{"bbc"}, Env: "B2", Defaults: []string{}, Dir: apps("b2"), DirNames: []string{"b2.exe", "b2_Debug.exe"}, Path: []string{"b2"}}),
+	emulator(core.ToolDef{ID: "mame", Platforms: []string{"cpc", "vcs", "nes", "snes", "trs80", "bbc"}, Env: "MAME",
 		Defaults: []string{apps("mame", "mame64.exe"), apps("mame", "mame.exe")},
 		Path:     []string{"mame64", "mame"}}),
 }
@@ -70,6 +79,9 @@ var Preferred = []PlatformEmulators{
 	{"vcs", []string{"stella", "mame"}},
 	{"nes", []string{"mesen", "fceux", "nestopia", "mame"}},
 	{"snes", []string{"mesen", "bsnes", "snes9x", "mame"}},
+	{"zx81", []string{"eightyone", "zesarux"}},
+	{"trs80", []string{"trs80gp", "mame"}},
+	{"bbc", []string{"beebem", "b2", "mame"}},
 }
 
 // formats: the program formats each platform runs, in the order of the platforms
@@ -82,6 +94,9 @@ var formats = []struct {
 	{"vcs", []string{"a26"}},
 	{"nes", []string{"nes"}},
 	{"snes", []string{"sfc"}},
+	{"zx81", []string{"zx81-p"}},
+	{"trs80", []string{"trs80-cmd", "trs80-ascii"}},
+	{"bbc", []string{"bbc-bin", "bbc-ascii"}},
 }
 
 func formatsOf(platform string) ([]string, bool) {
@@ -293,6 +308,59 @@ func planRun(r runRequest, tmpDir, exe string) (plan, error) {
 			args = []string{"snes", "-cart", file, "-window"}
 		} else {
 			args = []string{file}
+		}
+	case "zx81/eightyone", "zx81/zesarux":
+		if r.Format != "zx81-p" {
+			return plan{}, core.Errorf(400, "unsupported zx81 format '%s'", r.Format)
+		}
+		if len(data) < 0x407d-0x4009 {
+			return plan{}, core.Errorf(400, "no .p file (the system variables are missing)")
+		}
+		// a .p file runs its line NXTLIN when it is loaded
+		file = filepath.Join(dir, strings.ToLower(stem)+".p")
+		files = append(files, planFile{file, data})
+		if r.Emulator == "zesarux" {
+			args = []string{"--machine", "ZX81", file}
+		} else {
+			args = []string{file}
+		}
+	case "trs80/trs80gp", "trs80/mame":
+		model := "1"
+		if r.Machine == "3" || r.Machine == "trs80m3" {
+			model = "3"
+		}
+		switch r.Format {
+		case "trs80-cmd":
+			file = filepath.Join(dir, stem+".CMD")
+		case "trs80-ascii":
+			if r.Emulator == "mame" {
+				return plan{}, core.Errorf(400, "MAME loads /CMD programs: a BASIC listing runs in trs80gp")
+			}
+			file = filepath.Join(dir, stem+".BAS")
+		default:
+			return plan{}, core.Errorf(400, "unsupported trs80 format '%s'", r.Format)
+		}
+		files = append(files, planFile{file, data})
+		if r.Emulator == "mame" {
+			args = []string{map[string]string{"1": "trs80l2", "3": "trs80m3"}[model], "-quik", file, "-window"}
+		} else {
+			args = []string{"-m" + model, file}
+		}
+	case "bbc/beebem", "bbc/b2", "bbc/mame":
+		ssd, err := buildBBCDisc(stem, r.Format, data, r.Load, r.Exec)
+		if err != nil {
+			return plan{}, err
+		}
+		// the disc boots with SHIFT+BREAK: !BOOT runs the program or types in the listing
+		file = filepath.Join(dir, stem+".ssd")
+		files = append(files, planFile{file, ssd})
+		switch r.Emulator {
+		case "beebem":
+			args = []string{file}
+		case "b2":
+			args = []string{"-0", file, "-b"}
+		default:
+			args = []string{"bbcb", "-flop1", file, "-autoboot_delay", "2", "-autoboot_command", `*EXEC !BOOT\n`, "-window"}
 		}
 	default:
 		return plan{}, core.Errorf(400, "emulator '%s' does not support platform '%s'", r.Emulator, r.Platform)

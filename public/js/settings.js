@@ -117,7 +117,7 @@ async function api(method, data) {
   if (!res.ok) throw new Error(json.error || `${res.status} ${res.statusText}`);
   return json;
 }
-const PLATFORM_NAMES = { atari: 'Atari 8-bit', cpc: 'Amstrad / Schneider CPC', vcs: 'Atari 2600 (VCS)', nes: 'NES', snes: 'SNES' };
+const PLATFORM_NAMES = { atari: 'Atari 8-bit', cpc: 'Amstrad / Schneider CPC', vcs: 'Atari 2600 (VCS)', nes: 'NES', snes: 'SNES', zx81: 'Sinclair ZX81', trs80: 'TRS-80', bbc: 'BBC Micro' };
 // a path set that the program found does not come from: the default or the PATH stood in
 const strayed = t => t.value && t.found && !t.found.toLowerCase().replace(/\\/g, '/').startsWith(t.value.toLowerCase().replace(/\\/g, '/').replace(/\/+$/, ''));
 

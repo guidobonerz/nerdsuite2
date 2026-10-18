@@ -1,6 +1,6 @@
 // gridops.js - the range tools of the screen, sprite and char editors: shift (wrapping
 // inside the range), mirror, flip, rotate (by 90 degrees, or turned in space about x, y and z),
-// invert, map (swap two colors), smooth (the edges) and clear a grid of values, as a whole or
+// invert, map (swap two colors) and clear a grid of values, as a whole or
 // inside a rectangle of it
 
 const ROTATIONS = new Set(['rotl', 'rotr']);
@@ -108,45 +108,7 @@ function rotateArea(out, area, { rx = 0, ry = 0, rz = 0, persp = 0 }, blank, asp
   return x1 < 0 ? area : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
 }
 
-// smooth: the edges of the area of grid less jagged, one pass. The cells around it count as
-// neighbours, but only the cells inside change.
-//  1. a cell whose four neighbours are three or four times one other value takes it - a notch
-//     fills, a spur goes (all at once, from the grid as it was)
-//  2. a corner of a line one cell thin - the same value above or below and left or right, not on the
-//     other two sides and not in the cell between them diagonally - goes: a staircase becomes a
-//     clean diagonal. Row by row on the grid as it is then, so the next corner of the same
-//     staircase is no corner any more and the line stays connected; the cell takes the value its
-//     two other sides share (one outside the grid: the other's), else it stays
-export function smoothArea(grid, { x, y, w, h }) {
-  const H = grid.length, W = grid[0]?.length ?? 0;
-  const at = (g, c, r) => (r >= 0 && r < H && c >= 0 && c < W ? g[r][c] : undefined);
-  const src = grid.map(r => [...r]);
-  for (let r = y; r < y + h; r++) {
-    for (let c = x; c < x + w; c++) {
-      const v = src[r][c], counts = new Map();
-      for (const n of [at(src, c, r - 1), at(src, c, r + 1), at(src, c - 1, r), at(src, c + 1, r)]) {
-        if (n !== undefined && n !== v) counts.set(n, (counts.get(n) ?? 0) + 1);
-      }
-      for (const [n, k] of counts) if (k >= 3) grid[r][c] = n;
-    }
-  }
-  for (let r = y; r < y + h; r++) {
-    for (let c = x; c < x + w; c++) {
-      const v = grid[r][c], same = (dc, dr) => at(grid, c + dc, r + dr) === v;
-      for (const dr of [-1, 1]) {
-        for (const dc of [-1, 1]) {
-          if (!same(0, dr) || !same(dc, 0) || same(0, -dr) || same(-dc, 0) || same(dc, dr)) continue;
-          const a = at(grid, c, r - dr), b = at(grid, c - dc, r);   // the two other sides
-          const to = a === undefined ? b : b === undefined || a === b ? a : undefined;
-          if (to !== undefined) grid[r][c] = to;
-        }
-      }
-    }
-  }
-  return grid;
-}
-
-// grid: rows of values; op: left right up down mirror flip rotl rotr rotate invert map smooth clear;
+// grid: rows of values; op: left right up down mirror flip rotl rotr rotate invert map clear;
 // rect: the part to change, null for the whole grid. blank: the value of cleared cells,
 // invert(v): the inverted value, map(v): the value 'map' puts in place of v (swapValues).
 // A rectangle that is not square rotates about its top
@@ -161,7 +123,6 @@ export function regionOp(grid, op, rect, { blank = 0, invert = null, map = null,
   const area = rect ? clipRect(rect, W, H) : { x: 0, y: 0, w: W, h: H };
   if (!area) return { grid: out, rect };
   if (op === 'rotate') return { grid: out, rect: rotateArea(out, area, { rx, ry, rz, persp }, blank, aspect) };
-  if (op === 'smooth') return { grid: smoothArea(out, area), rect: rect && area };
   const { x, y, w, h } = area;
   const turn = isRotation(op) && w !== h;
   if (turn && !resize) return null;

@@ -671,6 +671,100 @@ const LOCO = [
   w('ZONE', 'ZONE n', 'Sets the PRINT comma zone width.'),
 ];
 
+// ---------------------------------------------------------------- Sinclair ZX81 BASIC (tokenized into a .p file: zx81.js)
+const ZX81 = [
+  w('ABS', 'ABS x', 'Absolute value.'), w('ACS', 'ACS x', 'Arccosine.'), w('AND', 'a AND b', 'Logical AND.'),
+  w('ASN', 'ASN x', 'Arcsine.'), w('AT', 'PRINT AT line, column; ...', 'In PRINT: moves to a line (0-21) and a column (0-31).'),
+  w('ATN', 'ATN x', 'Arctangent.'), w('CHR$', 'CHR$ n', 'The character of a code.'), w('CLEAR', 'CLEAR', 'Clears the variables.'),
+  w('CLS', 'CLS', 'Clears the screen.'), w('CODE', 'CODE s$', 'The code of the first character.'), w('CONT', 'CONT', 'Continues after a report.'),
+  w('COPY', 'COPY', 'Prints the screen on the ZX printer.'), w('COS', 'COS x', 'Cosine.'),
+  w('DIM', 'DIM a(n[, m...]) | DIM a$(n, len)', 'Declares an array.'), w('EXP', 'EXP x', 'e to the power of x.'),
+  w('FAST', 'FAST', 'Fast mode: the screen is off while the program computes.'), w('FOR', 'FOR v = a TO b [STEP s]', 'Starts a counted loop (one letter variables).'),
+  w('GOSUB', 'GOSUB line', 'Calls a subroutine.'), w('GOTO', 'GOTO line', 'Jumps to a line.'),
+  w('IF', 'IF cond THEN statement', 'Executes the statement when the condition is true.'), w('INKEY$', 'INKEY$', 'The key pressed now, "" for none.'),
+  w('INPUT', 'INPUT v', 'Reads a number or a string from the keyboard.'), w('INT', 'INT x', 'Rounds down.'),
+  w('LEN', 'LEN s$', 'The length of a string.'), w('LET', 'LET v = expr', 'Assigns a value (LET is required).'),
+  w('LIST', 'LIST [line]', 'Lists the program.'), w('LLIST', 'LLIST [line]', 'Lists the program on the printer.'), w('LN', 'LN x', 'Natural logarithm.'),
+  w('LOAD', 'LOAD "name"', 'Loads a program from tape.'), w('LPRINT', 'LPRINT items', 'Prints on the ZX printer.'),
+  w('NEW', 'NEW', 'Deletes the program.'), w('NEXT', 'NEXT v', 'Ends a FOR loop.'), w('NOT', 'NOT x', 'Logical NOT.'), w('OR', 'a OR b', 'Logical OR.'),
+  w('PAUSE', 'PAUSE n', 'Waits n frames (1/50 s) or for a key; 40000 or more waits for a key.'), w('PEEK', 'PEEK addr', 'Reads a byte.'),
+  w('PI', 'PI', '3.14159265...'), w('PLOT', 'PLOT x, y', 'Sets a block pixel (0-63, 0-43).'), w('POKE', 'POKE addr, n', 'Writes a byte.'),
+  w('PRINT', 'PRINT [AT l, c;] [TAB c;] items', 'Prints on the screen.'), w('RAND', 'RAND [n]', 'Seeds the random numbers.'),
+  w('REM', 'REM text', 'A comment; machine code is often kept in a REM line at 16514.'), w('RETURN', 'RETURN', 'Returns from a subroutine.'),
+  w('RND', 'RND', 'A random number from 0 to 1.'), w('RUN', 'RUN [line]', 'Clears the variables and runs the program.'),
+  w('SAVE', 'SAVE "name"', 'Saves the program to tape.'), w('SCROLL', 'SCROLL', 'Scrolls the screen up a line.'),
+  w('SGN', 'SGN x', 'The sign: -1, 0 or 1.'), w('SIN', 'SIN x', 'Sine.'), w('SLOW', 'SLOW', 'Slow mode: the screen shows all the time.'),
+  w('SQR', 'SQR x', 'Square root.'), w('STEP', 'FOR v = a TO b STEP s', 'The step of a FOR loop.'), w('STOP', 'STOP', 'Stops the program.'),
+  w('STR$', 'STR$ x', 'A number as a string.'), w('TAB', 'PRINT TAB c; ...', 'In PRINT: moves to a column.'), w('TAN', 'TAN x', 'Tangent.'),
+  w('THEN', 'IF cond THEN statement', 'Introduces the statement of IF.'), w('TO', 'FOR v = a TO b | s$(a TO b)', 'The end of a FOR loop, a slice of a string.'),
+  w('UNPLOT', 'UNPLOT x, y', 'Clears a block pixel.'), w('USR', 'USR addr', 'Calls machine code; its value is BC on return.'),
+  w('VAL', 'VAL s$', 'Evaluates a string.'),
+];
+
+// ---------------------------------------------------------------- TRS-80 Level II BASIC (an ASCII listing)
+const TRS80 = [
+  ...['ABS', 'ASC', 'ATN', 'CDBL', 'CINT', 'COS', 'CSNG', 'EXP', 'FIX', 'FRE', 'INT', 'LEN', 'LOG', 'PEEK', 'POS', 'RND', 'SGN', 'SIN', 'SQR', 'TAN', 'VAL', 'USR', 'VARPTR', 'INP', 'MEM', 'ERL', 'ERR']
+    .map(n => w(n, `${n}(x)`, 'A function of Level II BASIC.')),
+  ...['CHR$', 'INKEY$', 'LEFT$', 'MID$', 'RIGHT$', 'STR$', 'STRING$'].map(n => w(n, `${n}(...)`, 'A string function.')),
+  w('AND', 'a AND b', 'Logical / bitwise AND.'), w('AUTO', 'AUTO [start][, inc]', 'Automatic line numbers.'),
+  w('CLEAR', 'CLEAR [n]', 'Clears the variables, n bytes for strings.'), w('CLOAD', 'CLOAD ["n"]', 'Loads a program from tape.'),
+  w('CLS', 'CLS', 'Clears the screen.'), w('CONT', 'CONT', 'Continues the program.'), w('CSAVE', 'CSAVE "n"', 'Saves the program to tape.'),
+  w('DATA', 'DATA const[, const...]', 'Constants for READ.'), w('DEFDBL', 'DEFDBL A-Z', 'Double precision variables.'),
+  w('DEFINT', 'DEFINT A-Z', 'Integer variables.'), w('DEFSNG', 'DEFSNG A-Z', 'Single precision variables.'), w('DEFSTR', 'DEFSTR A-Z', 'String variables.'),
+  w('DELETE', 'DELETE from-to', 'Deletes lines.'), w('DIM', 'DIM a(n[, m])', 'Declares an array.'), w('EDIT', 'EDIT line', 'Edits a line.'),
+  w('ELSE', 'IF c THEN a ELSE b', 'The other branch of IF.'), w('END', 'END', 'Ends the program.'), w('ERROR', 'ERROR n', 'Raises an error.'),
+  w('FOR', 'FOR v = a TO b [STEP s]', 'Starts a counted loop.'), w('GOSUB', 'GOSUB line', 'Calls a subroutine.'), w('GOTO', 'GOTO line', 'Jumps to a line.'),
+  w('IF', 'IF cond THEN ... [ELSE ...]', 'Executes the rest when the condition is true.'), w('INPUT', 'INPUT ["prompt";] v[, w...]', 'Reads from the keyboard.'),
+  w('LET', '[LET] v = expr', 'Assigns a value.'), w('LIST', 'LIST [from-to]', 'Lists the program.'), w('LLIST', 'LLIST', 'Lists on the printer.'),
+  w('LPRINT', 'LPRINT items', 'Prints on the printer.'), w('NEW', 'NEW', 'Deletes the program.'), w('NEXT', 'NEXT [v]', 'Ends a FOR loop.'),
+  w('NOT', 'NOT x', 'Logical / bitwise NOT.'), w('ON', 'ON n GOTO|GOSUB l1, l2...', 'Jumps to the n-th line of the list.'), w('OR', 'a OR b', 'Logical / bitwise OR.'),
+  w('OUT', 'OUT port, n', 'Writes a byte to a port.'), w('POINT', 'POINT(x, y)', 'Whether a graphics block is set (-1) or not (0).'),
+  w('POKE', 'POKE addr, n', 'Writes a byte.'), w('PRINT', 'PRINT [@ pos,] items', 'Prints on the screen (? is the short form); @ 0-1023 is the position.'),
+  w('RANDOM', 'RANDOM', 'Seeds the random numbers.'), w('READ', 'READ v[, w...]', 'Reads DATA.'), w('REM', "REM text | ' text", 'A comment.'),
+  w('RESET', 'RESET(x, y)', 'Clears a graphics block (0-127, 0-47).'), w('RESTORE', 'RESTORE', 'Starts READ at the first DATA again.'),
+  w('RESUME', 'RESUME [line | NEXT]', 'Continues after an ON ERROR GOTO handler.'), w('RETURN', 'RETURN', 'Returns from a subroutine.'),
+  w('RUN', 'RUN [line]', 'Runs the program.'), w('SET', 'SET(x, y)', 'Sets a graphics block (0-127, 0-47).'), w('STEP', 'FOR ... STEP s', 'The step of a loop.'),
+  w('STOP', 'STOP', 'Stops the program.'), w('SYSTEM', 'SYSTEM', 'Loads a machine code program from tape.'), w('TAB', 'PRINT TAB(n)', 'Moves to a column.'),
+  w('THEN', 'IF cond THEN ...', 'Introduces the IF branch.'), w('TO', 'FOR v = a TO b', 'The end value of a loop.'), w('TROFF', 'TROFF', 'Tracing off.'),
+  w('TRON', 'TRON', 'Tracing on.'), w('USING', 'PRINT USING "format"; items', 'Formatted output.'),
+];
+
+// ---------------------------------------------------------------- BBC BASIC II (an ASCII listing, typed in by *EXEC)
+const BBC = [
+  ...['ABS', 'ACS', 'ADVAL', 'ASC', 'ASN', 'ATN', 'COS', 'DEG', 'EXP', 'INT', 'LEN', 'LN', 'LOG', 'RAD', 'SGN', 'SIN', 'SQR', 'TAN', 'VAL', 'USR', 'POINT', 'INKEY', 'OPENIN', 'OPENOUT', 'OPENUP', 'EXT#', 'PTR#', 'EOF#', 'BGET#']
+    .map(n => w(n, `${n}(x)`, 'A function of BBC BASIC.')),
+  ...['CHR$', 'GET$', 'INKEY$', 'LEFT$', 'MID$', 'RIGHT$', 'STR$', 'STRING$'].map(n => w(n, `${n}(...)`, 'A string function.')),
+  w('AND', 'a AND b', 'Bitwise AND.'), w('AUTO', 'AUTO [start][, step]', 'Automatic line numbers.'), w('BPUT#', 'BPUT#ch, n', 'Writes a byte to a file.'),
+  w('CALL', 'CALL addr[, params]', 'Calls machine code (A%, X%, Y% to the registers).'), w('CHAIN', 'CHAIN "file"', 'Loads and runs a program.'),
+  w('CLEAR', 'CLEAR', 'Clears the variables.'), w('CLG', 'CLG', 'Clears the graphics window.'), w('CLOSE#', 'CLOSE#ch', 'Closes a file.'),
+  w('CLS', 'CLS', 'Clears the text window.'), w('COLOUR', 'COLOUR n', 'The text colour (128+n: the background).'),
+  w('DATA', 'DATA const[, const...]', 'Constants for READ.'), w('DEF', 'DEF PROCname(params) | DEF FNname(params)', 'Defines a procedure or a function.'),
+  w('DIM', 'DIM a(n) | DIM block n', 'Declares an array or reserves n+1 bytes of memory.'), w('DIV', 'a DIV b', 'Integer division.'),
+  w('DRAW', 'DRAW x, y', 'Draws a line to x, y.'), w('ELSE', 'IF c THEN a ELSE b', 'The other branch of IF.'), w('END', 'END', 'Ends the program.'),
+  w('ENDPROC', 'ENDPROC', 'Ends a procedure.'), w('ENVELOPE', 'ENVELOPE n, ...', 'Defines a sound envelope (14 parameters).'),
+  w('EOR', 'a EOR b', 'Bitwise exclusive OR.'), w('ERL', 'ERL', 'The line of the last error.'), w('ERR', 'ERR', 'The number of the last error.'),
+  w('ERROR', 'ON ERROR ...', 'Used with ON to handle errors.'), w('EVAL', 'EVAL(s$)', 'Evaluates a string.'), w('FALSE', 'FALSE', '0.'),
+  w('FN', 'FNname(args)', 'Calls a function.'), w('FOR', 'FOR v = a TO b [STEP s]', 'Starts a counted loop.'), w('GCOL', 'GCOL action, colour', 'The graphics colour.'),
+  w('GET', 'GET', 'Waits for a key, its code.'), w('GOSUB', 'GOSUB line', 'Calls a subroutine.'), w('GOTO', 'GOTO line', 'Jumps to a line.'),
+  w('HIMEM', 'HIMEM', 'The top of the memory of BASIC.'), w('IF', 'IF cond THEN ... [ELSE ...]', 'Executes the rest when the condition is true.'),
+  w('INPUT', 'INPUT ["prompt"] v[, w...]', 'Reads from the keyboard.'), w('LET', '[LET] v = expr', 'Assigns a value.'), w('LIST', 'LIST [from, to]', 'Lists the program.'),
+  w('LOCAL', 'LOCAL v[, w...]', 'Local variables of a procedure or function.'), w('LOMEM', 'LOMEM', 'The start of the variables.'),
+  w('MOD', 'a MOD b', 'The remainder.'), w('MODE', 'MODE n', 'The screen mode (0-7).'), w('MOVE', 'MOVE x, y', 'Moves the graphics cursor.'),
+  w('NEW', 'NEW', 'Deletes the program.'), w('NEXT', 'NEXT [v]', 'Ends a FOR loop.'), w('NOT', 'NOT x', 'Bitwise NOT.'),
+  w('OLD', 'OLD', 'Gets back a program after NEW.'), w('ON', 'ON n GOTO|GOSUB l1, l2... | ON ERROR ...', 'Jumps to the n-th line of the list.'),
+  w('OR', 'a OR b', 'Bitwise OR.'), w('OSCLI', 'OSCLI s$', 'Runs a * command.'), w('PAGE', 'PAGE', 'The start of the program.'),
+  w('PI', 'PI', '3.14159265...'), w('PLOT', 'PLOT k, x, y', 'Plots: k is the kind (points, lines, triangles).'), w('POS', 'POS', 'The text cursor column.'),
+  w('PRINT', 'PRINT items', "Prints on the screen; ' is a new line, ~ hexadecimal."), w('PROC', 'PROCname(args)', 'Calls a procedure.'),
+  w('READ', 'READ v[, w...]', 'Reads DATA.'), w('REM', 'REM text', 'A comment.'), w('RENUMBER', 'RENUMBER [start[, step]]', 'Renumbers the lines.'),
+  w('REPEAT', 'REPEAT ... UNTIL cond', 'Starts a loop.'), w('REPORT', 'REPORT', 'Prints the last error.'), w('RESTORE', 'RESTORE [line]', 'Starts READ at a line.'),
+  w('RETURN', 'RETURN', 'Returns from a subroutine.'), w('RND', 'RND[(n)]', 'A random number.'), w('RUN', 'RUN', 'Runs the program.'),
+  w('SOUND', 'SOUND channel, amplitude, pitch, duration', 'Makes a sound.'), w('SPC', 'PRINT SPC(n)', 'n spaces.'), w('STEP', 'FOR ... STEP s', 'The step of a loop.'),
+  w('STOP', 'STOP', 'Stops the program.'), w('TAB', 'PRINT TAB(x[, y])', 'Moves the text cursor.'), w('THEN', 'IF cond THEN ...', 'Introduces the IF branch.'),
+  w('TIME', 'TIME', 'The clock in 1/100 seconds.'), w('TO', 'FOR v = a TO b', 'The end value of a loop.'), w('TRACE', 'TRACE ON | OFF', 'Prints the line numbers as they run.'),
+  w('TRUE', 'TRUE', '-1.'), w('UNTIL', 'REPEAT ... UNTIL cond', 'Ends a REPEAT loop.'), w('VDU', 'VDU n[, n...]', 'Sends codes to the screen driver.'),
+  w('VPOS', 'VPOS', 'The text cursor row.'), w('WIDTH', 'WIDTH n', 'The line width of PRINT.'),
+];
+
 /**
  * Dialects. `start` is the default load address; `machines` lists machine variants with their own start
  * address (`machine` is the default one).
@@ -728,5 +822,27 @@ export const DIALECTS = {
     },
     maxLine: 65535, minLine: 1,
     keywords: LOCO,
+  },
+  zx81: {
+    name: 'ZX81 BASIC', machine: 'zx81', start: 0x407d, output: 'zx81-p',
+    machines: { zx81: { name: 'Sinclair ZX81 / Timex 1000', start: 0x407d } },
+    maxLine: 9999, minLine: 1,
+    keywords: ZX81,
+  },
+  trs80: {
+    name: 'TRS-80 Level II BASIC', machine: 'trs80', start: null, output: 'trs80-ascii',
+    machines: { trs80: { name: 'TRS-80 Model I / III', start: null } },
+    maxLine: 65529, minLine: 0,
+    // a line ends with CR, outside strings everything in capitals, ' is REM
+    listing: { eol: [0x0d], end: [], upper: 'all', remQuote: true, maxBytes: 240 },
+    keywords: TRS80,
+  },
+  bbc: {
+    name: 'BBC BASIC II', machine: 'bbcb', start: null, output: 'bbc-ascii',
+    machines: { bbcb: { name: 'BBC Micro Model B', start: null } },
+    maxLine: 32767, minLine: 0,
+    // a line ends with CR, the keywords in capitals, the names as written (' is a new line of PRINT)
+    listing: { eol: [0x0d], end: [], upper: 'keywords', remQuote: false, maxBytes: 238 },
+    keywords: BBC,
   },
 };

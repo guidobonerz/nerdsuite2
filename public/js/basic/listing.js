@@ -1,6 +1,7 @@
 // Text-listing output for non-Commodore dialects (no tokenized binaries):
 //   atari / turbo -> ATASCII listing loadable with ENTER "D:..." (EOL = $9B)
 //   loco          -> CPC ASCII file as written by SAVE "x",A (CR LF, terminated by $1A)
+//   trs80, bbc    -> ASCII listings with CR line ends (def.listing: eol, end, upper, remQuote, maxBytes)
 
 /** ATASCII escape names (inside strings/REM; {$xx} works everywhere). {inv}...{/inv} sets bit 7. */
 export const ATASCII_CODES = [
@@ -25,7 +26,9 @@ export const ATASCII_CODES = [
 const ATASCII_BY_NAME = new Map(ATASCII_CODES.filter((c) => c.code >= 0).map((c) => [c.name, c.code]));
 const ATASCII_BY_CODE = new Map(ATASCII_CODES.filter((c) => c.code >= 0).map((c) => [c.code, c.name]));
 
-const FORMATS = { 'atascii-lst': 'atari', 'cpc-ascii': 'cpc' };
+const FORMATS = { 'atascii-lst': 'atari', 'cpc-ascii': 'cpc', 'trs80-ascii': 'cpc', 'bbc-ascii': 'cpc' };
+// the CPC listing; the other ASCII ones set def.listing
+const CPC = { eol: [0x0d, 0x0a], end: [0x1a], upper: 'keywords', remQuote: true, maxBytes: 255 };
 
 function parseEscape(s, i, atari) {
   const close = s.indexOf('}', i + 1);
@@ -88,8 +91,8 @@ function atariLine(body) {
   return { bytes: out };
 }
 
-/** CPC: keywords outside strings/REM/'/DATA are uppercased, variables keep their case. */
-function cpcLine(body, words) {
+/** CPC: keywords outside strings/REM/'/DATA are uppercased, variables keep their case (upper 'all': them too). */
+function cpcLine(body, words, { upper = 'keywords', remQuote = true } = {}) {
   const out = [];
   let quote = false;
   let rem = false;
@@ -113,13 +116,13 @@ function cpcLine(body, words) {
         const word = m[0];
         const lower = word.toLowerCase();
         const isKw = words.has(lower);
-        push(isKw ? word.toUpperCase() : word);
+        push(isKw || upper === 'all' ? word.toUpperCase() : word);
         if (isKw && lower === 'rem') rem = true;
         if (isKw && lower === 'data') data = true;
         i += word.length;
         continue;
       }
-      if (ch === "'") rem = true;
+      if (ch === "'" && remQuote) rem = true;
     }
     if (ch === '"' && !rem) quote = !quote;
     if (ch === ':' && !quote) data = false;
@@ -134,7 +137,7 @@ const wordCache = new WeakMap();
 function keywordWords(def) {
   if (!wordCache.has(def)) {
     const set = new Set();
-    for (const kw of def.keywords) for (const part of kw.name.toLowerCase().split(' ')) if (/^[a-z]/.test(part)) set.add(part);
+    for (const kw of def.keywords) for (const part of kw.name.toLowerCase().split(' ')) if (/^[a-z]/.test(part)) set.add(part.replace(/#$/, ''));
     wordCache.set(def, set);
   }
   return wordCache.get(def);
@@ -144,7 +147,8 @@ function keywordWords(def) {
 export function tokenizeListing(text, def) {
   const atari = def.output === 'atascii-lst';
   const words = atari ? null : keywordWords(def);
-  const maxBytes = atari ? 120 : 255;
+  const ascii = def.listing ?? CPC;
+  const maxBytes = atari ? 120 : ascii.maxBytes;
   const errors = [];
   const lines = [];
   const bytes = [];
@@ -165,16 +169,16 @@ export function tokenizeListing(text, def) {
     prev = number;
     const body = raw.slice(m[0].length).replace(/^\s+/, '').replace(/\s+$/, '');
     if (!body) return void errors.push({ line: lineNo, msg: `line ${number} is empty` });
-    const r = atari ? atariLine(body) : cpcLine(body, words);
+    const r = atari ? atariLine(body) : cpcLine(body, words, ascii);
     if (r.error) return void errors.push({ line: lineNo, msg: r.error });
     const lineBytes = [...Array.from(`${number} `, (ch) => ch.charCodeAt(0)), ...r.bytes];
     if (lineBytes.length > maxBytes) {
       return void errors.push({ line: lineNo, msg: `line ${number} too long (${lineBytes.length} chars, max ${maxBytes})` });
     }
     lines.push({ src: lineNo, number, addr: bytes.length });
-    bytes.push(...lineBytes, ...(atari ? [0x9b] : [0x0d, 0x0a]));
+    bytes.push(...lineBytes, ...(atari ? [0x9b] : ascii.eol));
   });
-  if (!atari) bytes.push(0x1a);
+  if (!atari) bytes.push(...ascii.end);
   return {
     ok: errors.length === 0, errors, prg: null, listing: Uint8Array.from(bytes), format: def.output, start: null, lines,
   };

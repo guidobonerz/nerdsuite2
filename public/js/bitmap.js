@@ -24,7 +24,7 @@
 
 import { LAYOUT } from './layout.js';
 import { PALETTE } from './c64.js';
-import { tools, RANGE_SMOOTH as RANGE, rotation, rangeForKey, DRAG_TOOLS, BRUSH_TOOLS, defaultBrush, brushCells, brushMax, brushTools, radiusMax, radiusTools, defaultTools, paintArea, toolForKey, lineCells, dragCells as dragXY, dragMods, dragTo, curveWaits, followCurve, DRAW_POLY, WAIT_TOOLS, waits, strokeDown, closePolygon, wheelZoom, outlineCells } from './drawtools.js';
+import { tools, RANGE, rotation, rangeForKey, DRAG_TOOLS, BRUSH_TOOLS, defaultBrush, brushCells, brushMax, brushTools, radiusMax, radiusTools, defaultTools, paintArea, toolForKey, lineCells, dragCells as dragXY, dragMods, dragTo, curveWaits, followCurve, DRAW_POLY, WAIT_TOOLS, waits, strokeDown, closePolygon, wheelZoom, outlineCells } from './drawtools.js';
 import { regionOp, rectBetween, clipRect } from './gridops.js';
 import { h, mount, dom, signal, iconButton, select, snackbar, promptDialog, section, sidePanel, confirmRemove } from './pui.js';
 import { colorChooser } from './colorchooser.js';
@@ -33,7 +33,8 @@ import { listBinaries, readBinary, writeBinary, isOpen } from './project.js';
 import { pngOf, exportName, importName } from './export.js';
 import { bitmapPrg } from './bitmapprg.js';
 import { referenceLayer } from './trace.js';
-import { aaShape, coverage, shadeOf } from './aa.js';
+import { encodeYbm, decodeYbm, isYbm } from './ybm.js';
+import { aaShape, coverage, shadeOf, edgeCover } from './aa.js';
 import { tr } from './i18n.js';
 import { keepUi, pick as pickUi, put as putUi } from './uistate.js';
 
@@ -209,20 +210,25 @@ export function createBitmapEditor(el, store, actions, bar) {
   }
 
   // the Import button of the app bar (app.js, export.js): a Koala or Art Studio picture of this
-  // computer becomes a new picture - not in the project until it is saved (Save offers its name)
+  // computer becomes a new picture - not in the project until it is saved (Save offers its name).
+  // A Yopaca picture (.ybm, ybm.js) brings its reference image along, placed as it was
   async function importPicture(bytes, name) {
+    const ybm = isYbm(bytes) ? decodeYbm(bytes) : null;
+    if (ybm) bytes = ybm.picture;
     const mc = bytes.length === KOALA_SIZE;
     if (!mc && bytes.length !== ART_SIZE) throw new Error(tr('§1952', bytes.length, KOALA_SIZE, ART_SIZE));
     if (!(await mayDiscard('§1003'))) return;
     decode(bytes);
     st.file = null; st.suggest = `${LAYOUT.bitmap}/${importName(name, 'picture')}.${mc ? 'kla' : 'art'}`;
     setDirty(true);
+    if (ybm) await reference.restore(ybm.image && { ...ybm.image, reference: ybm.reference });
     render();
-    snackbar(tr('§1953', name, mc ? '§1011' : '§1010'));
+    snackbar(tr(ybm?.image ? '§2118' : '§1953', name, mc ? '§1011' : '§1010'));
   }
   const importFormats = () => (!isOpen() ? [] : [
     { label: '§1002', icon: 'wallpaper', accept: '.kla,.koa', open: importPicture },
     { label: '§0991', icon: 'wallpaper', accept: '.art', open: importPicture },
+    { label: '§2117', icon: 'wallpaper', accept: '.ybm', open: importPicture },
   ]);
 
   // hires <-> multicolor like the VIC's multicolor bit: the bitmap and the screen memory stay, they
@@ -257,8 +263,10 @@ export function createBitmapEditor(el, store, actions, bar) {
   // --- undo ------------------------------------------------------------------------------------
 
   const copy = () => ({ pix: st.pix.map(r => r.slice()), slots: st.slots.map(s => [...s]), bg: st.bg, mc: st.mc, penColor: [...st.penColor] });
-  function snapshot() {
-    st.undo.push(copy());
+  // state: the picture as it was, taken earlier (a stroke that may change nothing takes its step
+  // when it does)
+  function snapshot(state = copy()) {
+    st.undo.push(state);
     if (st.undo.length > UNDO_LIMIT) st.undo.shift();
     st.redo = [];
     if (!st.dirty) { setDirty(true); update(); }
@@ -401,7 +409,7 @@ export function createBitmapEditor(el, store, actions, bar) {
   // the range tools: the range selected with S, else the whole picture; the cell colors stay
   // the tools that move pixels: they move colors, not the values of the pixels - a value is a slot
   // of its block, and in another block the slot holds another color (or the background)
-  const MOVES = new Set(['left', 'right', 'up', 'down', 'mirror', 'flip', 'rotl', 'rotr', 'rotate', 'smooth']);   // on the colors, the blocks take them again (smooth: their edges)
+  const MOVES = new Set(['left', 'right', 'up', 'down', 'mirror', 'flip', 'rotl', 'rotr', 'rotate']);   // on the colors, the blocks take them again
 
   // the four shifts: with Shift a whole block (8 x 8 pixels, multicolor 4 x 8)
   const SHIFTS = new Set(['left', 'right', 'up', 'down']);
@@ -447,6 +455,60 @@ export function createBitmapEditor(el, store, actions, bar) {
     for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) recode(c, r, res.grid);
     if (st.sel) st.sel = res.rect;
     draw(); status();
+  }
+
+  // Ctrl+C: the range selected with S, else the whole picture - as the colors of its pixels: a
+  // value is a slot of its block, the color is what the pixel shows
+  function copyRange() {
+    if (!st.pix) return;
+    const r = st.sel ? clipRect(st.sel, pw(), ph()) : { x: 0, y: 0, w: pw(), h: ph() };
+    if (!r) return;
+    const bw = st.mc ? 4 : 8;
+    const grid = st.pix.slice(r.y, r.y + r.h).map((row, j) => Array.from(row.subarray(r.x, r.x + r.w), (v, i) => pixelColor(v, ((r.y + j) >> 3) * COLS + Math.floor((r.x + i) / bw))));
+    st.clip = { ...r, grid, mc: st.mc };
+    snackbar(st.sel ? tr('§2119', r.w, r.h) : '§2120');
+  }
+
+  // Ctrl+V: the copy at the range selected now (its top left corner), else where it was copied
+  // from; what does not fit is cut off. The blocks it lands on take the colors again (recode), as
+  // after a move. One undo step; the pasted part is the range then
+  function pasteRange() {
+    const cl = st.clip;
+    if (!st.pix) return;
+    if (!cl) return snackbar('§2121');
+    if (cl.mc !== st.mc) return snackbar(tr('§2122', cl.mc ? '§1011' : '§1010', cl.mc ? '§1010' : '§1011'), { error: true });
+    rot.stop(false);
+    const x0 = st.sel?.x ?? cl.x, y0 = st.sel?.y ?? cl.y;
+    const to = clipRect({ x: x0, y: y0, w: cl.w, h: cl.h }, pw(), ph());
+    if (!to) return snackbar('§2123', { error: true });
+    snapshot();
+    st.recolored = 0; st.clashes = 0; st.lost = 0;
+    const bw = st.mc ? 4 : 8;
+    const colors = st.pix.map((row, y) => Array.from(row, (v, x) => pixelColor(v, (y >> 3) * COLS + Math.floor(x / bw))));
+    for (let y = to.y; y < to.y + to.h; y++) for (let x = to.x; x < to.x + to.w; x++) colors[y][x] = cl.grid[y - y0][x - x0];
+    for (let r = to.y >> 3; r <= (to.y + to.h - 1) >> 3; r++) for (let c = Math.floor(to.x / bw); c <= Math.floor((to.x + to.w - 1) / bw); c++) recode(c, r, colors);
+    st.sel = to;
+    draw(); status();
+    snackbar(tr('§2124', to.w, to.h, to.x, to.y));
+  }
+
+  // the smooth tool: antialiasing under its brush (aa.js edgeCover) - a background pixel in a
+  // corner of an edge takes the C64 color between the drawn color and its background, as a shade
+  // of the pen does (paintShade: only in a slot the block has free, so in hires only in a block of
+  // its own). d.shaded: the shades of this stroke. The undo step is taken with the first shade -
+  // a stroke that shades nothing (hires, a full block) leaves no empty step behind
+  function smoothPixels(cells, d) {
+    const bw = st.mc ? 4 : 8, w = pw(), h = ph(), block = (x, y) => (y >> 3) * COLS + Math.floor(x / bw);
+    const colors = st.pix.map((row, y) => Array.from(row, (v, x) => pixelColor(v, block(x, y))));
+    const before = d.snapped ? null : copy();
+    for (const e of edgeCover(colors, cells, { isBg: (v, x, y) => !st.pix[y][x], w, h, skip: d.shaded })) {
+      const bg = colors[e.y][e.x], color = shadeOf(e.cov, e.fg, bg);
+      if (color === bg || color === e.fg) continue;
+      paintShade(e, color, false);
+      if (!st.pix[e.y][e.x]) continue;
+      d.shaded.add(e.y * w + e.x);
+      if (!d.snapped) { snapshot(before); d.snapped = true; }
+    }
   }
 
   // a block from the colors of its pixels: multicolor - the background and the three colors most
@@ -527,12 +589,13 @@ export function createBitmapEditor(el, store, actions, bar) {
       setTool('pencil'); return;
     }
     if (st.tool === 'select') { st.drag = { start: p, end: p, shift: e.shiftKey }; draw(); return; }
-    if (!WAIT_TOOLS.has(st.tool)) snapshot();      // the curve and the polygon when they draw: a dropped one changes nothing
+    if (!WAIT_TOOLS.has(st.tool) && st.tool !== 'smooth') snapshot();   // the curve and the polygon when they draw, the smoother with its first shade: a stroke of nothing is no step
     st.recolored = 0; st.clashes = 0; st.lost = 0;  // counted over the whole stroke
     if (st.tool === 'pencil') {
       st.drag = { last: p, value, aa: aaOn(value) ? new Map() : null };
       if (st.drag.aa) paintAA(aaCover('line', p, p, {}, brushed([p])), st.drag.aa); else paintPixels(brushed([p]), value);
     }
+    else if (st.tool === 'smooth') { st.drag = { last: p, shaded: new Set() }; smoothPixels(brushed([p]), st.drag); }
     else if (dragTool()) { st.drag = { start: p, end: p, value, ...dragMods(e), aa: aaOn(value) }; draw(); }
     else if (st.tool === 'fill') paintPixels(floodCells(p, value), value);
     status();
@@ -567,6 +630,7 @@ export function createBitmapEditor(el, store, actions, bar) {
     st.hover = p;
     if (d && st.tool === 'pencil' && d.aa) { paintAA(aaCover('line', d.last, p, {}, brushed(lineCells(d.last, p))), d.aa); d.last = p; }
     else if (d && st.tool === 'pencil') { paintPixels(brushed(lineCells(d.last, p).slice(1)), d.value); d.last = p; }   // from the last pixel on, which is painted
+    else if (d && st.tool === 'smooth') { smoothPixels(brushed(lineCells(d.last, p)), d); d.last = p; }
     else if (d) dragTo(d, p, e);
     draw(); status();
   }
@@ -606,6 +670,7 @@ export function createBitmapEditor(el, store, actions, bar) {
     if (e.target.closest('input, select, textarea')) return;
     const mod = e.ctrlKey || e.metaKey;
     const key = e.key.toLowerCase();
+    if (mod && !e.shiftKey && !e.altKey && (key === 'c' || key === 'v')) { if (key === 'c') copyRange(); else pasteRange(); e.preventDefault(); return; }
     if (mod || e.altKey) return;
     const tool = toolForKey(TOOLS, key);
     const op = rangeForKey(RANGE, e);
@@ -787,12 +852,14 @@ export function createBitmapEditor(el, store, actions, bar) {
     h('div', { class: 'app-bar__spacer' }));
 
   // what the Export button of the app bar offers here (app.js): the picture as it is edited, Koala
-  // or Art Studio (its mode), or a PNG of its 320 x 200 pixels
+  // or Art Studio (its mode), the same with its reference image (.ybm), or a PNG of its 320 x 200 pixels
   function exportFormats() {
     if (!isOpen() || !st.pix) return [];
     const ext = st.mc ? 'kla' : 'art', name = st.file ?? 'picture';
     return [
       { label: st.mc ? '§0990' : '§0991', name: exportName(name, ext), description: 'C64 picture', bytes: encode },
+      { label: '§2116', icon: 'wallpaper', name: exportName(name, 'ybm'), description: 'Yopaca picture',
+        bytes: () => { const r = reference.bundle(); return encodeYbm({ picture: encode(), format: ext, image: r && { bytes: r.bytes, type: r.type }, reference: r?.reference }); } },
       // a program the C64 runs: LOAD and RUN show the picture until a key is pressed (bitmapprg.js)
       { label: '§0992', icon: 'play_arrow', name: exportName(name, 'prg'), description: 'C64 program',
         bytes: () => { const b = encode();

@@ -113,7 +113,8 @@ test('every starter program assembles, and its disassembly too', () => {
   for (const p of PLATFORMS) {
     const out = assemble('main.asm', new Map([['main.asm', starterAsm(p)]]), { format: p.format, cpu: p.cpu });
     assert.deepEqual(out.errors, [], p.id);
-    if (p.format === 'plain' || p.format === 'cbm') viewRoundTrip(`main.${p.format === 'cbm' ? 'prg' : p.ext}`, out.output, p.id, p.cpu);
+    // a file that tells its address (a .prg, a cartridge); a .bin of the BBC does not
+    if ((p.format === 'plain' || p.format === 'cbm') && fileLayout(`main.${p.format === 'cbm' ? 'prg' : p.ext}`, out.output)) viewRoundTrip(`main.${p.format === 'cbm' ? 'prg' : p.ext}`, out.output, p.id, p.cpu);
   }
 });
 

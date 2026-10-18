@@ -34,7 +34,11 @@ export const EMULATORS = [
   { id: 'winape', name: 'WinAPE', platforms: ['cpc'] }, { id: 'caprice', name: 'Caprice', platforms: ['cpc'] },
   { id: 'mesen', name: 'Mesen', platforms: ['nes', 'snes'] }, { id: 'fceux', name: 'FCEUX', platforms: ['nes'] },
   { id: 'nestopia', name: 'Nestopia', platforms: ['nes'] }, { id: 'bsnes', name: 'bsnes', platforms: ['snes'] },
-  { id: 'snes9x', name: 'Snes9x', platforms: ['snes'] }, { id: 'mame', name: 'MAME', platforms: ['cpc', 'vcs', 'nes', 'snes'] },
+  { id: 'snes9x', name: 'Snes9x', platforms: ['snes'] },
+  { id: 'eightyone', name: 'EightyOne', platforms: ['zx81'] }, { id: 'zesarux', name: 'ZEsarUX', platforms: ['zx81'] },
+  { id: 'trs80gp', name: 'trs80gp', platforms: ['trs80'] },
+  { id: 'beebem', name: 'BeebEm', platforms: ['bbc'] }, { id: 'b2', name: 'b2', platforms: ['bbc'] },
+  { id: 'mame', name: 'MAME', platforms: ['cpc', 'vcs', 'nes', 'snes', 'trs80', 'bbc'] },
   { id: 'ultimate', name: 'Ultimate 64 (a real C64)', platforms: ['vice'] },
   { id: 'command', name: 'A command…' },
 ];

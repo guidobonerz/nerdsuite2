@@ -20,6 +20,7 @@ const MNEMONIC_NAMES = new Set(Object.values(CPU_TABLES).flatMap(t => Object.key
 import { openPetsciiPanel } from './petsciipanel.js';
 import { listSources, hasFile, readText, readBinary, writeText, removeFile, isOpen, allFiles, isSource } from './project.js';
 import { embedInlay } from './embedview.js';
+import { EMBED, resolveEmbeds } from './basic/preprocess.js';
 import { readSettings, writeSettings, isAsm, isBasic, dialectOf, labelModeOf, machineOf, assemblerOf, ASSEMBLERS, kickassStatus } from './nsbuild.js';
 import * as vice from './vice.js';
 import { exportName } from './export.js';
@@ -609,8 +610,17 @@ export function createCodeView(el, bar, hooks = {}) {
   function exportFormats() {
     if (!st.current) return [];
     const p = st.current;
-    return [{ label: `${p.split('/').pop()} (the source)`, icon: 'description', name: exportName(p.split('/').pop().replace(/\.[^.]*$/, ''), p.split('.').pop()),
-      type: 'text/plain', description: 'Source', bytes: () => new TextEncoder().encode(toFile(p, text(p))) }];
+    const name = exportName(p.split('/').pop().replace(/\.[^.]*$/, ''), p.split('.').pop());
+    const source = { label: `${p.split('/').pop()} (the source)`, icon: 'description', name,
+      type: 'text/plain', description: 'Source', bytes: () => new TextEncoder().encode(toFile(p, text(p))) };
+    if (!isBasic(p) || !text(p).split('\n').some(l => EMBED.test(l))) return [source];
+    // the DATA @embed lines as the DATA lines of their bytes: a source without the files it embeds
+    return [source, { label: `${p.split('/').pop()} (the source, @embed resolved to DATA lines)`, icon: 'data_array', name,
+      type: 'text/plain', description: 'Source', bytes: () => {
+        const r = resolveEmbeds(text(p), { readFile: projectBinary, labelMode: labelModeOf(p) });
+        if (r.errors.length) throw new Error(`line ${r.errors[0].line}: ${r.errors[0].msg}`);
+        return new TextEncoder().encode(toFile(p, r.text));
+      } }];
   }
 
   // a text file of the computer into src/

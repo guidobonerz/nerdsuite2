@@ -4,6 +4,7 @@
 import { DIALECTS } from './dialects.js';
 import { lookupControlCode, controlCodeName } from './petscii.js';
 import { tokenizeListing, detokenizeListing } from './listing.js';
+import { tokenizeZx81, detokenizeZx81 } from '../zx81.js';
 
 export { DIALECTS };
 
@@ -179,6 +180,13 @@ function tokenizeLine(text, prep) {
 // srcLines: the line of the source each line of text came from (the preprocessor: @embed makes many of one)
 export function tokenize(text, { dialect = 'v2', start, machine, srcLines } = {}) {
   const def = DIALECTS[dialect];
+  if (def?.output === 'zx81-p') {
+    // a .p file (zx81.js); the lines and errors in the lines of the source
+    const r = tokenizeZx81(text);
+    const src = n => srcLines?.[n - 1] ?? n;
+    return { ...r, prg: null, listing: r.bytes, format: def.output, start: 0x407d,
+      errors: r.errors.map(e => ({ ...e, line: src(e.line) })), lines: r.lines.map(l => ({ ...l, src: src(l.src) })) };
+  }
   if (def && def.output !== 'prg') return tokenizeListing(text, def);
   const prep = getDialect(dialect);
   if (start == null) {
@@ -376,6 +384,7 @@ function renderPieces(b, prep) {
  */
 export function detokenize(prg, { dialect = 'v2' } = {}) {
   const def = DIALECTS[dialect];
+  if (def?.output === 'zx81-p') return detokenizeZx81(prg instanceof Uint8Array ? prg : Uint8Array.from(prg));
   if (def && def.output !== 'prg') return detokenizeListing(prg instanceof Uint8Array ? prg : Uint8Array.from(prg), def);
   const prep = getDialect(dialect);
   const data = prg instanceof Uint8Array ? prg : Uint8Array.from(prg);

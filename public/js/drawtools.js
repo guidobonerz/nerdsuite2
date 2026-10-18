@@ -23,6 +23,7 @@ const TOOLS = [
   { group: 'draw', key: 'circle', icon: 'radio_button_unchecked', shortcut: 'q', tip: '§0955' },
   { group: 'draw', key: 'curve', icon: 'looks', shortcut: 'a', tip: '§0698' },
   { group: 'draw', key: 'polygon', icon: 'pentagon', shortcut: 'y', tip: '§2114' },
+  { group: 'draw', key: 'smooth', icon: 'auto_fix_high', shortcut: 'j', tip: '§2115' },
   { group: 'draw', key: 'fill', icon: 'format_color_fill', shortcut: 'g', tip: '§0699' },
   { group: 'draw', key: 'pick', icon: 'colorize', shortcut: 'i', tip: 'Pick {pick} (I)' },
   { group: 'draw', key: 'paint', icon: 'format_paint', shortcut: 'c', tip: '§0737' },
@@ -36,8 +37,9 @@ const GROUPS = ['move', 'draw', 'place'];
 
 // the drawing tools every editor has: pencil, line, box, circle, curve, fill, pick
 export const DRAW = ['pencil', 'line', 'rect', 'circle', 'curve', 'fill', 'pick'];
-// and with the polygon: the bitmap, sprite and char editors
-export const DRAW_POLY = ['pencil', 'line', 'rect', 'circle', 'curve', 'polygon', 'fill', 'pick'];
+// and with the polygon and the smoother (a brush that antialiases the edges it strokes over,
+// aa.js edgeCover): the bitmap, sprite and char editors
+export const DRAW_POLY = ['pencil', 'line', 'rect', 'circle', 'curve', 'polygon', 'smooth', 'fill', 'pick'];
 
 // an editor's tools by key, in toolbox order. erase: what the right mouse button does with the
 // pencil; pick: what the pick tool picks; tips: the editor's own tips by key, more: added to them
@@ -53,11 +55,11 @@ export const DRAG_TOOLS = new Set(['line', 'rect', 'circle', 'curve', 'polygon']
 export const WAIT_TOOLS = new Set(['curve', 'polygon']);
 
 // The brush of the graphics editors: a square or a circle that the pencil, the line, the box,
-// the circle and the curve draw with (the screen: color only too) - every cell they draw is the
-// middle of one. { shape: 'square' | 'circle', size }: 1 up to the width or the height of the
+// the circle and the curve draw with (the screen: color only too), and the smoother smooths
+// under - every cell they draw is the middle of one. { shape: 'square' | 'circle', size }: 1 up to the width or the height of the
 // grid { w, h, aspect }, whichever is smaller (brushMax). A multicolor pixel is double wide:
 // the brush takes half as many of them across (aspect 2), so it keeps its shape
-export const BRUSH_TOOLS = new Set(['pencil', ...DRAG_TOOLS]);
+export const BRUSH_TOOLS = new Set(['pencil', 'smooth', ...DRAG_TOOLS]);
 export const defaultBrush = () => ({ shape: 'square', size: 1 });
 export const brushMax = ({ w = Infinity, h = Infinity, aspect = 1 }) => Math.max(1, Math.min(h, Math.floor(w * aspect)));
 
@@ -212,11 +214,8 @@ export const RANGE_TOOLS = [
   { key: 'rotr', icon: 'rotate_right', keys: ['.'], tip: '§0702' },
   { key: 'rotate', icon: 'public', keys: ['/'], tip: '§1730' },
   { key: 'invert', icon: 'invert_colors', keys: ['x'], tip: '§0693' },
-  { key: 'smooth', icon: 'auto_fix_high', keys: ['j'], tip: '§2115' },
 ];
-// the range tools of the screen editor; the bitmap, sprite and char editors have the edge smoother too
-export const RANGE = RANGE_TOOLS.map(t => t.key).filter(k => k !== 'smooth');
-export const RANGE_SMOOTH = RANGE_TOOLS.map(t => t.key);
+export const RANGE = RANGE_TOOLS.map(t => t.key);
 
 // the turn of the range tool 'rotate': a section of the side panel, shown while it is on, with the
 // angles about the x, y and z axis and the perspective. o: { preview() - the canvas shows r.turn

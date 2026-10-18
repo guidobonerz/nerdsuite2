@@ -1,6 +1,7 @@
 // aa.js - antialiased drawing for the bitmap editor: how much of each pixel a line, box, circle,
 // curve or pencil stroke covers, and the palette color between the pen and the background that
-// a covered part of a pixel gets.
+// a covered part of a pixel gets. And the smooth tool of the bitmap, sprite and char editors:
+// the antialiasing of what is drawn already, under its brush (edgeCover, shadePixels).
 //
 // The shapes are the ideal ones through the middles of the pixels the tools use (shapes.js), as
 // polylines; a pixel is covered by how near its middle comes to them, measured with the brush:
@@ -14,17 +15,63 @@ import { PALETTE } from './c64.js';
 const RGB = PALETTE.map(hex => [1, 3, 5].map(k => parseInt(hex.slice(k, k + 2), 16)));
 const MIN_COVER = 0.1;                    // less: the pixel is left alone
 
-// the C64 color of a pixel covered by cov between pen and bg (palette indices)
-export function shadeOf(cov, pen, bg) {
+// the C64 color of a pixel covered by cov between pen and bg (palette indices) - among the
+// colors given, else all sixteen
+export function shadeOf(cov, pen, bg, among = null) {
   if (cov >= 0.999 || pen === bg) return pen;
   const [p, b] = [RGB[pen], RGB[bg]], want = b.map((v, k) => v + (p[k] - v) * cov);
   let best = bg, dist = Infinity;
-  RGB.forEach((c, i) => {
+  for (const i of among ?? RGB.keys()) {
     // weighted like the eye sees it: green most, blue least
-    const d = 3 * (c[0] - want[0]) ** 2 + 4 * (c[1] - want[1]) ** 2 + 2 * (c[2] - want[2]) ** 2;
+    const c = RGB[i], d = 3 * (c[0] - want[0]) ** 2 + 4 * (c[1] - want[1]) ** 2 + 2 * (c[2] - want[2]) ** 2;
     if (d < dist) { dist = d; best = i; }
-  });
+  }
   return best;
+}
+
+// The smooth tool: the antialiasing of what is drawn already. cells: the pixels under its brush
+// in a grid of w x h values, and the pixels next to them: a brush of one pixel along a line of one
+// touches the edge beside it. A background pixel (isBg(value, x, y)) in a corner of an edge - two or
+// more of its four neighbours drawn - is covered partly by the shape: each of them weighs 2, a
+// drawn diagonal neighbour 1, of 12. A pixel in skip (keys y * w + x: the shades of this stroke)
+// counts as background and gets nothing again, so the shades do not spread along a stroke.
+// Returns [{x, y, fg, cov}], fg the drawn value that weighs most around the pixel
+export function edgeCover(grid, cells, { isBg, w, h, skip = null }) {
+  const out = [];
+  const bg = (x, y) => x < 0 || y < 0 || x >= w || y >= h || isBg(grid[y][x], x, y) || skip?.has(y * w + x);
+  const near = new Map();
+  for (const { x, y } of cells) for (const [dx, dy] of [[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0]]) near.set((y + dy) * w + x + dx, { x: x + dx, y: y + dy });
+  for (const { x, y } of near.values()) {
+    if (x < 0 || y < 0 || x >= w || y >= h || !isBg(grid[y][x], x, y) || skip?.has(y * w + x)) continue;
+    const weight = new Map();
+    let ortho = 0, sum = 0;
+    for (const [dx, dy, k] of [[0, -1, 2], [0, 1, 2], [-1, 0, 2], [1, 0, 2], [-1, -1, 1], [1, -1, 1], [-1, 1, 1], [1, 1, 1]]) {
+      if (bg(x + dx, y + dy)) continue;
+      const v = grid[y + dy][x + dx];
+      weight.set(v, (weight.get(v) ?? 0) + k);
+      sum += k;
+      if (k === 2) ortho++;
+    }
+    if (ortho < 2) continue;
+    const fg = [...weight].sort((a, b) => b[1] - a[1])[0][0];
+    out.push({ x, y, fg, cov: sum / 12 });
+  }
+  return out;
+}
+
+// the shades of the smooth brush in a grid of pen values (sprites, chars): [{x, y, v}] - a
+// background pixel in a corner takes the pen whose color is nearest to the mix of the drawn
+// color and the background, when that is not the background. pens: the values that draw,
+// colorOf(value): its palette color, bg: the palette color of the background
+export function shadePixels(grid, cells, { w, h, pens, colorOf, bg, skip = null }) {
+  const out = [], among = [bg, ...pens.map(colorOf)];
+  for (const e of edgeCover(grid, cells, { isBg: v => v === 0, w, h, skip })) {
+    const color = shadeOf(e.cov, colorOf(e.fg), bg, among);
+    if (color === bg) continue;
+    const v = pens.find(p => colorOf(p) === color);
+    if (v !== undefined) out.push({ x: e.x, y: e.y, v });
+  }
+  return out;
 }
 
 // the brush as the geometry sees it: half its height, how much wider a unit of x is, the metric

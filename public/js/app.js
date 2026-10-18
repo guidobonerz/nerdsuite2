@@ -127,7 +127,7 @@ let booting = true;
 // Build, Run, Debug and the Ultimate: in the bar of the code editor too (their state: runState, updateChrome)
 const runState = signal({});
 const codeView = createCodeView($('#view-code'), toolbarFor('code'), {
-  onDirty: () => updateDots(), onRoute: () => syncRoute(), onMain: () => updateChrome(), isShown: () => view === 'code',
+  onDirty: () => updateDots(), onRoute: () => { syncRoute(); updateChrome(); }, onMain: () => updateChrome(), isShown: () => view === 'code',
   runState, build: () => build(), run: () => runMain(), debug: () => runMain({ debug: true }), ultimate: () => runMain({ onUltimate: true }),
 });
 const screenEditor = createScreenEditor($('#view-screen'), store, actions, toolbarFor('screen'));
@@ -279,6 +279,12 @@ function mainProgram() {
   const cur = codeView.current();
   return cur && !/\.inc$/i.test(cur) ? cur : listSources().find(p => !/\.inc$/i.test(p)) ?? null;
 }
+// what Build, Run and Debug make: in the code editor the source of the selected tab (not an include,
+// a header or a text), elsewhere the main program
+function buildTarget() {
+  const cur = view === 'code' ? codeView.current() : null;
+  return cur && hasFile(cur) && !/\.(inc|h|txt)$/i.test(cur) ? cur : mainProgram();
+}
 
 // build the main program: the build, or null when it failed
 async function build({ quiet = false } = {}) {
@@ -286,7 +292,7 @@ async function build({ quiet = false } = {}) {
   building = true;
   updateChrome();
   try {
-    const main = mainProgram();
+    const main = buildTarget();
     // the toolchain of the project (toolchain.js): its compiler, then its packer
     const r = await buildWith(await currentToolchain(), main, { over: codeView.texts() });
     problems = r.errors ?? [];
@@ -358,7 +364,7 @@ async function runMain({ debug = false, onUltimate = false } = {}) {
     if (debug) snackbar(`The debugger works with VICE (the Commodore machines): ${p.name} programs only run`, { timeout: 6000 });
     try {
       // the names of the formats of the launcher (backend/emu)
-      const format = { amsdos: 'amsdos-bin', plain: { vcs: 'a26', nes: 'nes', snes: 'sfc' }[p.emulator.platform] ?? 'plain' }[r.file.format] ?? r.file.format;
+      const format = { amsdos: 'amsdos-bin', zx81: 'zx81-p', trs80: 'trs80-cmd', plain: { vcs: 'a26', nes: 'nes', snes: 'sfc', bbc: 'bbc-bin' }[p.emulator.platform] ?? 'plain' }[r.file.format] ?? r.file.format;
       const emulator = emu !== 'auto' && emulatorRuns(emu, p) ? emu : undefined;     // the toolchain's, else the one of the settings
       const res = await api('POST', 'api/emu/run', { platform: p.emulator.platform, model: p.emulator.model, emulator, name: r.name, data: toBase64(r.file.bytes), format, load: r.start, exec: r.exec });
       snackbar(`${r.file.name} runs in ${res.emulator ?? 'the emulator'} (${p.name})${res.emulator === 'altirra' ? ' - click its window: Altirra pauses while it has no focus' : ''}`, { timeout: 6000 });
@@ -739,7 +745,7 @@ function updateChrome() {
   document.body.classList.toggle('no-game', !store.game);
   const start = $('#start-screen');
   if (start) start.hidden = isOpen();
-  const main = isOpen() ? mainProgram() : null;
+  const main = isOpen() ? buildTarget() : null;
   $('#file-name').textContent = !isOpen() ? t('no project') : `${projectName()} · ${machineOf(readSettings().machine).name}`;
   $('#btn-save').disabled = !isOpen();
   for (const b of ['#btn-build', '#btn-run', '#btn-debug']) $(b).disabled = !isOpen() || !main || building;
