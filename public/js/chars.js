@@ -2,8 +2,9 @@
 //
 // The file is edited in the charset cache (chr.js): the screen editor and the place
 // previews show every change at once, Save writes the file. Multicolor is how a
-// multicolor place shows a character whose cell color is 8-15: the bit pairs are
-// 00 background, 01 $d022, 10 $d023, 11 the cell color 0-7. A place in extended color mode
+// multicolor place shows a character whose cell color has bit 3: the bit pairs are
+// 00 background, 01 $d022, 10 $d023, 11 the cell color 0-7 - on the VIC-20 01 the border, 10 the
+// cell color, 11 the auxiliary color (video.js mcPens). A place in extended color mode
 // shows only the hires characters 0-63, each on one of four backgrounds ($d021-$d024): the
 // editor then offers those 64, and the background of the preview is one of the four.
 
@@ -11,14 +12,14 @@ import { LAYOUT } from './layout.js';
 import { parseCtm, CTM_MODES } from './padfiles.js';
 import { listBinaries, removeFile } from './project.js';
 import { pngOf, pixelCanvas, exportName, importName, withoutLoadAddress } from './export.js';
-import { symbols, getAttr, newId, COLOR_NAMES, DEFAULT_ANIM_SPEED } from './adv.js';
+import { symbols, getAttr, newId, COLOR_NAMES, DEFAULT_ANIM_SPEED, screensOf } from './adv.js';
 import { sizePicker } from './sizes.js';
 import { colorChooser } from './colorchooser.js';
 import { regionOp, rectBetween, clipRect, isRotation, swapValues } from './gridops.js';
 import { shadePixels } from './aa.js';
 import { tools, RANGE, rotation, rangeForKey, DRAG_TOOLS, BRUSH_TOOLS, defaultBrush, brushCells, brushMax, brushTools, radiusMax, radiusTools, defaultTools, toolForKey, lineCells, dragCells as dragXY } from './drawtools.js';
 import { paintArea, dragMods, dragTo, curveWaits, followCurve, DRAW_POLY, WAIT_TOOLS, waits, strokeDown, closePolygon, wheelZoom, outlineCells } from './drawtools.js';
-import { PALETTE, colorIndex, drawGlyph, romCharset as romCharsetOf, romFont } from './c64.js';
+import { PALETTE, colorIndex, drawGlyph, romCharset as romCharsetOf, romFont, placeInfo } from './c64.js';
 import {
   CHARSET_SIZE, charsetKey, scriptDirectory, scriptRelative, charsetByKey, charsetState, charsetFileSize,
   setCharsetBytes, isCharsetDirty, glyphPixels, setGlyphPixels, dropCharset,
@@ -28,6 +29,9 @@ import {
   section as uiSection, sidePanel, storeVersion, confirmRemove,
 } from './pui.js';
 import { tr } from './i18n.js';
+import { video, colorMask, mcPens, mcPair, mcCell, mcCellColor, mcNames, startColors, hasMulticolor, ATARI_REGS, antic2Text } from './video.js';
+import { atariFont, FONT_SIZE } from './atarifont.js';
+import { fontReady } from './romfonts.js';
 import { keepUi, pick as pickUi, put as putUi } from './uistate.js';
 
 // the tools of the charset (drawtools.js): select and draw
@@ -79,14 +83,14 @@ export function createCharEditor(el, store, actions, bar) {
     return constsNow;
   };
   const data = () => charsetByKey(st.key);
-  const placesUsing = key => S().places.filter(r => {
+  const placesUsing = key => screensOf(store.game).filter(r => {
     const f = getAttr(r, 'charset');
     return f && charsetKey(f) === key;
   });
 
   function knownKeys() {
     const keys = new Set(st.files);
-    for (const r of S().places) {
+    for (const r of screensOf(store.game)) {
       const f = getAttr(r, 'charset');
       if (f) keys.add(charsetKey(f));
     }
@@ -106,32 +110,40 @@ export function createCharEditor(el, store, actions, bar) {
     const c = consts();
     const mc = r && getAttr(r, 'multicolor'), ecm = r && getAttr(r, 'ecm');
     return {
-      bg: r ? colorIndex(getAttr(r, 'bgcolor')?.[0] ?? '0', c) : 6,
-      fg: r ? colorIndex(getAttr(r, 'textcolor')?.[0] ?? '1', c, 1) : 1,
+      bg: r ? colorIndex(getAttr(r, 'bgcolor')?.[0] ?? '0', c) : startColors().bg,
+      fg: r ? colorIndex(getAttr(r, 'textcolor')?.[0] ?? '1', c, 1) : video().cells === 'vic2' ? 1 : startColors().text,
       mc1: mc ? colorIndex(mc[0], c, 8) : 8,
       mc2: mc ? colorIndex(mc[1], c, 9) : 9,
       multicolor: !!mc && !ecm,
-      ecm: ecm ? ecm.map((v, k) => colorIndex(v, c, 2 + k)) : null,
+      ecm: ecm && video().ecm ? ecm.map((v, k) => colorIndex(v, c, 2 + k)) : null,
       place: r ?? null,
     };
   }
   // bg: the background the preview draws on - in extended color mode the one of the four picked
   // (st.ecmBg); bg1: $d021
   const colors = () => {
-    const c = { ...placeColors(), ...st.colors };
+    const c = { ...placeColors(), ...atariColors(), ...st.colors };
     return { ...c, bg1: c.bg, bg: c.ecm ? [c.bg, ...c.ecm][st.ecmBg] : c.bg };
+  };
+  // the Atari: the colour registers of the screen that uses the charset (c64.js placeInfo), else those the OS
+  // starts with - ANTIC 2 the luminance of COLOR1 on COLOR2, ANTIC 4 COLOR4, COLOR0, COLOR1, COLOR2
+  const atariColors = () => {
+    if (video().cells !== 'atari') return {};
+    const r = placeColors().place, regs = r ? placeInfo(store.game, r).atari.regs : ATARI_REGS;
+    return multicolor() ? { bg: regs[4], mc1: regs[0], mc2: regs[1], fg: regs[2] } : { bg: regs[2], fg: antic2Text(regs) };
   };
   // extended color mode: the place of the charset uses it - hires, the chars 0-63
   const ecmMode = () => !!placeColors().ecm;
-  const codeMask = () => (ecmMode() ? 63 : 255);
-  const multicolor = () => !ecmMode() && (st.mode ?? placeColors().multicolor);
-  const pens = () => (multicolor() ? [3, 1, 2, 0] : [1, 0]);
-  const penLabel = v => (multicolor() ? ['background', '§0644', '§0645', '§0646'] : ['background', '§0646'])[v];
+  const codeMask = () => (ecmMode() ? 63 : video().cells === 'atari' ? 127 : 255);   // an Atari font: 128 chars
+  const multicolor = () => hasMulticolor() && !ecmMode() && (st.mode ?? placeColors().multicolor);
+  // the pens as bit pairs of the machine (video.js mcPair): the cell colour, mc1, mc2, the background
+  const pens = () => (multicolor() ? [mcPair('color'), 1, mcPair('mc2'), 0] : [1, 0]);
+  const penLabel = v => (multicolor() ? { 0: 'background', 1: '§0644', [mcPair('mc2')]: '§0645', [mcPair('color')]: '§0646' } : ['background', '§0646'])[v];
   const pixelColor = v => {
     const c = colors();
-    return multicolor() ? [c.bg, c.mc1, c.mc2, c.fg & 7][v] : v ? c.fg : c.bg;
+    return multicolor() ? mcPens(c.bg, [c.mc1, c.mc2], c.fg)[v] : v ? c.fg : c.bg;
   };
-  const glyphFg = () => (multicolor() ? (colors().fg & 7) | 8 : colors().fg);
+  const glyphFg = () => (multicolor() ? mcCell(colors().fg) : colors().fg);
   const glyphMc = () => (multicolor() ? [colors().mc1, colors().mc2] : null);
   // a tile of 1 x 2 with its lower char in the other half of the charset, the inverse one: the
   // char and char + 128 (from the upper half, char - 128) - not in extended color mode (64 chars)
@@ -174,7 +186,9 @@ export function createCharEditor(el, store, actions, bar) {
   }
 
   // the ROM charset of the game's case (chargen.js)
-  const romCharset = () => romCharsetOf(S().charset);
+  // the Atari: the font in the order of its codes (atarifont.js), in the 2048 bytes of the editor
+  const atariRom = () => { const out = new Uint8Array(CHARSET_SIZE); out.set(atariFont()); return out; };
+  const romCharset = () => (video().cells === 'atari' ? atariRom() : romCharsetOf(S().charset));
   const overlaySet = () => st.rom.set ?? S().charset;
 
   // --- changes -----------------------------------------------------------------------
@@ -222,7 +236,7 @@ export function createCharEditor(el, store, actions, bar) {
   // taken with the first of them, a stroke that shades nothing leaves no empty step behind
   function smoothPixels(cells, d) {
     const grid = pixels(), [w, h] = [grid[0].length, grid.length];
-    const shades = shadePixels(grid, cells, { w, h, pens: pens().filter(Boolean), colorOf: v => pixelColor(v) & 15, bg: colors().bg & 15, skip: d.shaded });
+    const shades = shadePixels(grid, cells, { w, h, pens: pens().filter(Boolean), colorOf: v => pixelColor(v) & colorMask(), bg: colors().bg & colorMask(), skip: d.shaded });
     if (!shades.length) return;
     if (!d.snapped) { snapshot(); d.snapped = true; }
     for (const { x, y, v } of shades) { grid[y][x] = v; d.shaded.add(y * w + x); }
@@ -280,7 +294,7 @@ export function createCharEditor(el, store, actions, bar) {
   // move - in this character (the range, the marked characters) or, with the checkbox, in all 256
   function swapSection() {
     const pens = [[3, '§0637'], [1, '§0650'], [2, '§0651']];
-    const swatch = v => h('span', { class: 'swap-swatch', style: { background: PALETTE[pixelColor(v) & 15] } });
+    const swatch = v => h('span', { class: 'swap-swatch', style: { background: PALETTE[pixelColor(v) & colorMask()] } });
     const pairs = [];
     for (let i = 0; i < pens.length; i++) {
       for (let j = i + 1; j < pens.length; j++) {
@@ -340,7 +354,7 @@ export function createCharEditor(el, store, actions, bar) {
   }
 
   async function refreshFiles() {
-    st.files = listBinaries().filter(f => /\.(chr|bin|raw)$/i.test(f));   // not the pictures
+    st.files = listBinaries().filter(f => /\.(chr|fnt|bin|raw)$/i.test(f));   // not the pictures
     listed = true;
   }
 
@@ -351,17 +365,19 @@ export function createCharEditor(el, store, actions, bar) {
 
   // imported: { bytes, name, text } - the charset of a file of this computer (importCharset)
   async function newCharset(imported = null) {
+    await fontReady();                      // a copy of the machine's ROM font, not the C64's while it is on the way (romfonts.js)
     const place = st.placeId ? store.node(st.placeId) : null;
     const assign = place && !getAttr(place, 'charset');
     const known = knownKeys();
     const base = imported ? importName(imported.name, 'chars') : place?.name ?? 'chars';
-    let path = `${scriptDirectory()}${LAYOUT.charset}/${base}.chr`;              // gfx/charset/ (layout.js)
-    for (let k = 2; known.includes(path); k++) path = `${scriptDirectory()}${LAYOUT.charset}/${base}${k}.chr`;
+    const ext = video().cells === 'atari' ? 'fnt' : 'chr';                       // an Atari font: 1024 bytes
+    let path = `${scriptDirectory()}${LAYOUT.charset}/${base}.${ext}`;              // gfx/charset/ (layout.js)
+    for (let k = 2; known.includes(path); k++) path = `${scriptDirectory()}${LAYOUT.charset}/${base}${k}.${ext}`;
     const v = await promptDialog({
       title: imported ? '§1006' : '§0659', icon: 'grid_view', ok: '§0124',
       text: `${imported ? imported.text : `It starts as a copy of the ${S().charset} case ROM charset.`}${assign ? ` Place ${place.name} will use it.` : ''}`,
       fields: [{ name: 'path', label: '§1263', value: path, mono: true,
-        validate: p => (!/^[\w\-./]+\.(chr|bin|raw)$/i.test(p) || p.includes('..') ? '§0660'
+        validate: p => (!/^[\w\-./]+\.(chr|fnt|bin|raw)$/i.test(p) || p.includes('..') ? '§0660'
           : known.includes(p) ? '§0208' : null) }],
     });
     if (!v) return;
@@ -480,7 +496,7 @@ export function createCharEditor(el, store, actions, bar) {
     if (!st.rom.front) drawRomOverlay(ctx, s);
     grid.forEach((row, y) => row.forEach((v, x) => {
       if (!v) return;
-      ctx.fillStyle = PALETTE[pixelColor(v) & 15];
+      ctx.fillStyle = PALETTE[pixelColor(v) & colorMask()];
       ctx.fillRect(x * k * s, y * s, k * s, s);
     }));
     if (st.rom.front) drawRomOverlay(ctx, s);
@@ -524,7 +540,7 @@ export function createCharEditor(el, store, actions, bar) {
   // two of them), s the size of one
   function drawRomOverlay(ctx, s) {
     if (!st.rom.shown) return;
-    const rom = romFont(overlaySet());              // the ROM as it is (chargen.js)
+    const rom = video().cells === 'atari' ? atariRom() : romFont(overlaySet());              // the ROM as it is (chargen.js)
     ctx.save();
     ctx.globalAlpha = st.rom.opacity;
     ctx.fillStyle = ROM_OVERLAY;
@@ -565,7 +581,7 @@ export function createCharEditor(el, store, actions, bar) {
   async function resetFromRom(all = false) {
     const d = data();
     if (!d) return;
-    const rom = romFont(overlaySet()), set = overlaySet() === 'upper' ? '§0732' : '§0733';   // the ROM as it is, without the panel glyphs
+    const rom = video().cells === 'atari' ? atariRom() : romFont(overlaySet()), set = overlaySet() === 'upper' ? '§0732' : '§0733';   // the ROM as it is, without the panel glyphs
     const marked = markedCodes(), codes = all ? Array.from({ length: 256 }, (_, k) => k) : marked ?? tileChars();
     const what = all ? tr('§1520', tr(set)) : marked ? tr('§1458', marked.length)
       : codes.length > 1 ? tr('§1461', codes[0], codes.at(-1)) : tr('§1459', st.code, '$' + st.code.toString(16).padStart(2, '0'));
@@ -844,7 +860,8 @@ export function createCharEditor(el, store, actions, bar) {
 
     // the pens and their colors: a row is the pen (the bit pattern it draws), its swatch
     // sets the preview color
-    const penOf = { bg: 0, fg: mc ? 3 : 1, mc1: 1, mc2: 2 };
+    const penOf = { bg: 0, fg: mc ? mcPair('color') : 1, mc1: 1, mc2: mcPair('mc2') }, names = mcNames();
+    const vic = video().cells === 'vic';
     const row = (label, k, color, disabled, tip, count = 16, stored = v => v) => ({
       label, color, count, disabled, active: !disabled && st.pen === penOf[k], onselect: () => setPen(penOf[k]),
       tip: disabled ? tip : tr('§1085', tip, pens().indexOf(penOf[k]) + 1), onpick: v => setColor(k, stored(v)),
@@ -861,10 +878,10 @@ export function createCharEditor(el, store, actions, bar) {
       row('§0637', 'fg', c.fg, false, '§0673'),
     ]) : colorChooser([
       row('§0636', 'bg', c.bg, false, '§0671'),
-      row('§0637', 'fg', mc ? c.fg & 7 : c.fg, false, mc ? '§0672' : '§0673',
-        mc ? 8 : 16, v => (mc ? v | 8 : v)),
-      row('§0650', 'mc1', c.mc1, !mc, mc ? 'Multicolor 1 ($d022)' : '§0674'),
-      row('§0651', 'mc2', c.mc2, !mc, mc ? 'Multicolor 2 ($d023)' : '§0675'),
+      row('§0637', 'fg', mc ? mcCellColor(c.fg) : c.fg, false, mc ? '§0672' : '§0673',
+        mc ? 'mc' : vic ? 'cell' : 16, v => (mc ? mcCell(v) : v)),
+      row(vic ? names.mc1 : '§0650', 'mc1', c.mc1, !mc, mc ? (vic ? names.mc1 : video().cells === 'ted' ? names.mc1 : 'Multicolor 1 ($d022)') : '§0674', vic ? 'cell' : 16),
+      row(vic ? names.mc2 : '§0651', 'mc2', c.mc2, !mc, mc ? (vic || video().cells === 'ted' ? names.mc2 : 'Multicolor 2 ($d023)') : '§0675'),
     ]);
 
     return [
@@ -907,7 +924,9 @@ export function createCharEditor(el, store, actions, bar) {
     const d = store.game && st.key ? data() : null;
     if (!d) return [];
     return [
-      { label: '§0988', name: exportName(st.key, 'chr'), description: 'C64 charset', bytes: () => d.slice(0, CHARSET_SIZE) },
+      video().cells === 'atari'
+        ? { label: 'Atari font (.fnt, 128 chars)', name: exportName(st.key, 'fnt'), description: 'Atari font', bytes: () => d.slice(0, FONT_SIZE) }
+        : { label: '§0988', name: exportName(st.key, 'chr'), description: 'C64 charset', bytes: () => d.slice(0, CHARSET_SIZE) },
       { label: '§0989', icon: 'wallpaper', name: exportName(st.key, 'png'), type: 'image/png', description: 'PNG picture',
         bytes: () => pngOf(pixelCanvas(128, 128, 2, ctx => {
           for (let code = 0; code < 256; code++) drawGlyph(ctx, d, code, (code % 16) * 16, (code >> 4) * 16, 16, glyphFg(), colors().bg, glyphMc());
@@ -929,7 +948,7 @@ export function createCharEditor(el, store, actions, bar) {
       st.key ? [h('span', { class: 'screen-bar__sep' }), defaultTools({
         undo: () => travel(undo, redo), redo: () => travel(redo, undo), zoom,
         grid: { on: st.grid, toggle: () => { st.grid = !st.grid; update(); draw(); } },
-        multicolor: { on: mc, toggle: () => { st.mode = !mc; if (!pens().includes(st.pen)) st.pen = pens()[0]; render(); },
+        multicolor: !hasMulticolor() ? undefined : { on: mc, toggle: () => { st.mode = !mc; if (!pens().includes(st.pen)) st.pen = pens()[0]; render(); },
           locked: ecmMode() ? '§0985' : null },
         clear: { tip: '§0694', run: () => apply('clear') },
       }), h('span', { class: 'screen-bar__sep' }),

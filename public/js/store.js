@@ -2,7 +2,7 @@
 
 import { parse, walk, symbols, objectStartPlace } from './adv.js';
 import { validate, serialize, flattenPlaces } from './advgen.js';
-import { resolveGfx, gfxDir, canvasesFrom, canvasFiles } from './gfxfile.js';
+import { resolveGfx, gfxDir, canvasesFrom, canvasFiles, placeToScreen } from './gfxfile.js';
 import { readTag } from './filetag.js';
 import { resolveImports } from './imports.js';
 
@@ -148,6 +148,19 @@ export function createStore() {
     // the new one (advgen.js: flattenPlaces); the file changes with the next save
     s.migrated = flattenPlaces(game);
     game.canvases = canvasesFrom(game, files, gfxDir(path));
+    // nerdsuite has screens, no places: the places of a project of before become screens (gfxfile.js
+    // placeToScreen) - their files and assets.adv change with the next save
+    const places = game.items.filter(x => x.kind === 'place');
+    for (const p of places) {
+      const c = placeToScreen(p, game);
+      for (let k = 2, base = c.name; game.canvases.some(x => x.name === c.name); k++) c.name = base + k;
+      game.canvases.push(c);
+      s.migrated.push(`place ${p.name}: the screen ${c.name}`);
+    }
+    if (places.length) {
+      game.items = game.items.filter(x => x.kind !== 'place');
+      game.canvases.sort((a, b) => a.name.localeCompare(b.name));
+    }
     s.game = game;
     s.path = path;
     s.savedText = text.replace(/\r\n?/g, '\n');

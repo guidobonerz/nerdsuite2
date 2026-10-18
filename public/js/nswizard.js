@@ -10,6 +10,10 @@ import { includeSource, hasMemoryMap } from './memmap.js';
 import { DIALECTS } from './basic/dialects.js';
 import { CHARGEN } from './chargen.js';
 import { encodeScreen } from './gfxfile.js';
+import { videoOf, startColors, ATARI_REGS } from './video.js';
+import { atariFont } from './atarifont.js';
+import { encodeAtariPicture } from './ataribitmap.js';
+import { encodeTbm } from './tedbitmap.js';
 import { newSong, encode as encodeSong } from './song.js';
 import { KOALA_SIZE } from './picture.js';
 
@@ -25,29 +29,35 @@ const HERO = [
   '........................', '........................', '........................', '........................', '........................',
 ];
 
+// whether the wizard makes an asset for a machine: the Commodore machines (the editors make VIC-II data), and
+// only for an editor the machine has (video.js: no sprite on a VIC-20, no charset on a PET)
+const ASSET_EDITOR = { charset: 'chars', screen: 'screen', sprite: 'sprites', bitmap: 'bitmap' };
+// the Atari 800 XL: a screen, a font and a picture (its players come with their part of stage 3)
+const assetMade = (p, asset) => (!!p.commodore || (p.id === 'atari8' && ['charset', 'screen', 'bitmap'].includes(asset)))
+  && (!ASSET_EDITOR[asset] || !!videoOf(p.id).editors[ASSET_EDITOR[asset]]);
+
 // the graphics model and the files of the assets chosen (Commodore machines: the editors make VIC-II data)
 function assetFiles(plan, files) {
   let model = `// assets.adv - the graphics of this nerdsuite project, kept by the IDE: the screens with their
 // charsets, colors and layers, the sprites with their frames and animations. The art is in gfx/.
 charset upper
 `;
-  if (plan.assets.charset) files.set('gfx/charset/font.chr', CHARGEN.slice(0, 2048));
+  const v = videoOf(plan.platform), atari = v.cells === 'atari';
+  // the charset: a copy of the ROM font - the Atari's in the order of its codes (atarifont.js), 1024 bytes
+  const fontFile = atari ? 'gfx/charset/font.fnt' : 'gfx/charset/font.chr';
+  if (plan.assets.charset) files.set(fontFile, atari ? atariFont().slice() : CHARGEN.slice(0, 2048));
   if (plan.assets.screen) {
-    const w = 40, hgt = 25;
-    const chars = new Uint8Array(w * hgt).fill(0x20), colors = new Uint8Array(w * hgt).fill(1);
-    const title = `${plan.name.toUpperCase()}`.slice(0, 38);
-    [...title].forEach((c, k) => { const code = c.charCodeAt(0); chars[12 * w + Math.floor((w - title.length) / 2) + k] = code >= 64 && code < 96 ? code - 64 : code & 0x3f; });
-    files.set('gfx/screen/title.scr', encodeScreen({ screen: { w, h: hgt, chars, colors }, patches: new Map() }));
-    model += `
-place title {
-    screen {
-        bgcolor blue
-        border lightblue
-        textcolor white
-${plan.assets.charset ? '        charset "gfx/charset/font.chr"\n' : ''}        gfx "gfx/screen/title.scr"
-    }
-}
-`;
+    // the title screen, gfx/screen/title.scr: the screen of the machine (40 x 25, the VIC-20's 22 x 23) in the
+    // colours it starts with - its look in the file (gfxfile.js), the name of the project in the middle
+    const { cols: w, rows: hgt } = v.screen, sc = startColors(v.cells);
+    const chars = new Uint8Array(w * hgt).fill(0x20), colors = new Uint8Array(w * hgt).fill(sc.text);
+    const title = `${plan.name.toUpperCase()}`.slice(0, w - 2);
+    // the letters as screen codes - the Atari's: ASCII 32-95 are its codes 0-63, a space is 0
+    if (atari) chars.fill(0);
+    [...title].forEach((c, k) => { const code = c.charCodeAt(0); chars[Math.floor(hgt / 2) * w + Math.floor((w - title.length) / 2) + k] = atari ? (code - 32) & 0x3f : code >= 64 && code < 96 ? code - 64 : code & 0x3f; });
+    const look = { bg: sc.bg, border: sc.border, text: sc.text, multicolor: null, ecm: null, charset: plan.assets.charset ? fontFile : null, tiles: null, patches: [],
+      registers: atari ? ATARI_REGS : null };
+    files.set('gfx/screen/title.scr', encodeScreen({ screen: { w, h: hgt, chars, colors }, patches: new Map(), look }));
   }
   if (plan.assets.sprite) {
     model += `
@@ -59,7 +69,13 @@ ${HERO.join('\n')}
 `;
   }
   if (plan.assets.song) files.set('audio/music/song.sng', encodeSong(newSong()));
-  if (plan.assets.bitmap) {
+  if (plan.assets.bitmap && v.bitmap === 'atari') {
+    // the Atari: GRAPHICS 15 in the colours the OS starts with (ataribitmap.js)
+    files.set('gfx/bitmap/picture.mic', encodeAtariPicture({ mc: true, rows: Array.from({ length: 192 }, () => new Uint8Array(160)), regs: ATARI_REGS }));
+  } else if (plan.assets.bitmap && v.bitmap === 'ted') {
+    // the TED: a multicolor picture of its own (tedbitmap.js)
+    files.set('gfx/bitmap/picture.tbm', encodeTbm({ mc: true, bitmap: new Uint8Array(8000), cells: Array.from({ length: 1000 }, () => [0x71, 0x32]), bg: 0, bg2: 0x46 }));
+  } else if (plan.assets.bitmap) {
     const kla = new Uint8Array(KOALA_SIZE);
     kla[0] = 0x00; kla[1] = 0x60;                          // the load address of a Koala picture: $6000
     files.set('gfx/bitmap/picture.kla', kla);
@@ -80,8 +96,7 @@ export function projectFiles(plan) {
   // the addresses of the machine: chips, ROM routines, vectors, with the meanings of their bits
   if (asm && !kick && hasMemoryMap(p.id)) files.set('src/hardware.inc', enc(includeSource(p.id, p.name)));
   const main = plan.main === 'basic' ? bas ?? asm : asm ?? bas;
-  if (p.commodore) assetFiles(plan, files);
-  else assetFiles({ ...plan, assets: {} }, files);
+  assetFiles({ ...plan, assets: Object.fromEntries(Object.entries(plan.assets).filter(([k]) => assetMade(p, k))) }, files);
   files.set('nerdsuite.json', enc(JSON.stringify({ machine: p.id, main, dialects: bas ? { [bas]: dialect } : {}, cpu: p.cpu, assembler: kick ? 'kickass' : 'acme', assemblers: {} }, null, 2) + '\n'));
   return { files, main };
 }
@@ -157,11 +172,11 @@ export function projectWizard() {
         x.commodore ? h('div', { class: 'section__hint' }, 'The graphics editors make the data of the VIC-II and the SID. What is ticked is made now; the editors make more at any time. A source includes it with !binary.')
           : h('div', { class: 'banner banner--info' }, icon('info'), h('span', {}, `The graphics editors and the composer make Commodore data (VIC-II, SID). For the ${x.name} they are drawing tools: the hex view and the exports give the bytes.`)),
         h('div', { class: 'ns-wiz-assets' },
-          checkbox('A charset: a copy of the ROM font (gfx/charset/font.chr)', !!a.charset && x.commodore, on => toggle('charset', on), { disabled: !x.commodore }),
-          checkbox('A title screen of 40 × 25 chars (gfx/screen/title.scr)', !!a.screen && x.commodore, on => toggle('screen', on), { disabled: !x.commodore }),
-          checkbox('A sprite of 24 × 21 pixels (the Sprites editor)', !!a.sprite && x.commodore, on => toggle('sprite', on), { disabled: !x.commodore }),
-          checkbox('A song for the composer (audio/music/song.sng)', !!a.song && x.commodore, on => toggle('song', on), { disabled: !x.commodore }),
-          checkbox('A multicolor bitmap picture (gfx/bitmap/picture.kla)', !!a.bitmap && x.commodore, on => toggle('bitmap', on), { disabled: !x.commodore })),
+          checkbox(`A charset: a copy of the ROM font (gfx/charset/font.${x.id === 'atari8' ? 'fnt' : 'chr'})`, !!a.charset && assetMade(x, 'charset'), on => toggle('charset', on), { disabled: !assetMade(x, 'charset') }),
+          checkbox(`A title screen of ${videoOf(x.id).screen?.cols ?? 40} × ${videoOf(x.id).screen?.rows ?? 25} chars (gfx/screen/title.scr)`, !!a.screen && assetMade(x, 'screen'), on => toggle('screen', on), { disabled: !assetMade(x, 'screen') }),
+          checkbox('A sprite of 24 × 21 pixels (the Sprites editor)', !!a.sprite && assetMade(x, 'sprite'), on => toggle('sprite', on), { disabled: !assetMade(x, 'sprite') }),
+          checkbox('A song for the composer (audio/music/song.sng)', !!a.song && assetMade(x, 'song'), on => toggle('song', on), { disabled: !assetMade(x, 'song') }),
+          checkbox(`A multicolor bitmap picture (gfx/bitmap/picture.${{ ted: 'tbm', atari: 'mic' }[videoOf(x.id).bitmap] ?? 'kla'})`, !!a.bitmap && assetMade(x, 'bitmap'), on => toggle('bitmap', on), { disabled: !assetMade(x, 'bitmap') })),
       ];
     },
     summary: () => {

@@ -3,8 +3,8 @@
 // Place maps store real PETSCII glyphs as used by the C64 Pro Mono font:
 //   U+EE00 + screen code   upper case / graphics character set
 //   U+EF00 + screen code   lower / upper case character set
-// plus an optional color map with one hex digit per cell. Plain text still works and is
-// resolved like the compiler does.
+// plus an optional color map with one hex digit per cell (the colours 16-127 of the TED: one character
+// each from U+0100, colorDigit). Plain text still works and is resolved like the compiler does.
 
 import { symbols, walk } from './adv.js';
 import { numValue } from './advgen.js';
@@ -21,7 +21,15 @@ export const isPetscii = ch => {
 export const petsciiChar = (code, charset = 'lower') =>
   String.fromCharCode((charset === 'upper' ? PETSCII_UPPER : PETSCII_LOWER) + (code & 0xff));
 
-export const colorDigit = color => COLOR_DIGITS[color & 15];
+// the digit of a colour: 0-f, the colours 16-127 of the TED U+0110-U+017F (one character a cell)
+const WIDE = 0x100;
+export const colorDigit = color => ((color &= 0x7f) < 16 ? COLOR_DIGITS[color] : String.fromCharCode(WIDE + color));
+export const digitColor = digit => {
+  const d = COLOR_DIGITS.indexOf(digit.toLowerCase());
+  if (d >= 0) return d;
+  const o = digit.charCodeAt(0) - WIDE;
+  return o >= 16 && o < 128 ? o : -1;
+};
 
 // port of screencode() in advc/adv/compile.go
 export function screencode(ch, charset) {
@@ -37,7 +45,7 @@ export function screencode(ch, charset) {
 export function resolveCell(ch, digit, textcolor, charset) {
   let color = textcolor;
   const code = isPetscii(ch) ? ch.charCodeAt(0) & 0xff : screencode(ch, charset);
-  const d = digit ? COLOR_DIGITS.indexOf(digit.toLowerCase()) : -1;
+  const d = digit ? digitColor(digit) : -1;
   if (d >= 0) color = d;
   return [code, color];
 }

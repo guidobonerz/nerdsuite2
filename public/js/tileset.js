@@ -22,7 +22,7 @@ import { withTag, readTag } from './filetag.js';
 import { readBinary, writeBinary, hasFile, onProjectOpen } from './project.js';
 import { charsetKey, normalize, relativePath, scriptRelative } from './chr.js';
 import { petsciiChar, colorDigit } from './petscii.js';
-import { symbols, getAttr, placeRows, newId } from './adv.js';
+import { symbols, getAttr, placeRows, newId, screensOf } from './adv.js';
 import { placeWidth } from './advgen.js';
 
 export const TILE_SIZES = [2, 3];
@@ -50,7 +50,7 @@ function tilesetBytes(ts) {
   out.push(ts.tiles.length);
   for (const t of ts.tiles) {
     for (let k = 0; k < n; k++) out.push(t.chars[k] & 0xff);
-    for (let k = 0; k < n; k++) out.push(t.colors[k] & 15);
+    for (let k = 0; k < n; k++) out.push(t.colors[k] & 0x7f);          // the TED's colours too
   }
   return Uint8Array.from(out);
 }
@@ -73,7 +73,7 @@ export function decodeTileset(data, what = 'tileset') {
   const n = size * size, tiles = [];
   for (let t = 0; t < count; t++) {
     const chars = Array.from({ length: n }, byte);
-    tiles.push({ chars, colors: Array.from({ length: n }, () => byte() & 15) });
+    tiles.push({ chars, colors: Array.from({ length: n }, () => byte() & 0x7f) });
   }
   return { size, multicolor: !!(flags & MULTICOLOR), charset, tiles };
 }
@@ -158,10 +158,10 @@ export function expandTiles(bg, map, ts, width, rows, charset) {
   return changed;
 }
 
-// the places of the game painted with tiles: [place, background node, tileset file]
+// the screens painted with tiles: [screen, background node, tileset file]
 export function tilePlaces(game) {
-  const S = symbols(game), out = [];
-  for (const r of S.allPlaces) {
+  const out = [];
+  for (const r of screensOf(game)) {
     const file = getAttr(r, 'tiles'), bg = r.members.find(m => m.kind === 'background');
     if (file && bg?.tiles) out.push([r, bg, file]);
   }

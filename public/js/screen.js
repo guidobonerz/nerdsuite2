@@ -8,7 +8,7 @@
 // puts the tile of the brush into every tile cell it touches; layers stay of chars.
 
 import { walkRoute, walkArea, clampToArea } from './walkarea.js';
-import { symbols, newId, getAttr, tileGame, placeRows, maxPlaceCols, PLACE_COLS, MAX_PLACE_COLS, COLOR_NAMES, DEFAULT_ANIM_SPEED, MAX_BEHIND } from './adv.js';
+import { symbols, newId, getAttr, screensOf, placeRows, maxPlaceCols, PLACE_COLS, MAX_PLACE_COLS, COLOR_NAMES, DEFAULT_ANIM_SPEED, MAX_BEHIND } from './adv.js';
 import { charsetKey, scriptRelative, scriptDirectory, setCharsetBytes, saveCharset } from './chr.js';
 import { parseCtm, ctmScreen, CTM_MODES } from './padfiles.js';
 import { LAYOUT } from './layout.js';
@@ -18,12 +18,12 @@ import { t, tr } from './i18n.js';
 import { numValue, placeWidth, uniqueName, setObjAttr, renameSymbol } from './advgen.js';
 import {
   PALETTE, constMap, placeInfo, drawMap, drawCell, romCharset, drawOverlays, patchCells, objectRect, objectsInPlace, moveLayered, colorIndex,
-  drawPlace,
+  drawPlace, cellColors,
 } from './c64.js';
-import { placeToFile, scrPath, gfxDir, decodeScreen, mapToLines } from './gfxfile.js';
+import { placeToFile, scrPath, gfxDir, decodeScreen, mapToLines, canvasPath } from './gfxfile.js';
 import { pngOf, exportName, importName } from './export.js';
 import { attachObjectDrag, nudgeObject } from './objdrag.js';
-import { petsciiChar, colorDigit, screencode, legacyMaps, ROM_ORDER, ROM_POS } from './petscii.js';
+import { petsciiChar, colorDigit, legacyMaps, ROM_ORDER, ROM_POS } from './petscii.js';
 import {
   h, dh, dom, mount, signal, useRef, useLayoutEffect, icon, iconButton, button, field, select, checkbox, chipSelect, snackbar, dialog,
   section as uiSection, sidePanel,
@@ -37,6 +37,9 @@ import { regionOp, rectBetween, clipRect } from './gridops.js';
 import { tools, DRAW, RANGE, rangeForKey, DRAG_TOOLS, BRUSH_TOOLS, defaultBrush, brushCells, brushMax, brushTools, radiusMax, radiusTools, defaultTools, toolForKey, lineCells as lineXY, dragCells as dragXY } from './drawtools.js';
 import { paintArea, dragMods, dragTo, curveWaits, followCurve, modeButton, wheelZoom, outlineCells } from './drawtools.js';
 import { keepUi, pick as pickUi, put as putUi } from './uistate.js';
+import { video, videoMachine, colorMask, colorValue, mcCell, mcCellColor, mcNames, pickerColors, startColors, hasMulticolor } from './video.js';
+import { platformOf } from './platforms.js';
+import { textCode, machineFont } from './romfonts.js';
 
 // the tools of the screen (drawtools.js): object, layer, select, draw, color only and text, and on
 // a place with actors - not a map or a closeup - its walk area and behind areas
@@ -44,7 +47,7 @@ import { keepUi, pick as pickUi, put as putUi } from './uistate.js';
 const TOOLS = ['layer', 'select', ...DRAW, 'paint', 'text'];
 const TIPS = { erase: 'erases', pick: '§0736',
   more: { pick: ' - drag over the screen to grab a brush with its colors; B grabs a selected range' } };
-const toolsOf = rm => tools(rm?.canvas ? TOOLS.filter(t => t !== 'layer') : TOOLS, TIPS);
+const toolsOf = rm => tools(rm?.canvas?.dirart ? TOOLS.filter(t => t !== 'layer') : TOOLS, TIPS);   // the directory art has no layers
 // the range tools of the screen: no invert, X reverses the brush
 const RANGE_KEYS = RANGE.filter(k => k !== 'invert' && k !== 'rotate');
 // the tools that draw with the square or round brush of the bar (drawtools.js): color only too
@@ -128,7 +131,8 @@ export function createScreenEditor(el, store, actions, bar) {
   }
 
   // a game of tiles: the background of the place is painted with tiles, the layers with chars
-  const tiling = () => tileGame(store.game) && !patch() && !place()?.canvas;     // a canvas is painted with chars
+  // a screen with a tileset is painted with its tiles (its background; a layer with chars)
+  const tiling = () => !!place() && !!getAttr(place(), 'tiles') && !patch() && !dirartOn();
   const placeTileset = () => { const f = place() && getAttr(place(), 'tiles'); return f ? tilesetData(f) : null; };
 
   // the tile cells the cells touch get the tile of the brush (erased: tile 0), and their chars
@@ -228,7 +232,7 @@ export function createScreenEditor(el, store, actions, bar) {
         : h('div', { class: 'section__hint' }, current ? tr('§1417', current) : '§1415'),
       ts && tileBrush() ? [
         h('div', { class: 'section__hint', style: { margin: '10px 0 0' } }, tileFit(ts.size)),
-        h('div', { class: 'section__hint', style: { margin: '10px 0 0' } }, tr('§1420', tilesetCharset(current, ts) ?? tr('§0852', info.charset))),
+        h('div', { class: 'section__hint', style: { margin: '10px 0 0' } }, tr('§1420', tilesetCharset(current, ts) ?? romName(info))),
         h('div', { style: { marginTop: '10px' } }, placeColors(info, false)),
       ] : '',
       h('div', { class: 'section__hint', style: { margin: '10px 0 0' } }, '§1416'));
@@ -575,7 +579,7 @@ export function createScreenEditor(el, store, actions, bar) {
       const cells = dragCells(st.drag);
       ctx.globalAlpha = 0.85;
       for (const x of tileN() ? tilePreview(cells, st.drag.erase) : patterned(cells, originOf(st.drag), st.drag)) {
-        drawCell(ctx, x.code, x.c * s, x.r * s, s, x.color, info.bg, info.charset, info.chr, info.multicolor, info.ecm);
+        drawCell(ctx, x.code, x.c * s, x.r * s, s, shownColor(x.code, x.color), info.bg, info.charset, info.chr, info.multicolor, info.ecm);
       }
       ctx.globalAlpha = 1;
     }
@@ -890,7 +894,7 @@ export function createScreenEditor(el, store, actions, bar) {
       const width = ui.info.width;
       if (e.key.length === 1) {
         stroke++;
-        const typed = screencode(e.key, charset());
+        const typed = textCode(e.key, charset());          // the code of the machine (romfonts.js)
         paint([{ c: cr.c, r: cr.r, code: ecmOn() ? ecmCode(typed) : typed, color: st.color }], 'type:' + cr.r);
         cr.c = Math.min(width - 1, cr.c + 1);
       } else if (e.key === 'Backspace') {
@@ -1000,7 +1004,7 @@ export function createScreenEditor(el, store, actions, bar) {
   function setBrush(code, color) {
     st.code = code & (dirartOn() ? 0x7f : 0xff);
     if (ecmOn()) st.ecmBg = st.code >> 6;       // a picked char brings its background along
-    st.color = color & 15;
+    st.color = color & colorMask();
     st.grab = null;
     update();
   }
@@ -1016,7 +1020,7 @@ export function createScreenEditor(el, store, actions, bar) {
   // the brush color: a grabbed brush takes it in all of its cells
   function setColor(color) {
     if (!st.grab) return setBrush(st.code, color);
-    st.color = color & 15;
+    st.color = color & colorMask();
     st.grab = { ...st.grab, cells: st.grab.cells.map(v => ({ ...v, color: st.color })) };
     update();
   }
@@ -1426,12 +1430,17 @@ export function createScreenEditor(el, store, actions, bar) {
 
   // the bitmaps the side panel draws chars with: the place's charset file, else the ROM characters
   const glyphs = info => info.chr ?? romCharset(info.charset);
+  // the name of the ROM font: a Commodore's of its case set, another machine's (romfonts.js)
+  const romName = info => (machineFont().kind === 'commodore' ? tr('§0852', info.charset) : 'ROM font');
+  // the colour a char shows: on an Atari screen the one its code and the registers give (c64.js cellColors)
+  const shownColor = (code, color) => (ui?.info?.atari ? cellColors(ui.info, [code], null)[0] : color);
 
   function Swatch({ code, color, size, bg }) {
     const cv = useRef(null);
     useLayoutEffect(() => {
       const ctx = cv.current.getContext('2d');
-      drawCell(ctx, code, 0, 0, size, color, color === bg ? (color ? 0 : 1) : bg, ui.info.charset, glyphs(ui.info), ui.info.multicolor, ui.info.ecm);
+      const shown = shownColor(code, color);
+      drawCell(ctx, code, 0, 0, size, shown, shown === bg && !ui.info.atari ? (shown ? 0 : 1) : bg, ui.info.charset, glyphs(ui.info), ui.info.multicolor, ui.info.ecm);
     });
     return h('canvas', { ref: cv, width: size, height: size, class: 'brush-swatch' });
   }
@@ -1538,7 +1547,7 @@ export function createScreenEditor(el, store, actions, bar) {
   async function loadCharsetFiles() {
     if (listingCharsets) return;
     listingCharsets = true;
-    st.charsetFiles = listBinaries().filter(f => /\.(chr|bin|raw)$/i.test(f));   // not the pictures of the bitmap editor
+    st.charsetFiles = listBinaries().filter(f => /\.(chr|fnt|bin|raw)$/i.test(f));   // not the pictures of the bitmap editor
     update();
   }
 
@@ -1558,11 +1567,11 @@ export function createScreenEditor(el, store, actions, bar) {
   function charsetSelect(info) {
     if (!st.charsetFiles) loadCharsetFiles();
     const current = info.chrFile ? charsetKey(info.chrFile) : '';
-    const used = symbols(store.game).places.map(r => getAttr(r, 'charset')).filter(Boolean).map(charsetKey);
+    const used = screensOf(store.game).map(r => getAttr(r, 'charset')).filter(Boolean).map(charsetKey);
     const keys = [...new Set([...(st.charsetFiles ?? []), ...used, ...(current ? [current] : [])])].sort();
     return h('div', { style: { marginBottom: '14px' } }, select({
       label: '§0461', value: current, dense: true,
-      options: [{ value: '', label: tr('§0852', info.charset) }, ...keys.map(k => ({ value: k, label: k }))],
+      options: [{ value: '', label: romName(info) }, ...keys.map(k => ({ value: k, label: k }))],
       onchange: v => setPlaceCharset(v || null),
     }));
   }
@@ -1572,10 +1581,10 @@ export function createScreenEditor(el, store, actions, bar) {
     const rm = place();
     store.mutate(() => {
       const m = rm.members.find(x => x.kind === 'attr' && x.key === key);
-      if (m) { m.values = [COLOR_NAMES[k]]; return; }
+      if (m) { m.values = [colorValue(k, COLOR_NAMES)]; return; }
       let at = 0;
       rm.members.forEach((x, i) => { if (x.kind === 'attr') at = i + 1; });
-      rm.members.splice(at, 0, { id: newId(), kind: 'attr', key, values: [COLOR_NAMES[k]] });
+      rm.members.splice(at, 0, { id: newId(), kind: 'attr', key, values: [colorValue(k, COLOR_NAMES)] });
     }, { source: 'structure' });
   }
 
@@ -1919,11 +1928,11 @@ export function createScreenEditor(el, store, actions, bar) {
   }
 
   // multicolor or extended color mode (key): the VIC shows only black with both, so one switches the other off
-  function setPlaceMode(key, values) {
+  function setPlaceMode(key, values, { keepOther = false } = {}) {
     const rm = place();
     store.mutate(() => {
       const other = key === 'ecm' ? 'multicolor' : 'ecm';
-      if (values) { const o = rm.members.findIndex(x => x.kind === 'attr' && x.key === other); if (o >= 0) rm.members.splice(o, 1); }
+      if (values && !keepOther) { const o = rm.members.findIndex(x => x.kind === 'attr' && x.key === other); if (o >= 0) rm.members.splice(o, 1); }
       const i = rm.members.findIndex(x => x.kind === 'attr' && x.key === key);
       if (!values) { if (i >= 0) rm.members.splice(i, 1); return; }
       if (i >= 0) { rm.members[i].values = values; return; }
@@ -1944,7 +1953,8 @@ export function createScreenEditor(el, store, actions, bar) {
   const pickerRows = () => (dirartOn() && !ecmOn() ? pickerN() / 2 : pickerN());
   const pickerHeight = () => 2 * PB + pickerRows() * pickerS() + (pickerRows() - 1) * PG;
   let pickerPlain = null, pickerHover = -1;
-  const pickerOrdered = () => !ui.info.chrFile && !ecmOn();   // the ROM font in its visual order (ROM_ORDER), a charset file and ECM in code order
+  // the ROM font of a Commodore in its visual order (ROM_ORDER); a charset file, ECM and the fonts of the other machines in code order
+  const pickerOrdered = () => !ui.info.chrFile && !ecmOn() && machineFont().kind === 'commodore';
   const codeAtPos = k => (ecmOn() ? ecmCode(k) : pickerOrdered() ? ROM_ORDER[k] : k);
   const posOf = code => (ecmOn() ? code & 63 : pickerOrdered() ? ROM_POS[code] : code);
   function makePicker() {
@@ -1981,10 +1991,13 @@ export function createScreenEditor(el, store, actions, bar) {
     pctx.fillRect(0, 0, picker.width, picker.height);
     // the chars white on dark grey - in a multicolor place with a brush color of 8-15 as the game
     // shows them then: multicolor, in the brush color and the two shared colors
+    // - on an Atari screen every char as the screen shows it: its registers, its mode (shownColor)
     const chars = glyphs(info), multi = info.multicolor && st.color & 8;
     for (let k = 0; k < n * pickerRows(); k++) {
-      drawCell(pctx, codeAtPos(k) & (ecmOn() ? 63 : 255), pickerAt(k % n), pickerAt(Math.floor(k / n)), ps,
-        multi ? st.color : 1, multi ? info.bg : 11, info.charset, chars, multi ? info.multicolor : null);
+      const code = codeAtPos(k) & (ecmOn() ? 63 : 255);
+      if (info.atari) drawCell(pctx, code, pickerAt(k % n), pickerAt(Math.floor(k / n)), ps, shownColor(code, 0), info.bg, info.charset, chars, info.multicolor);
+      else drawCell(pctx, code, pickerAt(k % n), pickerAt(Math.floor(k / n)), ps,
+        multi ? st.color : pickerColors().fg, multi ? info.bg : pickerColors().bg, info.charset, chars, multi ? info.multicolor : null);
     }
     pctx.strokeStyle = '#ffd54f';
     pctx.lineWidth = 2;
@@ -2014,12 +2027,18 @@ export function createScreenEditor(el, store, actions, bar) {
   // in extended color mode the four backgrounds, one of them the background of the brush
   // in pixel mode (screenpaint.js) the rows are its pens too: the color of the cell - of 8 in a
   // multicolor place, where the cell is multicolor - and the shared colors; a click makes one the pen
+  // the colours of the machine (video.js): the 16 of the C64, the 8 of a VIC-20 char, the 121 of the TED;
+  // the PET has one
   function placeColors(info, brush) {
+    if (video().cells === 'mono') return '';
+    if (info.atari) return atariColors(info);
     const mc = getAttr(place(), 'multicolor'), ecm = getAttr(place(), 'ecm');
-    const px = brush && st.pixels, pxMc = px && !!info.multicolor;
+    const px = brush && st.pixels, pxMc = px && !!info.multicolor, names = mcNames();
     const penRow = (key, row) => (px ? { ...row, active: painter.pen() === key, onselect: () => painter.setPen(key) } : row);
-    const pen = brush ? [penRow('color', { label: px ? '§1625' : '§0637', color: pxMc ? st.color & 7 : st.color, active: true, tip: '§0966',
-      count: pxMc ? 8 : 16, onpick: k => setColor(pxMc ? (k & 7) | 8 : k) })] : [];
+    // the VIC-20 has no multicolor switch: bit 3 of a colour makes the char multicolor, a hires char takes 8
+    const cellKind = pxMc || (video().cells === 'vic' && info.multicolor) ? 'mc' : video().cells === 'vic' ? 'cell' : 'all';
+    const pen = brush ? [penRow('color', { label: px ? '§1625' : '§0637', color: cellKind === 'mc' ? mcCellColor(st.color) : st.color, active: true, tip: '§0966',
+      count: cellKind, onpick: k => setColor(cellKind === 'mc' ? mcCell(k) : k) })] : [];
     return info.ecm ? colorChooser([
       ...pen.map(x => ({ ...x, active: false })),
       ...[info.bg, ...info.ecm].map((color, k) => ({
@@ -2027,16 +2046,32 @@ export function createScreenEditor(el, store, actions, bar) {
         tip: k ? tr('§0978', k + 1, 1 + k, k * 64, k * 64 + 63)
           : '§0977',
         onselect: brush ? () => setEcmBg(k) : undefined,
-        onpick: c => (k ? setPlaceEcm(ecm.map((v, i) => (i === k - 1 ? COLOR_NAMES[c] : v))) : setPlaceColor('bgcolor', c)),
+        onpick: c => (k ? setPlaceEcm(ecm.map((v, i) => (i === k - 1 ? colorValue(c, COLOR_NAMES) : v))) : setPlaceColor('bgcolor', c)),
       })),
     ]) : colorChooser([
       ...pen,
-      ...(mc ? [0, 1].map(k => penRow(k ? 'mc2' : 'mc1', { label: `Multicolor ${k + 1}`, color: colorIndex(mc[k], info.consts, 0),
-        tip: tr('§0968', k + 1, 2 + k),
-        onpick: c => setPlaceMulticolor(mc.map((v, i) => (i === k ? COLOR_NAMES[c] : v))) })) : []),
+      ...(mc ? [0, 1].map(k => penRow(k ? 'mc2' : 'mc1', { label: k ? names.mc2 : names.mc1, color: colorIndex(mc[k], info.consts, 0),
+        tip: video().cells === 'vic2' ? tr('§0968', k + 1, 2 + k) : k ? names.mc2 : names.mc1,
+        count: video().cells === 'vic' && !k ? 'cell' : 16,           // the VIC-20's border: one of 8
+        onpick: c => setPlaceMulticolor(mc.map((v, i) => (i === k ? colorValue(c, COLOR_NAMES) : v))) })) : []),
       { label: '§0636', color: info.bg,
         tip: '§0967', onpick: k => setPlaceColor('bgcolor', k) },
     ]);
+  }
+
+  // an Atari screen: its five colour registers - ANTIC 2 shows COLOR1 (the luminance of the chars), COLOR2 (their
+  // background) and COLOR4 (the border); ANTIC 4 COLOR4 (00), COLOR0 (01), COLOR1 (10), COLOR2 (11), COLOR3 (11 of
+  // the codes 128-255). A click on a swatch sets it for the whole screen
+  function atariColors(info) {
+    const { regs, antic4 } = info.atari;
+    const set = (k, c) => {
+      const values = regs.map(String);
+      values[k] = String(c);
+      setPlaceMode('registers', values, { keepOther: true });
+    };
+    const label = antic4 ? ['COLOR0 (01)', 'COLOR1 (10)', 'COLOR2 (11)', 'COLOR3 (11, codes 128-255)', 'COLOR4: background (00)']
+      : [null, 'COLOR1: luminance of the chars', 'COLOR2: background', null, 'COLOR4: border'];
+    return colorChooser(regs.map((color, k) => label[k] && { label: label[k], color, tip: `${label[k]} - the register of the whole screen`, onpick: c => set(k, c) }).filter(Boolean));
   }
 
   function sideView() {
@@ -2046,11 +2081,11 @@ export function createScreenEditor(el, store, actions, bar) {
 
     return [
       painter.section(),
-      tileGame(store.game) && !place().canvas ? tilesSection() : '',
+      dirartOn() ? '' : tilesSection(),
       tiles ? '' : section('§0854', [iconButton('edit', info.chrFile ? '§0855' : '§0856',
             () => actions.openChars(info.chrFile, st.placeId))],
         placeTileset() ? h('div', { class: 'section__hint', style: { margin: '0 0 14px' } },
-          tr('§1420', tilesetCharset(tilesetKey(getAttr(place(), 'tiles'))) ?? tr('§0852', info.charset))) : place().canvas ? '' : charsetSelect(info),
+          tr('§1420', tilesetCharset(tilesetKey(getAttr(place(), 'tiles'))) ?? romName(info))) : dirartOn() ? '' : charsetSelect(info),
         dom(ui.picker),
         h('div', { style: { marginTop: '10px' } }, placeColors(info, true)),
         info.multicolor ? h('div', { class: 'section__hint', style: { margin: '10px 0 0' } },
@@ -2058,7 +2093,7 @@ export function createScreenEditor(el, store, actions, bar) {
         h('div', { class: 'section__hint', style: { margin: '10px 0 0' } }, info.ecm ? '§0979'
           : info.chrFile ? '§0857'
           : dirartOn() ? '§1742'
-          : '§0965')),
+          : machineFont().kind === 'commodore' ? '§0965' : `The ROM font of the ${platformOf(videoMachine()).short} (${machineFont().source}), in the order of its codes.`)),
       tiles ? '' : section('§0858', [],
         h('div', { class: 'brush-current' }, brushTile()),
         h('div', { class: 'sprite-color-label' }, '§0860'),
@@ -2074,7 +2109,7 @@ export function createScreenEditor(el, store, actions, bar) {
           '§0839')
         : st.tile.w * st.tile.h > 1 ? h('div', { class: 'section__hint', style: { margin: '8px 0 0' } },
           tr('§0862', st.code, lastCode(st.tile.w * st.tile.h), st.tile.w)) : ''),
-      place().canvas ? '' : [layersSection(), layerAnimSection()],
+      dirartOn() ? '' : layersSection(),
       legacy.length ? h('div', { class: 'section' },
         h('div', { class: 'banner banner--info' }, icon('info'),
           h('span', {}, tr('§1066', legacy.length, legacy.length === 1 ? '' : 's'))),
@@ -2122,11 +2157,12 @@ export function createScreenEditor(el, store, actions, bar) {
     const name = bg.file ?? scrPath(rm.name, gfxDir(store.path)), size = info.width * info.rows;
     return [
       { label: '§1019', name: exportName(name, 'gfx'), description: 'yopaca screen', bytes: () => placeToFile(rm, rm.canvas?.charset ?? symbols(store.game).charset) },
-      { label: tr('§1020', info.width, info.rows), name: exportName(name, 'bin'), description: 'C64 screen data',
+      // the colours as the colour RAM holds them (the TED: its attribute bytes); the PET and the Atari have none
+      { label: tr('§1020', info.width, info.rows), name: exportName(name, 'bin'), description: `${platformOf(videoMachine()).short} screen data`,
         bytes: () => {
-          const out = new Uint8Array(size * 2);
+          const mono = video().cells === 'mono' || video().cells === 'atari', out = new Uint8Array(size * (mono ? 1 : 2));
           out.set(info.chars.subarray(0, size));
-          out.set(info.colors.subarray(0, size).map(c => c & 15), size);
+          if (!mono) out.set(info.colors.subarray(0, size).map(c => c & colorMask()), size);
           return out;
         } },
       { label: '§1021', icon: 'wallpaper', name: exportName(name, 'png'), type: 'image/png', description: 'PNG picture',
@@ -2170,9 +2206,10 @@ export function createScreenEditor(el, store, actions, bar) {
   // chars and colors (.bin): W x rows chars, then their colors, as the export writes them; a whole
   // C64 screen (1000 chars and 1000 colors, 40 x 25) gives its top rows, 1000 bytes only chars
   function importBin(bytes, name) {
-    const rows = rowsOf(), color = c => c & 15;
-    if (bytes.length === 2000) return importMap({ w: 40, h: 25, chars: bytes.subarray(0, 1000), colors: bytes.subarray(1000).map(color) }, name);
-    if (bytes.length === 1000) return importMap({ w: 40, h: 25, chars: bytes, colors: null }, name);
+    // a whole screen of the machine (video.js): 40 x 25, the VIC-20's 22 x 23
+    const rows = rowsOf(), color = c => c & colorMask(), { cols: W, rows: H } = video().screen ?? { cols: 40, rows: 25 };
+    if (bytes.length === 2 * W * H) return importMap({ w: W, h: H, chars: bytes.subarray(0, W * H), colors: bytes.subarray(W * H).map(color) }, name);
+    if (bytes.length === W * H) return importMap({ w: W, h: H, chars: bytes, colors: null }, name);
     const n = bytes.length / 2;
     if (!Number.isInteger(n) || n % rows) {
       throw new Error(tr('§1988', bytes.length, rows));
@@ -2214,31 +2251,35 @@ export function createScreenEditor(el, store, actions, bar) {
     { label: '§1014', icon: 'wallpaper', accept: '.bin,.raw', open: importBin },
   ]);
 
+  // a new screen (actions.js addPlace: its name and size), shown at once
+  async function addScreen() {
+    const p = await actions.addPlace(null);
+    if (p) { st.placeId = p.id; st.layer = 'background'; st.camPx = 0; st.sel = null; render(); }
+  }
+
   function barView() {
     const rm = store.game && place();
-    if (!rm) return null;
+    // no screen yet: the bar has the button that makes one
+    if (!rm) return store.game ? h('div', { class: 'screen-bar' }, h('span', { class: 'md-title-medium' }, 'Screen'), h('span', { class: 'screen-bar__sep' }),
+      iconButton('add', 'New screen', addScreen)) : null;
     const toggle = (ic, tip, key) => iconButton(ic, tip, () => { st[key] = !st[key]; update(); draw(); }, st[key] ? 'md-icon-button--selected' : '');
     const mc = getAttr(rm, 'multicolor'), ecm = getAttr(rm, 'ecm'), canvas = !!rm.canvas;
     return h('div', { class: 'screen-bar' },
       h('span', { class: 'md-title-medium' }, 'Screen'),
       h('span', { class: 'screen-bar__sep' }),
       select({ label: 'Place', hideLabel: true, value: rm.id, dense: true, cls: 'screen-bar__place',
-        options: [...symbols(store.game).places.map(r => ({ value: r.id, label: r.name })),
-          ...(store.game.canvases ?? []).map(c => ({ value: c.id, label: tr(c.canvas.dirart ? '§1740' : '§1651', c.name) }))],
+        options: screensOf(store.game).map(c => ({ value: c.id, label: c.canvas.dirart ? tr('§1740', c.name) : c.name })),
         onchange: v => { st.placeId = v; st.layer = 'background'; st.camPx = 0; st.sel = null; render(); } }),
-      iconButton('add', '§0123', async () => {
-        const p = await actions.addPlace(null);
-        if (p) { st.placeId = p.id; st.layer = 'background'; st.camPx = 0; st.sel = null; render(); }
-      }),
+      iconButton('add', 'New screen', addScreen),
       h('span', { class: 'screen-bar__sep' }),
       defaultTools({
         undo: () => store.undo(), redo: () => store.redo(), zoom,
         grid: { on: st.grid, toggle: () => { st.grid = !st.grid; update(); draw(); } },
-        // the two modes of the place side by side: multicolor and extended color mode, one of them
-        // (a canvas has only its chars and colors: neither)
-        multicolor: { on: !!mc, locked: canvas ? '§1660' : null, toggle: () => setPlaceMulticolor(mc ? null : ['orange', 'brown']) },
-        modes: canvas ? [] : [modeButton('ECM', ecm ? '§0980' : '§0981',
-          () => setPlaceEcm(ecm ? null : ['red', 'green', 'blue']), !!ecm, { 'data-mode': 'ecm' }),
+        // the two modes of the place side by side: multicolor and extended color mode, one of them - as the
+        // machine has them (video.js: the VIC-20 no ECM, the PET neither); the directory art has neither
+        multicolor: !hasMulticolor() ? undefined : { on: !!mc, locked: rm.canvas?.dirart ? '§1660' : null, toggle: () => setPlaceMulticolor(mc ? null : startColors().mc.map(k => colorValue(k, COLOR_NAMES))) },
+        modes: rm.canvas?.dirart ? [] : [video().ecm ? modeButton('ECM', ecm ? '§0980' : '§0981',
+          () => setPlaceEcm(ecm ? null : startColors().ecm.map(k => colorValue(k, COLOR_NAMES))), !!ecm, { 'data-mode': 'ecm' }) : '',
           modeButton('PIX', st.pixels ? '§1611' : '§1612', painter.toggle, st.pixels, { 'data-mode': 'pixels' })],
         clear: { tip: '§0826', run: () => applyRange('clear') },
       }),
@@ -2247,28 +2288,18 @@ export function createScreenEditor(el, store, actions, bar) {
         onchange: b => { st.shape = b; update(); draw(); } }),
         radiusTools({ radius: st.radius, tool: st.tool, max: radiusMax(st.pixels ? painter.grid() : shapeGrid()), onchange: v => { st.radius = v; update(); draw(); } }),
         h('span', { class: 'screen-bar__sep' })] : '',
-      toggle('select_all', '§0866', 'overlays'),
-      !canvas && toggle('videocam', '§0867', 'camera'),
-      !canvas && iconButton('animation', '§1990', () => {
-        st.animPlaying = !st.animPlaying;
-        st.animTick = 0;
-        update();
-        playAnims();
-        rebuild();
-      }, st.animPlaying ? 'md-icon-button--selected' : ''),
       h('div', { class: 'app-bar__spacer' }),
-      canvas ? [h('span', { class: 'md-body-small screen-bar__canvas' }, tr('§1660', rm.canvas.cols, rm.canvas.rows)),
-        iconButton('delete', '§1657', async () => { if (await actions.deleteCanvas(rm.id)) { st.placeId = null; render(); } }, '', { 'data-action': 'delete-canvas' })]
-      : rm.fullscreen ? h('span', { class: 'md-body-small screen-bar__canvas' }, '§1661')      // 40 columns, no width to set
-      : field({ label: '§0397', value: placeWidth(rm, constMap(store.game)), type: 'number', dense: true, mono: true, cls: 'screen-bar__width',
-        onchange: v => { actions.setPlaceWidth(st.placeId, v); render(); } }));
+      // the size of the screen (its file: gfx/screen/NAME.scr) and its delete
+      h('span', { class: 'md-body-small screen-bar__canvas' }, `${rm.canvas.cols} × ${rm.canvas.rows} chars · ${canvasPath(rm, gfxDir(store.path))}`),
+      iconButton('delete', `Delete the screen ${rm.name}`, async () => { if (await actions.deleteCanvas(rm.id)) { st.placeId = null; render(); } }, '', { 'data-action': 'delete-canvas' }));
   }
 
   const StatusLine = () => h('span', { class: 'md-body-small screen-status' }, statusLine.value);
 
   function bodyView() {
     if (!store.game) return null;
-    if (!place() || !ui?.info) return h('div', { class: 'empty-state' }, icon('wallpaper'), h('div', { class: 'md-title-medium' }, '§0868'));
+    if (!place() || !ui?.info) return h('div', { class: 'empty-state' }, icon('wallpaper'), h('div', { class: 'md-title-medium' }, '§0868'),
+      store.game ? button('New screen', { icon: 'add', variant: 'tonal', onclick: addScreen }) : '');
     // the range tools, in the toolbox left of the canvas below the drawing tools
     const range = { keys: RANGE_KEYS, run: applyRange, note: '§1991' };
     return h('div', { class: 'screen-body' },
@@ -2289,7 +2320,7 @@ export function createScreenEditor(el, store, actions, bar) {
   function render() {
     if (!store.game) return;
     const S = symbols(store.game);
-    if (!place()) st.placeId = S.places[0]?.id ?? null;
+    if (!place()) st.placeId = screensOf(store.game).find(c => !c.canvas.dirart)?.id ?? screensOf(store.game)[0]?.id ?? null;   // the first screen
     actions.route?.();            // the address follows what is open (app.js)
     const rm = place();
     if (!rm) {
@@ -2350,6 +2381,8 @@ export function createScreenEditor(el, store, actions, bar) {
     current: () => place()?.name ?? null,        // the place open: its name, for the address
     open(placeId) {
       if (placeId && placeId !== st.placeId) { st.placeId = placeId; st.layer = 'background'; st.camPx = 0; st.sel = null; }
+      // another machine (video.js): the brush starts in its text colour, one of its colours
+      if (st.machine !== videoMachine()) { st.machine = videoMachine(); st.color = startColors().text; }
       render();
       ui?.wrap.focus({ preventScroll: true });
     },

@@ -2,27 +2,6 @@
 // charsets, colors and layers, the sprites with their frames and animations. The art is in gfx/.
 charset upper
 
-place hall {
-    screen {
-        bgcolor black
-        border black
-        textcolor white
-        charset "gfx/charset/chars.chr"
-        gfx "gfx/screen/hall.scr"
-    }
-    patch door_open { at (25, 3) }
-    patch door_closed { at (25, 3) }
-}
-
-place town {
-    screen {
-        bgcolor blue
-        border black
-        textcolor white
-        gfx "gfx/screen/town.scr"
-    }
-}
-
 costume Dave "gfx/sprite/Dave.spr" {
     anim walk_right {
         frames [left3, right3, left2, left1, left12]

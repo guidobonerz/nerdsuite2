@@ -230,7 +230,7 @@ function replaceRange(el, text, a, b, select = 'end') {
 //   onContext    (offset, insert(text), event) a right click at the offset: true when it opened a panel of
 //                its own (the browser's menu stays shut, the caret moves there); insert writes at the caret
 export function CodeEditor(o) {
-  const ta = useRef(null), pre = useRef(null), gutter = useRef(null);
+  const ta = useRef(null), pre = useRef(null), gutter = useRef(null), caretLine = useRef(null);
   const [list, setList] = useState(null);
   const [active, setActive] = useState(0);
   const text = o.value ?? '';
@@ -242,12 +242,24 @@ export function CodeEditor(o) {
     if (!el) return;
     if (pre.current) { pre.current.scrollTop = el.scrollTop; pre.current.scrollLeft = el.scrollLeft; }
     if (gutter.current) gutter.current.scrollTop = el.scrollTop;
+    markCaretLine(el);
+  };
+  // the line of the caret: a thin line above and below it (the start of a selection: its line)
+  const markCaretLine = el => {
+    const m = caretLine.current;
+    if (!m || !el) return;
+    const cs = getComputedStyle(el), lh = parseFloat(cs.lineHeight), pad = parseFloat(cs.paddingTop);
+    const line = el.value.slice(0, el.selectionStart).split('\n').length - 1;
+    const top = pad + line * lh - el.scrollTop;
+    m.style.transform = `translateY(${top}px)`;
+    m.style.height = `${lh}px`;
+    m.hidden = !Number.isFinite(top) || top + lh < 0 || top > el.clientHeight;
   };
   useLayoutEffect(sync);
   useLayoutEffect(() => { if (o.inputRef) o.inputRef.current = ta.current; });
 
   const close = () => { setList(null); setActive(0); };
-  const caretMoved = el => { if (o.onCaret) { const c = caretAt(el.value, el.selectionStart); o.onCaret(c.line, c.col); } };
+  const caretMoved = el => { markCaretLine(el); if (o.onCaret) { const c = caretAt(el.value, el.selectionStart); o.onCaret(c.line, c.col); } };
 
   // what may be written at the caret; while typing only once there is something to filter by,
   // Ctrl+Space anywhere
@@ -365,6 +377,7 @@ export function CodeEditor(o) {
       onclick: o.onGutter ? e => { const line = Number(e.target.dataset?.line); if (line) o.onGutter(line); } : undefined }, numbers),
     h('div', { class: 'code-view__body' },
       h('pre', { class: 'code-highlight', ref: pre, 'data-i18n': 'off', 'aria-hidden': 'true' }, o.lang?.highlight ? o.lang.highlight(text, o) : text, '\n'),
+      h('div', { class: 'code-caret-line', ref: caretLine, 'aria-hidden': 'true' }),
       h('textarea', {
         ref: ta, class: 'code-area code-view__input', spellcheck: false, wrap: 'off', value: text,
         autocomplete: 'off', autocorrect: 'off', autocapitalize: 'off', 'data-i18n': 'off',
@@ -373,6 +386,7 @@ export function CodeEditor(o) {
           const c = e.inputType?.startsWith('insert') && o.lang?.collapse?.(e.target.value, e.target.selectionStart);
           if (c) replaceRange(e.target, c.insert, c.from, c.to);
           emit(e.target);
+          markCaretLine(e.target);
           const typed = e.data ?? '';
           suggest(e.target, !!(typed && o.lang?.autoTrigger?.(typed, e.target.value, e.target.selectionStart)));
         },
@@ -387,7 +401,9 @@ export function CodeEditor(o) {
             if (word) o.onDefinition(word);
           }
         },
-        onkeyup: e => { if (/^(Arrow|Home|End|Page)/.test(e.key)) caretMoved(e.target); },
+        onkeyup: e => { if (/^(Arrow|Home|End|Page)/.test(e.key)) caretMoved(e.target); else markCaretLine(e.target); },
+        onfocus: e => markCaretLine(e.target),
+        onselect: e => markCaretLine(e.target),
         onblur: () => { close(); o.onblur?.(); },
         oncopy: o.lang?.copyText ? e => clip(e, false) : undefined,
         oncut: o.lang?.copyText ? e => clip(e, true) : undefined,

@@ -47,7 +47,7 @@ export default {
   '§1984': ' · selber Ort',
   '§1985': ' · auf {0}',
   '§1986': 'Ebenen-Animation {0} gelöscht',
-  '§1987': 'Ort {0} hat keinen Hintergrund zum Importieren',
+  '§1987': 'Bildschirm {0} hat keinen Hintergrund zum Importieren',
   '§1988': '{0} Bytes: Zeichen und Farben von {1} Zeilen (2 × B × {1} Bytes), oder ein C64-Bildschirm (1000 oder 2000 Bytes)',
   '§1989': '{0}: CharPad {1} - nur Text Hires und Text Multicolor werden importiert',
   '§1990': 'Die Ebenen-Animationen abspielen',

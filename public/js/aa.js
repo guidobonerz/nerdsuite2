@@ -8,15 +8,19 @@
 // round brushes by the distance, square ones by the larger of the two offsets. Coordinates are in
 // pixels, x scaled by how the brush stretches a multicolor pixel (brushCells), so the brush has
 // its width in both modes. Coverage 1 is the pen, less a color between the pen and the
-// background: the C64 color nearest to their mix, or nothing when that is the background.
+// background: the color of the machine nearest to their mix (video.js: the C64's 16, the TED's 121 ...),
+// or nothing when that is the background.
 
 import { PALETTE } from './c64.js';
+import { onVideoChange } from './video.js';
 
-const RGB = PALETTE.map(hex => [1, 3, 5].map(k => parseInt(hex.slice(k, k + 2), 16)));
+const rgbOf = () => PALETTE.map(hex => [1, 3, 5].map(k => parseInt(hex.slice(k, k + 2), 16)));
+let RGB = rgbOf();
+onVideoChange(() => { RGB = rgbOf(); });             // after c64.js: it registered first
 const MIN_COVER = 0.1;                    // less: the pixel is left alone
 
-// the C64 color of a pixel covered by cov between pen and bg (palette indices) - among the
-// colors given, else all sixteen
+// the color of a pixel covered by cov between pen and bg (palette indices) - among the
+// colors given, else all of the palette
 export function shadeOf(cov, pen, bg, among = null) {
   if (cov >= 0.999 || pen === bg) return pen;
   const [p, b] = [RGB[pen], RGB[bg]], want = b.map((v, k) => v + (p[k] - v) * cov);

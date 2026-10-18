@@ -267,17 +267,17 @@ export function rangeForKey(keys, e) {
 
 // the default tools of every graphics editor, in the bar above it: undo, redo, zoom out and in,
 // grid, multicolor and clear. o: { undo(), redo(), zoom(+1 / -1), grid: { on, toggle() },
-// multicolor: { on, toggle(), locked: why it cannot change or null }, modes: more mode switches
-// right after it, clear: { tip, run() } }
+// multicolor: { on, toggle(), locked: why it cannot change or null } - none on a machine without one -,
+// modes: more mode switches right after it, clear: { tip, run() } }
 export function defaultTools(o) {
   const mc = o.multicolor;
-  const mcAttrs = { 'data-default': 'multicolor', 'aria-pressed': String(mc.on), disabled: !!mc.locked };
-  const mcTip = mc.locked ?? (mc.on ? '§0824' : '§0825');
+  const mcAttrs = mc && { 'data-default': 'multicolor', 'aria-pressed': String(mc.on), disabled: !!mc.locked };
+  const mcTip = mc && (mc.locked ?? (mc.on ? '§0824' : '§0825'));
   return h('div', { class: 'default-tools' },
     iconButton('undo', 'Undo (Ctrl+Z)', o.undo), iconButton('redo', 'Redo (Ctrl+Y)', o.redo),
     iconButton('zoom_out', '§0700', () => o.zoom(-1)), iconButton('zoom_in', '§0701', () => o.zoom(1)),
     iconButton('grid_on', '§0682', o.grid.toggle, o.grid.on ? 'md-icon-button--selected' : '', { 'data-default': 'grid', 'aria-pressed': String(o.grid.on) }),
-    iconButton('colors', mcTip, mc.locked ? null : mc.toggle, mc.on ? 'md-icon-button--selected' : '', mcAttrs),
+    mc ? iconButton('colors', mcTip, mc.locked ? null : mc.toggle, mc.on ? 'md-icon-button--selected' : '', mcAttrs) : '',
     o.modes ?? '',
     iconButton('delete_sweep', o.clear.tip, o.clear.run, '', { 'data-default': 'clear' }));
 }

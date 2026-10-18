@@ -49,7 +49,7 @@ export default {
   '§1471': 'das ganze Bild {0}',
   '§1472': '(neu)',
   '§1473': 'Tile {0} von {1}',
-  '§1474': 'Die {0} Tile(s) danach rücken eine Nummer auf, auch in den Tile-Karten der Orte.',
+  '§1474': 'Die {0} Tile(s) danach rücken eine Nummer auf, auch in den Tile-Karten der Bildschirme.',
   '§1475': 'Tile {0}',
   '§1476': 'Es wird {0}-mal benutzt, in {1}.',
   '§1477': 'Position {0} der Reihenfolge',

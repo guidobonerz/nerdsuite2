@@ -47,7 +47,7 @@ export default {
   '§1984': ' · same place',
   '§1985': ' · on {0}',
   '§1986': 'Deleted layer animation {0}',
-  '§1987': 'place {0} has no background to import into',
+  '§1987': 'screen {0} has no background to import into',
   '§1988': '{0} bytes: chars and colors of {1} rows (2 × W × {1} bytes), or a C64 screen (1000 or 2000 bytes)',
   '§1989': '{0}: CharPad {1} - only text hires and text multicolor are imported',
   '§1990': 'Play the layer animations',

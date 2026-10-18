@@ -9,7 +9,9 @@ import { openMenu, promptDialog, snackbar, setSideCollapsed, confirmRemove } fro
 import { convertGameToPetscii } from './petscii.js';
 import { tr } from './i18n.js';
 import { SEQ_KINDS } from './seqtags.js';
-import { newCanvas, gameFiles, scrPath, gfxDir, dirartPath, canvasPath } from './gfxfile.js';
+import { newCanvas, gameFiles, scrPath, gfxDir, dirartPath, canvasPath, lookAttrs } from './gfxfile.js';
+import { video, videoMachine, startColors } from './video.js';
+import { platformOf } from './platforms.js';
 
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const RESERVED = new Set(['place', 'inventory', 'nowhere', 'click', 'true', 'false', 'has', 'random', 'and', 'or', 'not',
@@ -101,49 +103,47 @@ export function createActions(store) {
   // (a place is declared at the top level and names no chapter: the chapters name their places)
   const newPlaceChapter = () => null;
 
-  // the size of a new screen, chosen in its dialog: the game's - 17 rows under the sentence line,
-  // the verbs and the inventory (19 with the verb coin), 40 columns or more (up to 120, 107 with the
-  // coin) that scroll - or fullscreen, 40 x 24
-  // over them (it does not scroll); in the dialog of a new place also a free size: a canvas of 1-255
-  // x 1-255 chars to paint and to save, no place of the game (gfxfile.js: canvases)
-  // A game on a .d64 also has the directory art: a canvas of 16 columns, a file name each row
-  const sizeFields = ({ free = false } = {}) => [
-    { name: 'size', label: '§1645', value: 'game', radios: [
-      { value: 'game', label: `Screen: ${gameRows(game())} rows, 40 columns or wider (scrolls)` }, ...(free ? [{ value: 'free', label: '§1648' }] : []),
-      ...(free ? [{ value: 'dirart', label: '§1739' }] : [])],
-      onchange: (v, dlg) => {                     // the directory art: its own name, rows that fit the directory
-        if (v === 'dirart' && /^drawing\d*$/.test(dlg.values().file)) dlg.set('file', uniqueCanvas('dirart'));
-        if (v === 'dirart' && Number(dlg.values().rows) > MAX_DIRART_ROWS) dlg.set('rows', '10');
-      } },
-    { name: 'cols', label: '§1649', value: '40', mono: true, when: v => v.size !== 'full' && v.size !== 'dirart', row: 'size',
-      spin: v => (v.size === 'free' ? { min: 1, max: MAX_CANVAS } : { min: PLACE_COLS, max: maxPlaceCols(game()) }),
-      validate: (c, v) => {
-        const [min, max] = v.size === 'free' ? [1, MAX_CANVAS] : [PLACE_COLS, maxPlaceCols(game())], n = Number(c);
-        return Number.isInteger(n) && n >= min && n <= max ? null : tr('§1653', min, max);
-      } },
-    { name: 'rows', label: '§1650', value: '25', mono: true, when: v => v.size === 'free' || v.size === 'dirart', row: 'size',
-      spin: v => ({ min: 1, max: v.size === 'dirart' ? MAX_DIRART_ROWS : MAX_CANVAS }),
-      validate: (r, v) => {
-        const n = Number(r), max = v.size === 'dirart' ? MAX_DIRART_ROWS : MAX_CANVAS;
-        return Number.isInteger(n) && n >= 1 && n <= max ? null : tr('§1655', 1, max);
-      } },
-  ];
-  const sizeOf = v => ({ cols: v.size === 'full' ? MAX_FULL_COLS : v.size === 'dirart' ? DIRART_COLS : Number(v.cols),
-    rows: v.size === 'full' ? FULL_ROWS : v.size === 'free' || v.size === 'dirart' ? Number(v.rows) : gameRows(game()) });
+  // the size of a new screen: the machine's (video.js: 40 x 25, the VIC-20's 22 x 23) or one of its own,
+  // 1-255 x 1-255 chars - and on a Commodore with a 1541 also the directory art of the .d64: a screen of
+  // 16 columns, a file name a row
+  const sizeFields = () => {
+    const { cols, rows } = video().screen ?? { cols: 40, rows: 25 };
+    return [
+      { name: 'size', label: '§1645', value: 'free', radios: [
+        { value: 'free', label: `A screen - the ${platformOf(videoMachine()).short} shows ${cols} × ${rows}` },
+        ...(video().cells === 'vic2' ? [{ value: 'dirart', label: '§1739' }] : [])],
+        onchange: (v, dlg) => {                     // the directory art: its own name, rows that fit the directory
+          if (v === 'dirart' && /^screen\d*$/.test(dlg.values().file)) dlg.set('file', uniqueCanvas('dirart'));
+          if (v === 'dirart' && Number(dlg.values().rows) > MAX_DIRART_ROWS) dlg.set('rows', '10');
+        } },
+      { name: 'cols', label: '§1649', value: String(cols), mono: true, when: v => v.size !== 'dirart', row: 'size',
+        spin: () => ({ min: 1, max: MAX_CANVAS }),
+        validate: c => { const n = Number(c); return Number.isInteger(n) && n >= 1 && n <= MAX_CANVAS ? null : tr('§1653', 1, MAX_CANVAS); } },
+      { name: 'rows', label: '§1650', value: String(rows), mono: true, row: 'size',
+        spin: v => ({ min: 1, max: v.size === 'dirart' ? MAX_DIRART_ROWS : MAX_CANVAS }),
+        validate: (r, v) => {
+          const n = Number(r), max = v.size === 'dirart' ? MAX_DIRART_ROWS : MAX_CANVAS;
+          return Number.isInteger(n) && n >= 1 && n <= max ? null : tr('§1655', 1, max);
+        } },
+    ];
+  };
+  const sizeOf = v => ({ cols: v.size === 'dirart' ? DIRART_COLS : Number(v.cols), rows: Number(v.rows) });
 
   // the name of a canvas is the name of its file, gfx/screen/NAME.scr: none a place writes
   const canvasTaken = name => (game().canvases ?? []).some(c => c.name === name) || gameFiles(game(), gfxDir(store.path)).files.has(scrPath(name, gfxDir(store.path)))
     || gameFiles(game(), gfxDir(store.path)).files.has(dirartPath(name, gfxDir(store.path)));
   const uniqueCanvas = base => { let n = base; for (let k = 2; canvasTaken(n); k++) n = base + k; return n; };
   const canvasField = () => ({
-    name: 'file', label: '§1656', mono: true, when: v => v.size === 'free' || v.size === 'dirart',
-    value: uniqueCanvas('drawing'),
+    name: 'file', label: '§1656', mono: true,
+    value: uniqueCanvas('screen'),
     validate: v => (!NAME_RE.test(v) ? '§0949' : canvasTaken(v) ? tr('§0121', v) : null),
   });
 
-  // a new canvas, shown in the screen editor
+  // a new screen, shown in the screen editor: in the colours the machine starts with (video.js)
   const addCanvas = (name, { cols, rows }) => {
     const c = newCanvas(name, cols, rows, S().charset);
+    const sc = startColors();
+    c.members.unshift(...lookAttrs({ bg: sc.bg, border: sc.border, text: sc.text }));
     store.mutate(g => { (g.canvases ??= []).push(c); g.canvases.sort((a, b) => a.name.localeCompare(b.name)); }, { source: 'structure' });
     snackbar(tr('§1652', name, cols, rows, scrPath(name, gfxDir(store.path))));
     A.openScreen(c.id);
@@ -195,26 +195,15 @@ export function createActions(store) {
     return true;
   };
 
-  A.addPlace = async placeId => {
-    const parent = store.node(typeof placeId === 'string' ? placeId : store.scope);
-    const into = null;                        // places are declared at the top level
-    const placeOnly = v => v.size !== 'free' && v.size !== 'dirart';
+  // a new screen (nerdsuite has no places): a file of its own, gfx/screen/NAME.scr
+  A.addPlace = async () => {
     const v = await promptDialog({
-      title: 'New screen', icon: 'add_location_alt', ok: '§0124',
-      text: 'A screen of 25 rows, 40 to 120 columns wide, with its own charset, colors and layers - or a free size canvas.',
-      fields: [
-        { ...nameField('Name', uniqueName(game(), 'screen')), when: placeOnly },
-        canvasField(),
-        ...sizeFields({ free: true }),
-      ],
+      title: 'New screen', icon: 'add_photo_alternate', ok: '§0124',
+      text: 'A screen with its own size, charset, colors and layers - saved as gfx/screen/NAME.scr.',
+      fields: [canvasField(), ...sizeFields()],
     });
     if (!v) return null;
-    if (v.size === 'free') return addCanvas(v.file, sizeOf(v));
-    if (v.size === 'dirart') return addDirart(v.file, sizeOf(v).rows);
-    const place = newPlace(v.name, S().charset, into ? null : newPlaceChapter(game().items), sizeOf(v));
-    store.mutate(() => insertItem(place, 'place', into ? into.members : game().items), { source: 'structure' });
-    store.select(place.id, { reveal: true });
-    return place;
+    return v.size === 'dirart' ? addDirart(v.file, sizeOf(v).rows) : addCanvas(v.file, sizeOf(v));
   };
 
   // rect: optional hotspot {col, row, w, h} (drawn in the screen editor)

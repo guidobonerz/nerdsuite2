@@ -385,7 +385,7 @@ const EMBED_KINDS = [
   ['sound', 'sound "x.sid"', 'the music of a .sid file (the load address: the note of the line)'],
   ['binary', 'binary "x.bin"[, from[, count]]', 'any file: its bytes from an offset'],
 ].map(([label, syntax, detail]) => ({ label, kind: 'keyword', insert: `${label} "`, syntax: `DATA @embed ${syntax}`, detail }));
-const EMBED_EXT = { sprite: /\.(spr|bin|raw)$/i, charset: /\.(chr|bin|raw)$/i, screen: /\.scr$/i, bitmap: /\.(kla|koa)$/i, sound: /\.sid$/i };
+const EMBED_EXT = { sprite: /\.(spr|bin|raw)$/i, charset: /\.(chr|fnt|bin|raw)$/i, screen: /\.scr$/i, bitmap: /\.(kla|koa)$/i, sound: /\.sid$/i };
 
 // a jump word and the label being typed after it (the label mode)
 const LABEL_JUMP = /(?<![a-z_])(goto|go\s*to|gosub|then|else|run|list|restore|trap|resume)\s*(?:[a-z_]\w*\s*,\s*)*([a-z_]\w*)?$/i;
