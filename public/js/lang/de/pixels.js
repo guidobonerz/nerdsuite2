@@ -1,0 +1,22 @@
+// de/pixels.js - die Texte des Pixelmodus des Bildschirm-Editors (screenpaint.js)
+export default {
+  '§1611': 'Pixelmodus ist an: Pixel werden auf den Ort gemalt, der Zeichensatz bekommt die Zeichen dafür - Klick für wieder Zeichen',
+  '§1612': 'Pixelmodus: Pixel malen wie im Bitmap-Editor, jede Zelle wird ein Zeichen des Zeichensatzes',
+  '§1613': 'Pixel',
+  '§1614': 'Zeichen belegt',
+  '§1615': '{0} von {1} · {2} %',
+  '§1616': 'Der Zeichensatz ist voll: {0} Zeichen mehr wären nötig gewesen. Löschen, Formen wiederverwenden oder doppelte Zeichen zusammenlegen.',
+  '§1617': 'Doppelte Zeichen zusammenlegen',
+  '§1618': '{0} gleiche Zeichen: die Bildschirme können sie teilen',
+  '§1619': 'Keine doppelten Zeichen',
+  '§1620': '{0} doppelte Zeichen zusammengelegt, jetzt {1} Zeichen frei',
+  '§1621': 'Dieser Ort zeigt den ROM-Zeichensatz. Lege erst eine Zeichensatzdatei für ihn an, dann male Pixel hinein.',
+  '§1622': 'Zeichensatz anlegen',
+  '§1623': 'Dieser Ort ist mit Tiles gemalt: male seine Tiles in der Ansicht Tiles.',
+  '§1624': 'Pixel {0}, {1} · Zelle {2}, {3} · Zeichen {4} ({5}) · {6} Zeichen frei',
+  '§1625': 'Zellfarbe',
+  '§1626': 'Zeichensatz für {0}',
+  '§1627': 'Er beginnt als Kopie des ROM-Zeichensatzes ({0}). Ort {1} wird ihn verwenden.',
+  '§1628': 'Zeichensatz {0}: {1} Zeichen von seinen Orten gezeigt, {2} frei',
+  '§1630': 'Die Stifte sind die Farbzeilen darunter: die linke Taste malt mit dem Stift, die rechte den Hintergrund. Eine Zelle hat eine Farbe: Malen färbt die ganze Zelle um. Ein Zeichen, das der Zeichensatz schon hat, wird wiederverwendet; eins, das nur diese Zelle zeigt, wird geändert; sonst wird ein freies genommen.',
+};

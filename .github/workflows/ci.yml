@@ -1,0 +1,156 @@
+# Build and test on Linux, Windows and macOS; the binaries for a new version (one file per system: the
+# Go server with the IDE built in, tools/dist.mjs).
+#   every push and pull request   the server (Go: vet, build, tests) and the IDE (Node: its tests)
+#   a run by hand (Actions tab)   also the binaries, as artifacts (version dev-<commit>)
+#   tags v* (a new version)       the binaries are built, each starts on its system (tools/smoke.mjs),
+#                                 then a release with them
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: Linux }
+          - { os: windows-latest, name: Windows }
+          - { os: macos-latest, name: macOS }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false                      # the server has no dependencies: nothing to cache
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22                  # the IDE has no packages either
+
+      - name: server - vet
+        run: go vet ./...
+
+      # without cgo, as the binaries: the server is the net package only
+      - name: server - build
+        env: { CGO_ENABLED: '0' }
+        run: go build -trimpath -ldflags "-s -w" -o bin/ ./cmd/nerdsuite
+
+      - name: server - tests
+        run: go test ./...
+
+      - name: IDE - tests
+        run: npm test
+
+  # the binaries of Windows and Linux, packed with UPX; macOS in the job after it. For a tag v* its name
+  # is the version; a run by hand: dev-<commit>. The version is in the file names
+  # (nerdsuite-v1.0-windows-amd64.exe); the artifacts keep names without it
+  dist:
+    name: Binaries
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, cache: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: UPX 4.2.4 (the packages of Ubuntu have an older one)
+        run: |
+          curl -fsSL https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz | tar -xJ -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/upx-4.2.4-amd64_linux" >> "$GITHUB_PATH"
+      - name: build
+        run: |
+          VERSION=${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          node tools/dist.mjs --upx --only windows-amd64,linux-amd64,linux-arm64 --version "${VERSION:-dev-${GITHUB_SHA::7}}"
+      - uses: actions/upload-artifact@v4
+        with: { name: nerdsuite-windows-amd64.exe, path: build/dist/nerdsuite-*-windows-amd64.exe, if-no-files-found: error }
+      - uses: actions/upload-artifact@v4
+        with: { name: nerdsuite-linux-amd64, path: build/dist/nerdsuite-*-linux-amd64, if-no-files-found: error }
+      - uses: actions/upload-artifact@v4
+        with: { name: nerdsuite-linux-arm64, path: build/dist/nerdsuite-*-linux-arm64, if-no-files-found: error }
+
+  # macOS on a Mac: its lipo joins arm64 (Apple silicon) and amd64 (Intel) into one file,
+  # nerdsuite-VERSION-macos; not packed (UPX 4 does not pack macOS). dist.mjs signs it ad hoc
+  # (codesign -s -), which Apple silicon requires; no Developer ID, so no notarization
+  dist-macos:
+    name: Binary macOS
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, cache: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: build
+        run: |
+          VERSION=${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          node tools/dist.mjs --no-upx --only darwin-arm64,darwin-amd64 --version "${VERSION:-dev-${GITHUB_SHA::7}}"
+          lipo -info build/dist/nerdsuite-*-macos
+          codesign --verify --verbose build/dist/nerdsuite-*-macos
+      - uses: actions/upload-artifact@v4
+        with: { name: nerdsuite-macos, path: build/dist/nerdsuite-*-macos, if-no-files-found: error }
+
+  # each binary on its system, as a user gets it: it starts, answers with its version, hands out the IDE,
+  # the example project and the settings
+  smoke:
+    name: Binary on ${{ matrix.name }}
+    needs: [dist, dist-macos]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: Linux, file: nerdsuite-linux-amd64, system: linux-amd64 }
+          - { os: windows-latest, name: Windows, file: nerdsuite-windows-amd64.exe, system: windows-amd64.exe }
+          - { os: macos-latest, name: macOS, file: nerdsuite-macos, system: macos }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/download-artifact@v4
+        with: { name: '${{ matrix.file }}', path: dist }
+      - shell: bash
+        run: |
+          VERSION=${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          node tools/smoke.mjs dist/nerdsuite-*-${{ matrix.system }} ${VERSION:+--version $VERSION}
+
+  # the release of a version: the binaries of the three systems
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist }
+      - name: the release with its binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          find dist -type f
+          gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "NerdSuite ${{ github.ref_name }}" --generate-notes \
+            $(find dist -type f -name 'nerdsuite-*')

@@ -1,0 +1,17 @@
+{
+  "name": "nerdsuite",
+  "version": "0.1.0",
+  "description": "An IDE for programs of 8 bit machines: ACME assembler, BASIC dialects, graphics editors, a SID composer and a debugger in VICE",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "go run ./cmd/nerdsuite --root . --no-browser",
+    "build": "go build -trimpath -ldflags \"-s -w\" -o bin/ ./cmd/nerdsuite",
+    "dist": "node tools/dist.mjs",
+    "test": "node --test test/*.test.js",
+    "test:go": "go test ./..."
+  }
+}

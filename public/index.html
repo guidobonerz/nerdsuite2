@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- the theme before the first paint, so a reload does not flash light: the one picked in this
+       tab (the burger menu, kept in the session), else that of the system (app.js) -->
+  <meta name="color-scheme" content="light dark">
+  <script>
+    try { document.documentElement.dataset.theme = sessionStorage.getItem('adv-theme') || ''; } catch { /* no storage */ }
+    document.documentElement.dataset.theme ||= matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    // no project in this tab (project.js keeps the flag): no rail and no view tools from the first paint on
+    let open = false;
+    try { open = sessionStorage.getItem('nerdsuite-open') === '1'; } catch { /* no storage */ }
+    if (!open) document.documentElement.classList.add('no-project');
+  </script>
+  <title>NerdSuite</title>
+  <link rel="icon" type="image/svg+xml" href="images/nerdsuite.svg">
+  <link rel="stylesheet" href="fonts/geist.css">
+  <link rel="stylesheet" href="css/lineawesome.css">
+  <link rel="stylesheet" href="css/m3.css">
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/nerdsuite.css">
+</head>
+<body>
+  <div class="app">
+    <header class="md-top-app-bar">
+      <button class="md-icon-button" id="btn-menu" data-tip="Settings" aria-label="Menu"><i class="msr la la-bars"></i></button>
+      <button class="md-icon-button" id="btn-back" data-tip="Back (Alt+←)" aria-label="Back (Alt+←)" hidden><i class="msr la la-arrow-left"></i></button>
+      <button class="md-icon-button" id="btn-forward" data-tip="Forward (Alt+→)" aria-label="Forward (Alt+→)" hidden><i class="msr la la-arrow-right"></i></button>
+      <div class="app-brand">
+        <img class="app-brand__logo" src="images/icon_logo.png" alt="nerdsuite">
+        <span class="md-title-large app-brand__name">NerdSuite</span>
+      </div>
+      <button class="md-button md-button--text file-button" id="btn-file" data-tip="Project">
+        <i class="msr la la-file-alt"></i>
+        <span id="file-name">no project</span>
+        <i class="msr la la-angle-down"></i>
+      </button>
+      <button class="md-icon-button" id="btn-save" data-tip="Save every editor into its file (Ctrl+S)"><i class="msr la la-save"></i><span class="unsaved-dot" id="save-dot" hidden></span></button>
+      <button class="md-icon-button" id="btn-export" data-tip="Export…"><i class="msr la la-download"></i><span class="unsaved-dot" id="export-dot" hidden></span></button>
+      <button class="md-icon-button" id="btn-import" data-tip="Import…"><i class="msr la la-upload"></i></button>
+      <span class="screen-bar__sep" id="run-sep"></span>
+      <!-- build the main program (Ctrl+B), run it in VICE (F5), debug it (F6) - app.js -->
+      <button class="md-icon-button" id="btn-build" data-tip="Build (Ctrl+B)"><i class="msr la la-hammer"></i></button>
+      <button class="md-icon-button" id="btn-run" data-tip="Build and run in VICE (F5)"><i class="msr la la-play"></i></button>
+      <button class="md-icon-button" id="btn-debug" data-tip="Build and debug in VICE (F6)"><i class="msr la la-bug"></i></button>
+      <!-- run it on a real C64: the Ultimate 64 of the Settings (Shift+F5) -->
+      <button class="md-icon-button" id="btn-ultimate" data-tip="Build and run on the Ultimate 64 (Shift+F5)" hidden><i class="msr la la-microchip"></i></button>
+      <div class="app-bar__spacer"></div>
+      <label class="md-search" id="search-box">
+        <i class="msr la la-search"></i>
+        <input id="search" type="search" placeholder="Search" autocomplete="off" data-form-type="other" data-1p-ignore data-lpignore="true" data-bwignore data-protonpass-ignore="true">
+        <button class="md-search__step" id="btn-search-prev" type="button" data-tip="Previous match (Shift+Enter)" aria-label="Previous match (Shift+Enter)"><i class="msr la la-angle-up"></i></button>
+        <button class="md-search__step" id="btn-search-next" type="button" data-tip="Next match (Enter)" aria-label="Next match (Enter)"><i class="msr la la-angle-down"></i></button>
+      </label>
+      <span class="app-version" id="app-version" data-i18n="off" hidden></span>
+    </header>
+
+    <nav class="md-nav-rail" aria-label="Views">
+      <button class="md-nav-rail__item md-nav-rail__item--active" data-view="code">
+        <span class="md-nav-rail__indicator"><i class="msr la la-code"></i></span>
+        <span class="md-nav-rail__label">Code</span>
+      </button>
+      <button class="md-nav-rail__item" data-view="debug">
+        <span class="md-nav-rail__indicator"><i class="msr la la-microchip"></i></span>
+        <span class="md-nav-rail__label">Debugger</span>
+      </button>
+      <button class="md-nav-rail__item" data-view="disasm">
+        <span class="md-nav-rail__indicator"><i class="msr la la-stream"></i></span>
+        <span class="md-nav-rail__label">Disassembler</span>
+      </button>
+      <button class="md-nav-rail__item" data-view="hex">
+        <span class="md-nav-rail__indicator"><i class="msr la la-hashtag"></i></span>
+        <span class="md-nav-rail__label">Hex</span>
+      </button>
+      <button class="md-nav-rail__item" data-view="screen">
+        <span class="md-nav-rail__indicator"><i class="msr la la-image"></i></span>
+        <span class="md-nav-rail__label">Screen</span>
+      </button>
+      <button class="md-nav-rail__item" data-view="sprites">
+        <span class="md-nav-rail__indicator"><i class="msr la la-user"></i></span>
+        <span class="md-nav-rail__label">Sprites</span>
+      </button>
+      <button class="md-nav-rail__item" data-view="chars">
+        <span class="md-nav-rail__indicator"><i class="msr la la-th-large"></i></span>
+        <span class="md-nav-rail__label">Chars</span>
+      </button>
+      <button class="md-nav-rail__item" data-view="tiles">
+        <span class="md-nav-rail__indicator"><i class="msr la la-th"></i></span>
+        <span class="md-nav-rail__label">Tiles</span>
+      </button>
+      <button class="md-nav-rail__item" data-view="bitmap">
+        <span class="md-nav-rail__indicator"><i class="msr la la-paint-brush"></i></span>
+        <span class="md-nav-rail__label">Bitmap</span>
+      </button>
+      <button class="md-nav-rail__item" data-view="sound">
+        <span class="md-nav-rail__indicator"><i class="msr la la-music"></i></span>
+        <span class="md-nav-rail__label">Composer</span>
+      </button>
+    </nav>
+
+    <div class="toolbar" id="toolbar" role="toolbar" aria-label="View tools">
+      <div class="toolbar__view" data-for="code"></div>
+      <div class="toolbar__view" data-for="screen" hidden></div>
+      <div class="toolbar__view" data-for="sprites" hidden></div>
+      <div class="toolbar__view" data-for="chars" hidden></div>
+      <div class="toolbar__view" data-for="tiles" hidden></div>
+      <div class="toolbar__view" data-for="bitmap" hidden></div>
+      <div class="toolbar__view" data-for="sound" hidden></div>
+      <div class="toolbar__view" data-for="hex" hidden></div>
+      <div class="toolbar__view" data-for="disasm" hidden></div>
+      <div class="toolbar__view" data-for="debug" hidden></div>
+    </div>
+
+    <main class="main">
+      <section class="view view--code" id="view-code"></section>
+      <section class="view view--screen" id="view-screen" hidden></section>
+      <section class="view view--sprites" id="view-sprites" hidden></section>
+      <section class="view view--chars" id="view-chars" hidden></section>
+      <section class="view view--tiles" id="view-tiles" hidden></section>
+      <section class="view view--bitmap" id="view-bitmap" hidden></section>
+      <section class="view view--sound" id="view-sound" hidden></section>
+      <section class="view view--hex" id="view-hex" hidden></section>
+      <section class="view view--disasm" id="view-disasm" hidden></section>
+      <section class="view view--debug" id="view-debug" hidden></section>
+      <section class="problems-console" id="problems-console" hidden></section>
+    </main>
+  </div>
+
+  <div id="overlay-root"></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
