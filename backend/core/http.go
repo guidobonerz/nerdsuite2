@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -76,6 +77,17 @@ var jsonType = regexp.MustCompile(`^application/json\b`)
 func SameOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	return (origin == "" || origin == "http://"+r.Host) && jsonType.MatchString(r.Header.Get("Content-Type"))
+}
+
+// LocalHost: a request to this server by its local name (localhost, 127.0.0.1, [::1]) - not by the name of
+// another site that leads here (DNS rebinding: its page would be the same origin as the server)
+func LocalHost(r *http.Request) bool {
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(strings.ToLower(host), "[]")
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 // Route: "GET /api/x" of a request, without a slash at the end

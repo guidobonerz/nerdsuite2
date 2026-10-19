@@ -29,12 +29,27 @@ func running(port int) bool {
 
 // openWindow: the IDE in a window of its own (--app) of a Chromium browser - Edge, Chrome, Brave,
 // Chromium, Vivaldi: an app window without the tabs and the address bar of the browser - else in the
-// default browser, which has no app windows (Firefox)
-func openWindow(url string) {
+// default browser, which has no app windows (Firefox).
+//
+// The window has a profile of its own (profileDir): not the tabs, the session, the extensions and the
+// storage of the browser the user browses with, and a browser process of its own - it ends with the last
+// window of the IDE. closed (when not nil) is closed then; a process that ends at once handed the window to
+// one that runs already (a second start, or a window left open): that one is not waited for.
+func openWindow(url string, closed chan<- struct{}) {
 	for _, b := range chromium() {
-		cmd := exec.Command(b, "--app="+url, "--new-window")
+		args := []string{"--app=" + url, "--new-window"}
+		if dir := profileDir(); dir != "" {
+			args = append(args, "--user-data-dir="+dir, "--no-first-run", "--no-default-browser-check")
+		}
+		cmd := exec.Command(b, args...)
 		if err := cmd.Start(); err == nil {
-			go cmd.Wait()
+			go func() {
+				start := time.Now()
+				cmd.Wait()
+				if closed != nil && time.Since(start) > handOff {
+					close(closed)
+				}
+			}()
 			return
 		}
 	}
@@ -52,6 +67,23 @@ func openWindow(url string) {
 		return
 	}
 	go cmd.Wait()
+}
+
+// handOff: a browser process that ends sooner gave its window to one of the profile that runs already
+const handOff = 3 * time.Second
+
+// profileDir: the browser profile of the IDE's windows, ~/.nerdsuite/browser (next to the settings); "" -
+// no home: the profile of the browser
+func profileDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	dir := filepath.Join(home, ".nerdsuite", "browser")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return ""
+	}
+	return dir
 }
 
 // chromium: the Chromium browsers of this computer, the ones to try first

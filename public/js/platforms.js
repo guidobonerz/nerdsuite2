@@ -13,6 +13,9 @@
 //   emulator   { kind: 'vice', machine } - run and debug in VICE (the binary monitor);
 //              { kind: 'emu', platform }  - run in Altirra, WinAPE, Stella, Xemu … (backend/emu)
 //   commodore  the graphics editors (VIC-II and SID) make data for it as it is
+//   basicLine  the longest BASIC line the screen editor of the machine takes as typed in (with its line number):
+//              the logical line of the screen (C64 2 x 40, VIC-20 4 x 22, C128 4 x 40 ...); a build warns
+//              of longer ones (the Settings may set another, platformprefs.js)
 
 export const FAMILIES = [
   { id: 'commodore', name: 'Commodore', desc: '6502/6510, 45GS02 · VIC-II, VIC, TED, VIC-IV · BASIC 2 to 7, BASIC 65 · run and debug in VICE, the MEGA65 in Xemu' },
@@ -26,39 +29,39 @@ export const FAMILIES = [
 
 export const PLATFORMS = [
   { id: 'c64', family: 'commodore', name: 'Commodore 64', short: 'C64', cpu: '6510', cpus: ['6510', '6502'], basic: ['v2', 'simons'], format: 'cbm', ext: 'prg',
-    start: 0x0810, basicStart: 0x0801, screen: 0x0400, border: 0xd020, emulator: { kind: 'vice', machine: 'c64' }, commodore: true },
+    start: 0x0810, basicStart: 0x0801, screen: 0x0400, border: 0xd020, emulator: { kind: 'vice', machine: 'c64' }, commodore: true, basicLine: 80 },
   { id: 'c128', family: 'commodore', name: 'Commodore 128', short: 'C128', cpu: '6502', cpus: ['6502', '6510'], basic: ['v7'], format: 'cbm', ext: 'prg',
-    start: 0x1c10, basicStart: 0x1c01, screen: 0x0400, border: 0xd020, emulator: { kind: 'vice', machine: 'c128' }, commodore: true },
+    start: 0x1c10, basicStart: 0x1c01, screen: 0x0400, border: 0xd020, emulator: { kind: 'vice', machine: 'c128' }, commodore: true, basicLine: 160 },
   { id: 'vic20', family: 'commodore', name: 'VIC-20', short: 'VIC-20', cpu: '6502', cpus: ['6502'], basic: ['v2'], format: 'cbm', ext: 'prg',
-    start: 0x1010, basicStart: 0x1001, screen: 0x1e00, border: 0x900f, emulator: { kind: 'vice', machine: 'vic20' }, commodore: true },
+    start: 0x1010, basicStart: 0x1001, screen: 0x1e00, border: 0x900f, emulator: { kind: 'vice', machine: 'vic20' }, commodore: true, basicLine: 88 },
   { id: 'plus4', family: 'commodore', name: 'Plus/4', short: 'Plus/4', cpu: '6502', cpus: ['6502'], basic: ['v35'], format: 'cbm', ext: 'prg',
-    start: 0x1010, basicStart: 0x1001, screen: 0x0c00, border: 0xff19, emulator: { kind: 'vice', machine: 'plus4' }, commodore: true },
+    start: 0x1010, basicStart: 0x1001, screen: 0x0c00, border: 0xff19, emulator: { kind: 'vice', machine: 'plus4' }, commodore: true, basicLine: 88 },
   { id: 'c16', family: 'commodore', name: 'Commodore 16', short: 'C16', cpu: '6502', cpus: ['6502'], basic: ['v35'], format: 'cbm', ext: 'prg',
-    start: 0x1010, basicStart: 0x1001, screen: 0x0c00, border: 0xff19, emulator: { kind: 'vice', machine: 'plus4', args: ['-model', 'c16'] }, commodore: true },
+    start: 0x1010, basicStart: 0x1001, screen: 0x0c00, border: 0xff19, emulator: { kind: 'vice', machine: 'plus4', args: ['-model', 'c16'] }, commodore: true, basicLine: 88 },
   { id: 'pet', family: 'commodore', name: 'PET / CBM 4032', short: 'PET', cpu: '6502', cpus: ['6502'], basic: ['v4', 'v2'], format: 'cbm', ext: 'prg',
-    start: 0x0410, basicStart: 0x0401, screen: 0x8000, border: null, emulator: { kind: 'vice', machine: 'pet' }, commodore: true },
+    start: 0x0410, basicStart: 0x0401, screen: 0x8000, border: null, emulator: { kind: 'vice', machine: 'pet' }, commodore: true, basicLine: 80 },
   { id: 'mega65', family: 'commodore', name: 'MEGA65', short: 'MEGA65', cpu: 'm65', cpus: ['m65', '4502', '65ce02', '6502'], basic: ['v65'], format: 'cbm', ext: 'prg',
-    start: 0x2010, basicStart: 0x2001, screen: 0x0800, border: 0xd020, emulator: { kind: 'emu', platform: 'mega65' }, commodore: true },
+    start: 0x2010, basicStart: 0x2001, screen: 0x0800, border: 0xd020, emulator: { kind: 'emu', platform: 'mega65' }, commodore: true, basicLine: 160 },
   { id: 'atari8', family: 'atari', name: 'Atari 800 XL / 130 XE', short: 'Atari XL', cpu: '6502', cpus: ['6502'], basic: ['atari', 'turbo'], format: 'xex', ext: 'xex',
-    start: 0x2000, basicStart: null, screen: null, border: 0xd01a, emulator: { kind: 'emu', platform: 'atari' } },
+    start: 0x2000, basicStart: null, screen: null, border: 0xd01a, emulator: { kind: 'emu', platform: 'atari' }, basicLine: 120 },
   { id: 'vcs', family: 'atari', name: 'Atari 2600 (VCS)', short: 'VCS', cpu: '6502', cpus: ['6502'], basic: [], format: 'plain', ext: 'a26',
     start: 0xf000, basicStart: null, screen: null, border: null, emulator: { kind: 'emu', platform: 'vcs' } },
   { id: 'cpc464', family: 'amstrad', name: 'Amstrad / Schneider CPC 464', short: 'CPC 464', cpu: 'z80', cpus: ['z80'], basic: ['loco'], format: 'amsdos', ext: 'bin',
-    start: 0x4000, basicStart: null, screen: 0xc000, border: null, emulator: { kind: 'emu', platform: 'cpc', model: '464' } },
+    start: 0x4000, basicStart: null, screen: 0xc000, border: null, emulator: { kind: 'emu', platform: 'cpc', model: '464' }, basicLine: 255 },
   { id: 'cpc6128', family: 'amstrad', name: 'Amstrad / Schneider CPC 6128', short: 'CPC 6128', cpu: 'z80', cpus: ['z80'], basic: ['loco'], format: 'amsdos', ext: 'bin',
-    start: 0x4000, basicStart: null, screen: 0xc000, border: null, emulator: { kind: 'emu', platform: 'cpc', model: '6128' } },
+    start: 0x4000, basicStart: null, screen: 0xc000, border: null, emulator: { kind: 'emu', platform: 'cpc', model: '6128' }, basicLine: 255 },
   { id: 'nes', family: 'nintendo', name: 'Nintendo Entertainment System (NES)', short: 'NES', cpu: '6502', cpus: ['6502'], basic: [], format: 'plain', ext: 'nes',
     start: 0xc000, basicStart: null, screen: null, border: null, emulator: { kind: 'emu', platform: 'nes' } },
   { id: 'snes', family: 'nintendo', name: 'Super Nintendo (SNES)', short: 'SNES', cpu: '65816', cpus: ['65816'], basic: [], format: 'plain', ext: 'sfc',
     start: 0x8000, basicStart: null, screen: null, border: null, emulator: { kind: 'emu', platform: 'snes' } },
   { id: 'zx81', family: 'sinclair', name: 'Sinclair ZX81 (16K)', short: 'ZX81', cpu: 'z80', cpus: ['z80'], basic: ['zx81'], format: 'zx81', ext: 'p',
-    start: 0x4082, basicStart: null, screen: null, border: null, emulator: { kind: 'emu', platform: 'zx81' } },
+    start: 0x4082, basicStart: null, screen: null, border: null, emulator: { kind: 'emu', platform: 'zx81' }, basicLine: 0 },
   { id: 'trs80', family: 'tandy', name: 'TRS-80 Model I (Level II, 48K)', short: 'TRS-80', cpu: 'z80', cpus: ['z80'], basic: ['trs80'], format: 'trs80', ext: 'cmd',
-    start: 0x7000, basicStart: null, screen: 0x3c00, border: null, emulator: { kind: 'emu', platform: 'trs80', model: '1' } },
+    start: 0x7000, basicStart: null, screen: 0x3c00, border: null, emulator: { kind: 'emu', platform: 'trs80', model: '1' }, basicLine: 240 },
   { id: 'trs80m3', family: 'tandy', name: 'TRS-80 Model III (48K)', short: 'TRS-80 M3', cpu: 'z80', cpus: ['z80'], basic: ['trs80'], format: 'trs80', ext: 'cmd',
-    start: 0x7000, basicStart: null, screen: 0x3c00, border: null, emulator: { kind: 'emu', platform: 'trs80', model: '3' } },
+    start: 0x7000, basicStart: null, screen: 0x3c00, border: null, emulator: { kind: 'emu', platform: 'trs80', model: '3' }, basicLine: 240 },
   { id: 'bbcb', family: 'acorn', name: 'BBC Micro Model B', short: 'BBC B', cpu: '6502', cpus: ['6502'], basic: ['bbc'], format: 'plain', ext: 'bin',
-    start: 0x2000, basicStart: null, screen: 0x7c00, border: null, emulator: { kind: 'emu', platform: 'bbc', model: 'bbcb' } },
+    start: 0x2000, basicStart: null, screen: 0x7c00, border: null, emulator: { kind: 'emu', platform: 'bbc', model: 'bbcb' }, basicLine: 238 },
 ];
 
 export const platformOf = id => PLATFORMS.find(p => p.id === id) ?? PLATFORMS[0];

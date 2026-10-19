@@ -238,7 +238,7 @@ export function lineTokens(line, dialect = 'v2', { labels = null } = {}) {
       push(/^(if|then|else|goto|gosub|return|for|next|on|go|do|loop|while|until|exit|begin|bend)$/.test(low) ? 'tok-flow' : 'tok-kw', name);
       if (low === 'data') {
         data = true;
-        // DATA @embed kind "file", args (basic/preprocess.js)
+        // DATA @embed kind "file", per row, args (basic/preprocess.js)
         const em = /^(\s*)(@embed)(\s*[a-z]*)(\s*"[^"]*"?)?(.*)$/i.exec(line.slice(k));
         if (em) {
           push(null, em[1]); push('tok-flow tok-directive', em[2]); push('tok-kw', em[3]); push('tok-str', em[4]); push('tok-num', em[5]);
@@ -376,15 +376,17 @@ const DIRECTIVE_ITEMS = [
   { label: '@else', kind: 'pseudo', syntax: '@else', detail: 'the lines when no branch of the @if was taken' },
   { label: '@end', kind: 'pseudo', syntax: '@end', detail: 'ends an @if' },
 ];
-const EMBED_ITEM = { label: '@embed', kind: 'pseudo', insert: '@embed ', syntax: 'DATA @embed kind "file"[, args]', detail: 'DATA lines with the bytes of a file of the project: sprite, charset, screen, bitmap, sound, binary' };
+const EMBED_ITEM = { label: '@embed', kind: 'pseudo', insert: '@embed ', syntax: 'DATA @embed kind "file"[, per row[, args]]',
+  detail: 'DATA lines with the bytes of a file of the project: sprite, charset, screen, bitmap, sound, binary - per row: the items in a DATA line (16 when left out or empty)' };
+const PER_ROW = ' - per row: the items in a DATA line (16 when left out or empty)';
 const EMBED_KINDS = [
-  ['sprite', 'sprite "x.spr"[, frame]', 'a frame of the sprite editor (its index or name): 64 bytes a sprite'],
-  ['charset', 'charset "x.chr"[, first[, count]]', 'characters of a charset: 8 bytes each'],
-  ['screen', 'screen "x.scr"[, colors]', 'the characters (or the colours) of a screen'],
-  ['bitmap', 'bitmap "x.kla"[, all|bitmap|screen|colors|background]', 'a Koala picture or a part of it'],
-  ['sound', 'sound "x.sid"', 'the music of a .sid file (the load address: the note of the line)'],
-  ['binary', 'binary "x.bin"[, from[, count]]', 'any file: its bytes from an offset'],
-].map(([label, syntax, detail]) => ({ label, kind: 'keyword', insert: `${label} "`, syntax: `DATA @embed ${syntax}`, detail }));
+  ['sprite', 'sprite "x.spr"[, per row[, frame]]', 'a frame of the sprite editor (its index or name): 64 bytes a sprite'],
+  ['charset', 'charset "x.chr"[, per row[, first[, count]]]', 'characters of a charset: 8 bytes each'],
+  ['screen', 'screen "x.scr"[, per row[, colors]]', 'the characters (or the colours) of a screen'],
+  ['bitmap', 'bitmap "x.kla"[, per row[, all|bitmap|screen|colors|background]]', 'a Koala picture or a part of it'],
+  ['sound', 'sound "x.sid"[, per row]', 'the music of a .sid file (the load address: the note of the line)'],
+  ['binary', 'binary "x.bin"[, per row[, from[, count]]]', 'any file: its bytes from an offset'],
+].map(([label, syntax, detail]) => ({ label, kind: 'keyword', insert: `${label} "`, syntax: `DATA @embed ${syntax}`, detail: detail + PER_ROW }));
 const EMBED_EXT = { sprite: /\.(spr|bin|raw)$/i, charset: /\.(chr|fnt|bin|raw)$/i, screen: /\.scr$/i, bitmap: /\.(kla|koa)$/i, sound: /\.sid$/i };
 
 // a jump word and the label being typed after it (the label mode)

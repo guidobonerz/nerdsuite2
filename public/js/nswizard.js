@@ -102,7 +102,7 @@ export function projectWizard() {
   const plan = signal({
     name: 'myproject', family: 'commodore', platform: 'c64',
     asm: true, assembler: 'acme', asmName: 'main', basic: false, basName: 'hello', dialect: 'v2', main: 'asm',
-    assets: { charset: true, screen: true, sprite: true, song: false, bitmap: false },
+    assets: { charset: false, screen: false, sprite: false, song: false, bitmap: false },   // none ticked: the editors make them when wanted
   });
   const set = change => { plan.value = { ...plan.value, ...change }; errors.value = []; };
   const p = () => platformOf(plan.value.platform);

@@ -5,7 +5,7 @@
 import { h } from './pui.js';
 import { PALETTE } from './c64.js';
 import { CHARGEN } from './chargen.js';
-import { EMBED, embedData, dataLines } from './basic/preprocess.js';
+import { EMBED, embedLines } from './basic/preprocess.js';
 
 const cache = new Map();          // the line + the size of its file -> { node }
 
@@ -75,12 +75,12 @@ export function embedInlay(line, readFile) {
   const data = readFile(m[3]);
   const key = `${line}\u0000${data?.length ?? -1}\u0000${data ? data[0] ^ data[data.length >> 1] ^ data[data.length - 1] : 0}`;
   if (cache.has(key)) return cache.get(key);
-  const r = embedData(m[2], m[3], m[4], readFile);
+  const e = embedLines(m, readFile), r = e.r;
   let node;
-  if (r.error) node = h('span', { class: 'tok-inlay tok-inlay--error' }, `  ⚠ ${r.error}`);
+  if (e.error) node = h('span', { class: 'tok-inlay tok-inlay--error' }, `  ⚠ ${e.error}`);
   else {
     const src = picture(r.preview ?? {});
-    const n = dataLines(r.bytes).length;
+    const n = e.data.length;
     const first = [...r.bytes.subarray(0, 8)].join(',');
     node = h('span', { class: 'tok-inlay' }, '  ', src && h('img', { class: 'tok-inlay__img', src, alt: '' }),
       ` ${r.note} · ${r.bytes.length} bytes, ${n} DATA line${n === 1 ? '' : 's'}: ${first}${r.bytes.length > 8 ? ',…' : ''}`);

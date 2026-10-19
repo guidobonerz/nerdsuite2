@@ -4,14 +4,16 @@
 //   @if name                  the lines up to @elif / @else / @end only when name is defined (not 0);
 //   @if !name                  ... when it is not; @if name = value, @if name <> value; nested
 //   @elif ... / @else / @end
-//   DATA @embed kind "file"[, args]   DATA lines with the bytes of a file of the project:
-//     sprite  "x.spr"[, frame]          a sprite frame of the sprite editor (its index or its name):
-//                                       64 bytes a sprite (63 and the pad byte); a .bin: its blocks
-//     charset "x.chr"[, first[, count]] characters: 8 bytes each (all 256 without first)
-//     screen  "x.scr"[, colors]         the characters of a screen (colors: its colours)
-//     bitmap  "x.kla"[, part]           a Koala picture: all, bitmap, screen, colors or background
-//     sound   "x.sid"                   the music of a .sid file (its load address: the note of the line)
-//     binary  "x.bin"[, from[, count]]  any file: its bytes from an offset
+//   DATA @embed kind "file"[, per row[, args]]   DATA lines with the bytes of a file of the project, at most
+//                                     per row of them in a DATA line (16 when it is left out or empty:
+//                                     charset "x.chr", , 1, 3):
+//     sprite  "x.spr"[, n[, frame]]          a sprite frame of the sprite editor (its index or its name):
+//                                            64 bytes a sprite (63 and the pad byte); a .bin: its blocks
+//     charset "x.chr"[, n[, first[, count]]] characters: 8 bytes each (all 256 without first)
+//     screen  "x.scr"[, n[, colors]]         the characters of a screen (colors: its colours)
+//     bitmap  "x.kla"[, n[, part]]           a Koala picture: all, bitmap, screen, colors or background
+//     sound   "x.sid"[, n]                   the music of a .sid file (its load address: the note of the line)
+//     binary  "x.bin"[, n[, from[, count]]]  any file: its bytes from an offset
 //
 // The defines come from the project (nerdsuite.json "defines": "debug, level=2") and the source.
 // preprocess() keeps every line where it is (a directive, a line left out: an empty line) except that an
@@ -168,20 +170,39 @@ export function embedData(kind, file, rest, readFile) {
   return { error: `@embed ${kind}: sprite, charset, screen, bitmap, sound or binary` };
 }
 
-// the DATA lines of bytes: 'data 1,2,3' (16 a line)
-export const dataLines = bytes => {
+// the DATA lines of bytes: 'data 1,2,3' (perRow a line)
+export const dataLines = (bytes, perRow = PER_LINE) => {
   const out = [];
-  for (let i = 0; i < bytes.length; i += PER_LINE) out.push(`data ${[...bytes.subarray(i, i + PER_LINE)].join(',')}`);
+  for (let i = 0; i < bytes.length; i += perRow) out.push(`data ${[...bytes.subarray(i, i + perRow)].join(',')}`);
   return out;
 };
+
+// the arguments of an @embed after the file: the items per DATA line first (empty: 16), then those of
+// the kind -> { perRow, rest } or { error }
+export function embedArgs(text) {
+  const [first, ...rest] = (text ?? '').split(',');
+  const s = first.trim();
+  const perRow = s === '' ? PER_LINE : num(s);
+  if (!Number.isInteger(perRow) || perRow < 1 || perRow > 255) return { error: `'${s}' is no number of items per DATA line (1-255): kind "file", per row, ...` };
+  return { perRow, rest: rest.join(',') };
+}
+
+// the bytes and the DATA lines of an @embed (m: EMBED.exec) -> { r, data } or { error }
+export function embedLines(m, readFile) {
+  const a = embedArgs(m[4]);
+  if (a.error) return { error: a.error };
+  const r = embedData(m[2], m[3], a.rest, readFile);
+  if (r.error) return { error: r.error };
+  return { r, data: dataLines(r.bytes, a.perRow) };
+}
 
 // the DATA lines of the @embed line src[i]: { texts, r } or { error } - with line numbers the first DATA
 // line has the number of the line, the others count on from it (error: they run into the next line)
 function expandEmbed(m, src, i, readFile, labelMode, errors) {
   const l = src[i];
-  const r = embedData(m[2], m[3], m[4], readFile);
-  if (r.error) { errors.push({ line: i + 1, msg: `@embed: ${r.error}` }); return null; }
-  const data = dataLines(r.bytes);
+  const e = embedLines(m, readFile);
+  if (e.error) { errors.push({ line: i + 1, msg: `@embed: ${e.error}` }); return null; }
+  const { r, data } = e;
   const own = /^\s*(\d+)/.exec(l);
   if (own && !labelMode) {
     const n = Number(own[1]);

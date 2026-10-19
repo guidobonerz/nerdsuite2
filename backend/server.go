@@ -2,7 +2,7 @@
 // the tools: VICE for running and debugging (backend/vice), the other emulators (backend/emu),
 // KickAssembler (backend/kickass), the toolchains (backend/toolchain) and the Ultimate 64
 // (backend/ultimate). It keeps no project: the project lives in the browser, assembling and tokenizing
-// happen there too. The paths of the tools are set in the Settings of the IDE (settings_api.go).
+// happen there too - a project in a folder of this computer is read and written through it (backend/disk). The paths of the tools are set in the Settings of the IDE (settings_api.go).
 package backend
 
 import (
@@ -11,13 +11,13 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
-	"os"
 	"path"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"nerdsuite/backend/core"
+	"nerdsuite/backend/disk"
 	"nerdsuite/backend/emu"
 	"nerdsuite/backend/kickass"
 	"nerdsuite/backend/romfont"
@@ -33,9 +33,9 @@ type Options struct {
 	Version  string // shown in the About of the IDE
 	Settings string // the file of the settings ("" - NERDSUITE_SETTINGS, else ~/.nerdsuite/settings.json)
 	TmpDir   string // the folder of the temporary files
-	// Idle > 0: the server ends this long after the last request (a desktop start without a console
-	// window: nothing else ends it); the IDE asks every Idle/5 while a window of it is open (/api/info
-	// answers "idle": seconds)
+	// Idle > 0: the server ends when the last window of the IDE is closed (a desktop start without a
+	// console window: nothing else ends it), at the latest this long after the last request; the IDE asks
+	// every Idle/5 while a window of it is open (/api/info answers "idle": seconds) - windows.go
 	Idle time.Duration
 }
 
@@ -49,13 +49,15 @@ type Server struct {
 	tc       *toolchain.API
 	ult      *ultimate.API
 	fonts    *romfont.API
+	disk     *disk.API
 	last     atomic.Int64 // the time of the last request, unix nanoseconds
+	win      windows      // the windows of the IDE (windows.go)
 }
 
 func New(o Options) *Server {
 	st := core.NewSettings(o.Settings)
 	env := core.Env{Settings: st, TmpDir: o.TmpDir}
-	s := &Server{opts: o, vice: vice.New(env), emu: emu.New(env), kick: kickass.New(env), tc: toolchain.New(env), ult: ultimate.New(env), fonts: romfont.New(env)}
+	s := &Server{opts: o, vice: vice.New(env), emu: emu.New(env), kick: kickass.New(env), tc: toolchain.New(env), ult: ultimate.New(env), fonts: romfont.New(env), disk: disk.New()}
 
 	// the settings list: the tools, where the server finds them; the emulator of each platform
 	tools := []tool{
@@ -102,17 +104,6 @@ var mime = map[string]string{
 	".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf",
 }
 
-// QuitWhenIdle: ends the program when no request came for Options.Idle - the windows of the IDE are closed
-func (s *Server) QuitWhenIdle() {
-	s.last.Store(time.Now().UnixNano())
-	for range time.Tick(s.opts.Idle / 10) {
-		if time.Since(time.Unix(0, s.last.Load())) > s.opts.Idle {
-			s.Close()
-			os.Exit(0)
-		}
-	}
-}
-
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.last.Store(time.Now().UnixNano())
 	defer func() {
@@ -150,7 +141,13 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		s.vice.ServeHTTP(w, r)
 	case under("/api/emu"):
 		s.emu.ServeHTTP(w, r)
+	case under("/api/disk"):
+		s.disk.ServeHTTP(w, r)
+	case core.Route(r) == "POST /api/bye":
+		s.win.closed(r.URL.Query().Get("window"))
+		w.WriteHeader(204)
 	case core.Route(r) == "GET /api/info":
+		s.win.alive(r.URL.Query().Get("window"))
 		info := map[string]any{"version": s.opts.Version, "name": "nerdsuite"}
 		if s.opts.Idle > 0 {
 			info["idle"] = int(s.opts.Idle / time.Second)
