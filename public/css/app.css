@@ -462,7 +462,7 @@
   caret-color: var(--md-sys-color-on-surface);
 }
 /* the text of the search of the header in the script view (app.js, markSource): every place of it, the one found stronger */
-::highlight(code-search) { background-color: color-mix(in srgb, #ffd54f 55%, transparent); }
+::highlight(code-search) { background-color: #ffd54f; color: #000; }      /* as the search of the panels (panel-search) */
 ::highlight(code-search-current) { background-color: #ff9800; color: #000; }
 /* the selection paints over the transparent glyphs: it has to let the colours through */
 .code-view .code-view__input::selection { background: color-mix(in srgb, var(--md-sys-color-primary) 28%, transparent); }

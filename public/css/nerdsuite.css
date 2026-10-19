@@ -44,6 +44,14 @@
 .ns-code .code-gutter, .ns-code .code-highlight, .ns-code .code-view__input { font-size: calc(var(--code-size, 12.5px) * var(--code-zoom, 1)); }
 .ns-code .code-gutter { cursor: pointer; min-width: 52px; }
 .ns-code .code-gutter__line { display: inline-block; position: relative; width: 100%; }
+/* the lines of the caret or a selection: their number or address in bold; a selection in the colour of the
+   selection of the code (app.css .code-view__input::selection), across the whole gutter */
+.ns-code .code-gutter__cur { color: var(--md-sys-color-on-surface); font-weight: 700; }
+.ns-code .code-gutter__sel:not(.code-gutter__err):not(.code-gutter__here) {
+  --sel: color-mix(in srgb, var(--md-sys-color-primary) 28%, transparent);
+  background: var(--sel); box-shadow: -10px 0 0 var(--sel), 8px 0 0 var(--sel); }
+/* the line of the caret goes across the gutter and the code (codeeditor.js) */
+.ns-code.code-view { position: relative; }
 .ns-bar__switch { margin: 0 8px; }
 /* the addresses of the last build instead of the line numbers; dimmed once the file changed since */
 .ns-code .code-gutter--addr .code-gutter__line { min-height: 1lh; vertical-align: top; }
@@ -386,3 +394,29 @@
   border-top: 1px solid var(--code-caret-line); border-bottom: 1px solid var(--code-caret-line);
 }
 .code-view .code-caret-line[hidden] { display: none; }
+
+/* the longest line of the machine's screen editor (BASIC, Settings › Editor): a red line at its column; the
+   part of a line past what can be typed in, on red */
+.code-view .code-limit { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-left: 1px solid #e53935;
+  pointer-events: none; z-index: 1; }
+.code-view .code-limit[hidden] { display: none; }
+::highlight(code-overlimit) { background-color: color-mix(in srgb, var(--md-sys-color-error) 35%, transparent); }
+
+/* the folder chooser (folderchooser.js): the path, the places, the folders */
+.ns-folders { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.ns-folders__path { display: flex; align-items: center; gap: 6px; }
+.ns-folders__path .md-field { flex: 1; min-width: 0; }
+.ns-folders__places { display: flex; flex-wrap: wrap; gap: 6px; }
+.ns-folders__place { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; padding: 4px 10px; border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-shape-full, 999px); background: none; color: var(--md-sys-color-on-surface); font: inherit; font-size: 13px; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ns-folders__place:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent); }
+.ns-folders__list { display: flex; flex-direction: column; height: min(46vh, 380px); overflow: auto; border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-shape-xs); padding: 4px; }
+.ns-folders__dir { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: none; border-radius: var(--md-shape-xs); background: none;
+  color: var(--md-sys-color-on-surface); font: inherit; text-align: left; cursor: pointer; }
+.ns-folders__dir:hover, .ns-folders__dir:focus-visible { background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent); }
+.ns-folders__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ns-folders__dir--project { color: var(--md-sys-color-primary); }
+.ns-folders__tag { font-size: 11px; padding: 0 6px; border-radius: var(--md-shape-xs); background: color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent); }
+.ns-folders__error { color: var(--md-sys-color-error); font-size: 13px; }

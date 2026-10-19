@@ -9,7 +9,9 @@ import { h, mount, signal, icon, iconButton, select, promptDialog, snackbar, con
 import { codeEditor, revealLine, caretAt } from './codeeditor.js';
 import { acmeLanguage, scanDefinitions, cpus } from './lang-acme.js';
 import { kickassLanguage, scanDefinitions as scanKick } from './lang-kickass.js';
-import { starterKick } from './platforms.js';
+import { starterKick, platformOf } from './platforms.js';
+import { platformPref } from './platformprefs.js';
+import { typedLength, limitColumn, tokenBased } from './basic/typed.js';
 import { basicLanguage, lineNumbers, renumber, dialectList, inString, isCommodore, petsciiCharset, toEditorText, toSourceText } from './lang-basic.js';
 import { scanLabels, toLabels, toNumbers, renameLabel, basicLabelAt } from './basic/labels.js';
 import { wordAt, renameInSource, localScope } from './refactor.js';
@@ -21,7 +23,7 @@ import { openPetsciiPanel } from './petsciipanel.js';
 import { listSources, hasFile, readText, readBinary, writeText, removeFile, isOpen, allFiles, isSource } from './project.js';
 import { embedInlay } from './embedview.js';
 import { EMBED, resolveEmbeds } from './basic/preprocess.js';
-import { readSettings, writeSettings, isAsm, isBasic, dialectOf, labelModeOf, machineOf, assemblerOf, ASSEMBLERS, kickassStatus, codeAddresses } from './nsbuild.js';
+import { readSettings, writeSettings, isAsm, isBasic, dialectOf, labelModeOf, machineOf, assemblerOf, ASSEMBLERS, kickassStatus, codeAddresses, isCodeLine } from './nsbuild.js';
 import * as vice from './vice.js';
 import { exportName } from './export.js';
 
@@ -73,11 +75,13 @@ export function createCodeView(el, bar, hooks = {}) {
     outline: true,
     embeds: false,                  // BASIC: the data of every DATA @embed shown after its line
     addresses: true,                // assembler: the addresses of the last build in the gutter, not the line numbers
+    search: '',                     // the search of the header: its matches marked
     caret: { line: 1, col: 1 },
   };
   try { const kept = JSON.parse(localStorage.getItem(KEY) ?? '{}'); Object.assign(st, { outline: kept.outline ?? true, embeds: !!kept.embeds, addresses: kept.addresses ?? true }); } catch { /* none */ }
   // the addresses of the instruction lines of the last good build: path -> { text: at the build, lines: Map line -> address }
   let addresses = new Map();
+  let limitTold = 0;                  // when the barrier of a line was last told (not at every key)
   const version = signal(0);
   const input = { current: null };
   let views = null;
@@ -109,9 +113,26 @@ export function createCodeView(el, bar, hooks = {}) {
   }
   function restoreCaret() {
     const ta = input.current, c = st.carets.get(st.current);
-    if (!ta || !c) return;
+    if (!ta) return;
+    if (!c) return firstLine(ta);
     ta.setSelectionRange(Math.min(c.from, ta.value.length), Math.min(c.to, ta.value.length));
     ta.scrollTop = c.scroll;
+  }
+  // a file shown the first time: the caret at the start of its first line of code (assembler: the first
+  // instruction - not the comments, the directives, the data, a label alone; BASIC: the first line), the
+  // file from its top - not at its end, where the browser leaves it
+  function firstLine(ta, { scroll = true } = {}) {
+    const lines = ta.value.split('\n');
+    const code = l => (isAsm(st.current) ? isCodeLine(l) && l.replace(/;.*$|\/\/.*$/, '').trim() && !/^\s*[.@!]?[\w.]+:\s*$/.test(l.replace(/;.*$|\/\/.*$/, '')) : l.trim());
+    const k = Math.max(0, lines.findIndex(code));
+    const at = lines.slice(0, k).reduce((n, l) => n + l.length + 1, 0) + (/^\s*/.exec(lines[k] ?? '')[0].length);
+    ta.setSelectionRange(at, at);
+    if (scroll) ta.scrollTop = 0;
+    const lh = parseFloat(getComputedStyle(ta).lineHeight) || 18;
+    if (k * lh > ta.clientHeight - 2 * lh) revealLine(ta, k + 1);         // further down than the first screen: shown
+    ta.dispatchEvent(new Event('scroll'));
+    st.caret = caretAt(ta.value, at);
+    update();                                    // Ln and Col of the bar
   }
 
   function open(path, line = null, { focus = true } = {}) {
@@ -164,6 +185,8 @@ export function createCodeView(el, bar, hooks = {}) {
     }
     errors = new Map();
     update();
+    // the file shown: its caret on its first line of code (the scroll of a reload is the UI state's: uistate.js)
+    requestAnimationFrame(() => { if (st.current && input.current && !st.carets.has(st.current)) firstLine(input.current, { scroll: false }); });
   }
 
   // the label mode of a BASIC file on or off: the program is converted (labels <-> line numbers)
@@ -532,10 +555,29 @@ export function createCodeView(el, bar, hooks = {}) {
     if (at?.file === path) marks.set(at.line, marks.has(at.line) ? `${marks.get(at.line)} here` : 'here');
     // the addresses of the last build on the instruction lines (st.addresses), dimmed once the file changed
     const built = isAsm(path) && st.addresses ? addresses.get(path) : null;
+    // BASIC: the longest line the machine's editor takes (Settings, platformprefs.js) - a red line, a barrier
+    // for typing; a BASIC of tokens counts its keywords as typed abbreviated (basic/typed.js). Not in the
+    // label mode: its lines get their numbers in the build (which warns of long lines then)
+    const platform = platformOf(settings().machine), max = isBasic(path) && !labelModeOf(path) ? platformPref(platform.id, 'basicLine') : 0;
+    const dialect = isBasic(path) ? dialectOf(path) : null;
+    const limit = max ? {
+      max, length: l => typedLength(l, dialect), column: l => limitColumn(l, max, dialect),
+      hint: tokenBased(dialect)
+        ? `The ${platform.short} takes ${max} keys a line. A line may go past this line: its keywords are typed abbreviated (pO for POKE) - but after LIST it is longer than the screen editor takes`
+        : `The ${platform.short} takes ${max} characters a line (Settings › Editor › BASIC and assembler per platform)`,
+    } : null;
     return codeEditor({
       value: b.text,
       lang: langOf(path),
       marks, errors: errors.get(path),
+      search: st.search,
+      limit,
+      onLimit: () => {
+        const now = Date.now();
+        if (now - limitTold < 4000) return;
+        limitTold = now;
+        snackbar(tokenBased(dialect) ? `The line is full: the ${platform.short} takes ${max} keys, with the keywords abbreviated` : `The line is full: the ${platform.short} takes ${max} characters`, { timeout: 3000 });
+      },
       gutterText: built && new Map([...built.lines].map(([line, a]) => [line, a.toString(16).padStart(4, '0')])),
       gutterStale: built && built.text !== b.text ? 'the addresses of the last build - the file changed since: build again' : null,
       inputRef: input,
@@ -669,5 +711,7 @@ export function createCodeView(el, bar, hooks = {}) {
     },
     focus: () => input.current?.focus(),
     findIn: () => input.current,
+    // the text of the search of the header: its matches marked in the editor
+    setSearch(text) { if ((text ?? '') !== st.search) { st.search = text ?? ''; update(); } },
   };
 }

@@ -217,12 +217,78 @@ function replaceRange(el, text, a, b, select = 'end') {
   if (!document.execCommand('insertText', false, text)) el.setRangeText(text, a, b, select);
 }
 
+// the matches of the search in the highlighted text (::highlight(code-search)); the one selected - where Find
+// went - ::highlight(code-search-current). The inlays after a line (DATA @embed) are not the text
+const MAX_MATCHES = 5000;
+
+// the text of the highlighted code as it is shown, and Ranges of its offsets (pieces [from, to), in order)
+function shownText(el) {
+  const nodes = [];
+  let text = '';
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: n => (n.parentElement?.closest('.tok-inlay') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) { nodes.push({ n, at: text.length }); text += n.data; }
+  let k = 0;
+  // the node and offset of a position of the text (the positions asked for only grow)
+  const point = (pos, end) => {
+    while (k < nodes.length - 1 && (end ? nodes[k].at + nodes[k].n.data.length < pos : nodes[k + 1].at <= pos)) k++;
+    return [nodes[k].n, pos - nodes[k].at];
+  };
+  const range = (a, b) => { const r = new Range(); r.setStart(...point(a, false)); r.setEnd(...point(b, true)); return r; };
+  return { text, range, empty: !nodes.length };
+}
+
+function markSearch(el, ta, search) {
+  if (typeof CSS === 'undefined' || !CSS.highlights) return;
+  CSS.highlights.delete('code-search');
+  CSS.highlights.delete('code-search-current');
+  const q = (search ?? '').trim().toLowerCase();
+  if (!q || !el?.isConnected) return;
+  const shown = shownText(el);
+  if (shown.empty) return;
+  const hay = shown.text.toLowerCase();
+  const all = [], cur = [];
+  for (let at = hay.indexOf(q), count = 0; at >= 0 && count < MAX_MATCHES; at = hay.indexOf(q, at + q.length), count++) {
+    (ta && ta.selectionStart === at && ta.selectionEnd === at + q.length ? cur : all).push(shown.range(at, at + q.length));
+  }
+  if (all.length) CSS.highlights.set('code-search', new Highlight(...all));
+  if (cur.length) CSS.highlights.set('code-search-current', new Highlight(...cur));
+}
+
+// the parts of the lines past the limit of the editor of the machine (limit.column(line): where a line
+// passes it, null when it fits) - ::highlight(code-overlimit)
+function markLimit(el, limit) {
+  if (typeof CSS === 'undefined' || !CSS.highlights) return;
+  CSS.highlights.delete('code-overlimit');
+  if (!limit || !el?.isConnected) return;
+  const shown = shownText(el);
+  if (shown.empty) return;
+  const out = [];
+  let at = 0;
+  for (const line of shown.text.split('\n')) {
+    const col = limit.column(line);
+    if (col != null && col < line.length) out.push(shown.range(at + col, at + line.length));
+    at += line.length + 1;
+  }
+  if (out.length) CSS.highlights.set('code-overlimit', new Highlight(...out));
+}
+
+// the width of a column of the code: kept per font (asked at every scroll)
+const widths = new Map();
+function columnWidth(ta) {
+  const cs = getComputedStyle(ta), key = `${cs.fontFamily}|${cs.fontSize}|${cs.letterSpacing}`;
+  if (!widths.has(key)) widths.set(key, charWidth(ta));
+  return widths.get(key);
+}
+
 // CodeEditor: the surface. Props
 //   value, oninput(text, textarea)
 //   lang         the language (see above)
 //   marks        Map line -> 'bp' | 'bp-off' | 'here' | 'bp here' (the gutter)
 //   errors       Map line -> message: the line marked, the message as the tip of its number
 //   onGutter     (line) a click on a line number: a breakpoint on or off
+//   search       the text of the search: its matches marked
+//   limit        { max, length(line), column(line), hint }: the longest line - a red line at column max, the
+//                part of a line past it marked, a key that makes a line longer refused (onLimit() then)
 //   gutterText   Map line -> text shown instead of the line numbers (the addresses of a build); a line not in it: blank
 //   gutterStale  a message when that text is out of date (the gutter dimmed, the message its tip)
 //   inputRef     a ref that is given the textarea
@@ -245,7 +311,21 @@ export function CodeEditor(o) {
     if (pre.current) { pre.current.scrollTop = el.scrollTop; pre.current.scrollLeft = el.scrollLeft; }
     if (gutter.current) gutter.current.scrollTop = el.scrollTop;
     markCaretLine(el);
+    markSearch(pre.current, el, o.search);
+    placeLimit(el);
   };
+  // the limit of a line (o.limit): a red line at its column
+  const limitLine = useRef(null);
+  const placeLimit = el => {
+    const m = limitLine.current;
+    if (!m || !o.limit) return;
+    const cs = getComputedStyle(el);
+    const x = parseFloat(cs.paddingLeft) + o.limit.max * columnWidth(el) - el.scrollLeft;
+    m.style.transform = `translateX(${Math.round(x)}px)`;          // on a whole pixel: sharp, not smeared over two
+    m.hidden = x < 0;
+  };
+  useLayoutEffect(() => markLimit(pre.current, o.limit));
+  useLayoutEffect(() => () => { if (typeof CSS !== 'undefined') CSS.highlights?.delete('code-overlimit'); }, []);
   // the line of the caret: a thin line above and below it (the start of a selection: its line)
   const markCaretLine = el => {
     const m = caretLine.current;
@@ -256,6 +336,27 @@ export function CodeEditor(o) {
     m.style.transform = `translateY(${top}px)`;
     m.style.height = `${lh}px`;
     m.hidden = !Number.isFinite(top) || top + lh < 0 || top > el.clientHeight;
+    markGutter(el);
+  };
+  // the lines of the caret or of a selection in the gutter too: their number or address in bold, a selection
+  // in its colour (the line of the caret itself goes across the gutter)
+  const markGutter = el => {
+    const g = gutter.current;
+    if (!g) return;
+    const v = el.value, a = el.selectionStart;
+    let b = el.selectionEnd;
+    if (b > a && v[b - 1] === '\n') b--;                                // a selection up to the start of a line: not that line
+    const first = v.slice(0, a).split('\n').length, last = first + (v.slice(a, b).match(/\n/g)?.length ?? 0);
+    const selected = a !== b;
+    for (const s of g.querySelectorAll('.code-gutter__cur')) {
+      const n = Number(s.dataset.line);
+      if (n < first || n > last) s.classList.remove('code-gutter__cur', 'code-gutter__sel');
+    }
+    for (let n = first; n <= last; n++) {
+      const s = g.querySelector(`[data-line="${n}"]`);
+      s?.classList.add('code-gutter__cur');
+      s?.classList.toggle('code-gutter__sel', selected);
+    }
   };
   useLayoutEffect(sync);
   useLayoutEffect(() => { if (o.inputRef) o.inputRef.current = ta.current; });
@@ -406,15 +507,30 @@ export function CodeEditor(o) {
       close();
       setZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1), ta.current);
     } },
+    // the line of the caret: across the gutter and the code
+    h('div', { class: 'code-caret-line', ref: caretLine, 'aria-hidden': 'true' }),
     h('pre', { class: `code-gutter ${o.gutterText ? 'code-gutter--addr' : ''} ${o.gutterStale ? 'code-gutter--stale' : ''}`, ref: gutter, 'data-i18n': 'off', 'aria-hidden': 'true',
       onclick: o.onGutter ? e => { const line = Number(e.target.dataset?.line); if (line) o.onGutter(line); } : undefined }, numbers),
     h('div', { class: 'code-view__body' },
       h('pre', { class: 'code-highlight', ref: pre, 'data-i18n': 'off', 'aria-hidden': 'true' }, o.lang?.highlight ? o.lang.highlight(text, o) : text, '\n'),
-      h('div', { class: 'code-caret-line', ref: caretLine, 'aria-hidden': 'true' }),
+      o.limit && h('div', { class: 'code-limit', ref: limitLine, 'aria-hidden': 'true', title: o.limit.hint }),
       h('textarea', {
         ref: ta, class: 'code-area code-view__input', spellcheck: false, wrap: 'off', value: text,
         autocomplete: 'off', autocorrect: 'off', autocapitalize: 'off', 'data-i18n': 'off',
         'data-form-type': 'other', 'data-1p-ignore': '', 'data-lpignore': 'true',
+        // the limit of a line is a barrier for typing: a key that makes a line too long is not taken
+        // (Enter, deleting, pasting are - a pasted line too long is marked, and the build warns)
+        onbeforeinput: e => {
+          if (!o.limit || !['insertText', 'insertCompositionText', 'insertReplacementText'].includes(e.inputType) || e.data == null) return;
+          const el = e.target, v = el.value, a = el.selectionStart, b = el.selectionEnd;
+          const next = v.slice(0, a) + e.data + v.slice(b);
+          const lineOf = (text, at) => text.slice(text.lastIndexOf('\n', at - 1) + 1, (text.indexOf('\n', at) + 1 || text.length + 1) - 1);
+          const before = lineOf(v, a), after = lineOf(next, a + e.data.length);
+          if (o.limit.length(after) > o.limit.max && o.limit.length(after) > o.limit.length(before)) {
+            e.preventDefault();
+            o.onLimit?.();
+          }
+        },
         oninput: e => {
           const c = e.inputType?.startsWith('insert') && o.lang?.collapse?.(e.target.value, e.target.selectionStart);
           if (c) replaceRange(e.target, c.insert, c.from, c.to);
@@ -426,6 +542,7 @@ export function CodeEditor(o) {
         onscroll: () => { sync(); if (list) close(); hideTip(); },
         onmousemove: e => {
           pointer.current = { x: e.clientX, y: e.clientY };
+          if (e.buttons) markGutter(e.target);                            // a selection being dragged
           if (e.shiftKey && !e.buttons) showTip.current(); else if (tipKey.current) hideTip();
         },
         onmouseleave: () => { pointer.current = null; hideTip(); },

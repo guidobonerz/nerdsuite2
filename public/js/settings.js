@@ -1,5 +1,6 @@
 // settings.js - the Settings of the IDE (the menu of the app bar, Ctrl+,):
-//   Editor      the font of the code, its size, the line spacing, the tab width, the PETSCII glyphs
+//   Editor      the font of the code, its size, the line spacing, the tab width, the PETSCII glyphs; the BASIC
+//               and assembler properties of each platform (platformprefs.js: the longest BASIC line)
 //   Colours     the colour, bold and italic of each kind of token (directives, mnemonics, strings ...)
 //   Toolchains  compiler › packer › emulator: what Build and Run do with the program (toolchain.js);
 //               a project picks one in its settings
@@ -13,6 +14,9 @@ import { h, useState, useEffect, useMemo, signal, icon, iconButton, button, fiel
 import { spans, measureCodeFont } from './codeeditor.js';
 import { COMPILERS, PACKERS, EMULATORS, emulatorRuns, chainLabel, setServerSettings } from './toolchain.js';
 import { PLATFORMS, platformOf } from './platforms.js';
+import { platformPref, isPlatformPrefSet, setPlatformPref, resetPlatformPrefs } from './platformprefs.js';
+import { DIALECTS } from './basic/dialects.js';
+import { tokenBased } from './basic/typed.js';
 
 const KEY = 'ns-editor-settings';
 
@@ -201,6 +205,7 @@ function Settings() {
   const [query, setQuery] = useState('');
   const [tools, setTools] = useState(null);       // the answer of the server, or { error }
   const [, redraw] = useState(0);
+  const [prefsVersion, bump] = useState(0);       // a property of a platform changed (platformprefs.js)
   useEffect(() => editorSettings.subscribe(() => redraw(n => n + 1)), []);    // a change: drawn again
   const s = editorSettings.value;
   useEffect(() => { api('GET').then(setTools, e => setTools({ error: e.message })); }, []);
@@ -245,6 +250,23 @@ function Settings() {
       h('div', { class: 'ns-set__ctl' }, select({ label: 'Tab width', hideLabel: true, dense: true, value: String(s.tab), options: ['2', '4', '8'], onchange: v => setEditor({ tab: Number(v) }) })), 'indent tabulator');
     add('editor', 'Text', 'PETSCII glyphs in BASIC strings', 'their size in a column of the code: above 1 the glyphs grow into each other',
       h('div', { class: 'ns-set__ctl' }, slider({ min: 0.8, max: 1.5, step: 0.05, value: s.petscii, format: v => `${v.toFixed(2)} ×`, oninput: v => setEditor({ petscii: v }) })), 'commodore c64 characters scale');
+    // the properties of the BASIC and the assembler of each platform (platformprefs.js)
+    for (const p of PLATFORMS.filter(x => x.basic.length)) {
+      const own = isPlatformPrefSet(p.id, 'basicLine');
+      add('editor', 'BASIC and assembler per platform', p.name, p.basic.map(d => DIALECTS[d]?.name ?? d).join(', '),
+        h('div', { class: 'ns-set__ctl ns-set__ctl--wide' },
+          field({ label: 'Max. BASIC line length', dense: true, type: 'number', value: own ? String(platformPref(p.id, 'basicLine')) : '',
+            placeholder: p.basicLine ? `${p.basicLine} (the ${p.short})` : 'no limit',
+            // a BASIC of tokens is typed with its keywords abbreviated, one of text as written (basic/typed.js)
+            support: tokenBased(p.basic[0]) ? 'keys, with the keywords abbreviated (pO for POKE) · 0: no limit' : 'characters, as written · 0: no limit',
+            onchange: v => {
+              const n = v.trim() === '' ? null : Math.max(0, Math.min(9999, Math.round(Number(v))));
+              setPlatformPref(p.id, 'basicLine', n == null || Number.isNaN(n) || n === p.basicLine ? null : n);
+              bump(x => x + 1);
+            }, onkeydown: enterCommits,
+            trailing: own && iconButton('undo', `The default of the ${p.short}`, () => { setPlatformPref(p.id, 'basicLine', null); bump(x => x + 1); }) })),
+        `${p.id} ${p.short} ${p.basic.join(' ')} basic line length max maximum characters columns platform machine`);
+    }
     // the colours
     for (const r of [...ROLES, ...PLAIN]) {
       const v = s.syntax?.[r.key] ?? {};
@@ -307,7 +329,7 @@ function Settings() {
       }
     }
     return out;
-  }, [s, tools, query, section, u64]);
+  }, [s, tools, query, section, u64, prefsVersion]);
 
   const q = query.trim().toLowerCase();
   const shown = q ? entries.filter(e => q.split(/\s+/).every(w => e.words.includes(w))) : entries.filter(e => e.section === section);
@@ -344,7 +366,7 @@ function Settings() {
             e.control)))),
         !q && (section === 'editor' || section === 'colors') && h('div', { class: 'ns-set__reset' },
           button(section === 'colors' ? 'All colours as the theme has them' : 'The editor as it was', { icon: 'undo',
-            onclick: () => (section === 'colors' ? setEditor({ syntax: {} }) : setEditor({ ...DEFAULTS })) })))));
+            onclick: () => { if (section === 'colors') setEditor({ syntax: {} }); else { resetPlatformPrefs(); bump(x => x + 1); setEditor({ ...DEFAULTS }); } } })))));
 }
 
 let open = null;

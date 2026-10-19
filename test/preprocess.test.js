@@ -38,17 +38,29 @@ const files = {
 const readFile = p => files[p] ?? null;
 
 test('@embed: DATA lines with the bytes of a file, numbered on, or in the label mode', () => {
-  const r = preprocess('10 data @embed charset "gfx/chars.chr", 1, 3\n100 end', { readFile });
+  const r = preprocess('10 data @embed charset "gfx/chars.chr", , 1, 3\n100 end', { readFile });
   assert.deepEqual(r.errors, []);
   assert.deepEqual(texts(r), ['10 data 8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23', '11 data 24,25,26,27,28,29,30,31', '100 end']);
   assert.deepEqual(r.lines.map(l => l.src), [1, 1, 2]);
-  const l = preprocess('  data @embed binary "data.bin", 1, 3', { readFile, labelMode: true });
+  const l = preprocess('  data @embed binary "data.bin", 16, 1, 3', { readFile, labelMode: true });
   assert.deepEqual(texts(l), ['  data 2,3,4']);
   assert.match(preprocess('10 data @embed charset "gfx/chars.chr"\n11 end', { readFile }).errors[0].msg, /its 128 DATA lines need the numbers 10-137, line 11 comes first/);
 });
 
+test('@embed: the items per DATA line after the file', () => {
+  const r = preprocess('  data @embed charset "gfx/chars.chr", 8, 1, 2', { readFile, labelMode: true });
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(texts(r), ['  data 8,9,10,11,12,13,14,15', '  data 16,17,18,19,20,21,22,23']);
+  assert.deepEqual(texts(preprocess('  data @embed binary "data.bin", 2', { readFile, labelMode: true })), ['  data 1,2', '  data 3,4', '  data 5']);
+  assert.equal(texts(preprocess('  data @embed binary "data.bin",', { readFile, labelMode: true }))[0], '  data 1,2,3,4,5');
+  assert.equal(preprocess('  data @embed binary "data.bin", $4', { readFile, labelMode: true }).lines.length, 2);
+  for (const bad of ['0', 'walk', '256']) assert.match(preprocess(`  data @embed binary "data.bin", ${bad}`, { readFile }).errors[0].msg, /items per DATA line/);
+  // the numbers of the lines: 128 DATA lines of 16, 256 of 8
+  assert.match(preprocess('10 data @embed charset "gfx/chars.chr", 8\n11 end', { readFile }).errors[0].msg, /its 256 DATA lines/);
+});
+
 test('resolveEmbeds: the source with its @embed lines as DATA lines, the directives kept', () => {
-  const src = '#define debug\n@if debug\n10 data @embed binary "data.bin", 1, 3\n@end\n100 end';
+  const src = '#define debug\n@if debug\n10 data @embed binary "data.bin", , 1, 3\n@end\n100 end';
   const r = resolveEmbeds(src, { readFile });
   assert.deepEqual(r.errors, []);
   assert.equal(r.count, 1);

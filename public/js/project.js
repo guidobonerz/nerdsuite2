@@ -6,6 +6,10 @@
 // session (sessionStorage), so a reload finds them again, and a closed tab leaves them behind for
 // the cleanup at the next start. Paths are relative to the root of the package: "assets.json",
 // "gfx/demo/hall.gfx".
+//
+// A project can also be a folder of the computer (openFolder, saveToFolder): the server reads its files
+// (backend/disk) and writes each change back a moment after it (flushFolder) - the files are the
+// project then, the package and the session only a copy.
 
 import { readZip, writeZip } from './zip.js';
 import { MANIFEST, PROJECT_FORMAT, readManifest, makeManifest, migrateProject } from './migrate.js';
@@ -87,13 +91,16 @@ export function writeBinary(path, data, exts = BINARY_EXT) {
   if (exts === REFERENCE_EXT && !isReference(path)) throw Object.assign(new Error(`${path}: a reference is in ${REFERENCE_DIR}`), { status: 400 });
   if (data.length > MAX_FILE) throw Object.assign(new Error(`${path} is too large`), { status: 413 });
   files.set(path, new Uint8Array(data));
+  toFolder(path, true);
   changed();
   return path;
 }
 export const writeText = (path, text) => writeBinary(path, enc.encode(text), SCRIPT_EXT);
 
 export function removeFile(path) {
-  if (files.delete(path)) changed();
+  if (!files.delete(path)) return;
+  toFolder(path, false);
+  changed();
 }
 
 // the binary files of the project; the script of its game (a project holds one game)
@@ -124,18 +131,22 @@ export function projectFiles(entries) {
   const out = new Map();
   for (const [p, d] of list) {
     if (isReference(p)) { out.set(checkPath(p, REFERENCE_EXT), d); continue; }
-    if (p.split('/')[0] === 'build' || ![...SCRIPT_EXT, ...BINARY_EXT].includes(extOf(p))) continue;   // other files stay out
+    if (p === MANIFEST || p.split('/')[0] === 'build' || ![...SCRIPT_EXT, ...BINARY_EXT].includes(extOf(p))) continue;   // other files stay out
     out.set(checkPath(p), d);
   }
   if (out.size > MAX_FILES) throw new Error(`too many files (${out.size}, at most ${MAX_FILES})`);
   return out;
 }
 
-// a project from files (Map path -> bytes): a new one, an example, a package
-export function setProject(newName, newFiles, { isDirty = false } = {}) {
+// a project from files (Map path -> bytes): a new one, an example, a package - or a folder (dir: its
+// full path; the files are the ones read from it)
+export function setProject(newName, newFiles, { isDirty = false, dir = null } = {}) {
   name = newName;
   files = new Map(newFiles);
   dirty = isDirty;
+  folder = dir;
+  pending.clear();
+  folderError = null;
   build = null;
   openers.forEach(fn => fn());
   flushSession();                        // at once: a reload right after it finds the project
@@ -146,6 +157,9 @@ export function closeProject() {
   name = null;
   files = new Map();
   dirty = false;
+  folder = null;
+  pending.clear();
+  folderError = null;
   build = null;
   openers.forEach(fn => fn());
   flushSession();                        // at once: a reload right after it finds none
@@ -188,7 +202,7 @@ export const zipName = () => `${name || 'project'}${PROJECT_EXT}`;
 
 // the files as they are now are in a zip package the user saved (the Export of the app bar)
 export function markZipSaved() {
-  dirty = false;
+  dirty = !!folder && pending.size > 0;          // a folder: what is not in it yet
   store();
   notify();
 }
@@ -227,6 +241,97 @@ export function download(fileName, bytes, type = 'application/zip') {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+// --- a folder of the computer (backend/disk) -------------------------------------------------------
+
+let folder = null;                         // the full path of the project's folder; null: a project of the browser
+const pending = new Map();                 // path -> true (to write) | false (to remove): not on the disk yet
+let folderTimer = null;
+let flushing = null;
+let folderError = null;                    // what the last write to the folder failed with
+
+export const projectFolder = () => folder;
+export const folderProblem = () => folderError;
+
+async function disk(op, body, { keepalive = false } = {}) {
+  const res = await fetch(`api/disk/${op}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `${res.status} ${res.statusText}`);
+  return json;
+}
+
+// the folders in a folder ('' - the home folder): { path, parent, sep, dirs: [{ name, project }], project, roots, home }
+export const listDirs = path => disk('dirs', { path: path ?? '' });
+export const makeDir = path => disk('mkdir', { path });
+
+// a change for the folder, written a moment later
+function toFolder(path, keep) {
+  if (!folder) return;
+  pending.set(path, keep);
+  clearTimeout(folderTimer);
+  folderTimer = setTimeout(() => { flushFolder(); }, 400);
+}
+
+// the files of a folder as a package's entries: the manifest among them
+async function readFolder(dir) {
+  const r = await disk('project', { dir, ext: [...SCRIPT_EXT, ...BINARY_EXT, ...REFERENCE_EXT] });
+  return { name: r.name, dir: r.dir, skipped: r.skipped ?? [], entries: new Map(Object.entries(r.files).map(([p, d]) => [p, fromBase64(d)])) };
+}
+
+// a folder of the computer as the project (dir: its full path) - brought to the newest format like a
+// package (migrate.js; what changed is written back): { notes, from, editor, skipped }
+export async function openFolder(dir) {
+  const f = await readFolder(dir);
+  const manifest = packageManifest(f.entries);
+  const r = manifest.format ? migrateProject(projectFiles(f.entries), manifest) : { files: projectFiles(f.entries), notes: [], from: PROJECT_FORMAT };
+  setProject(f.name, r.files, { dir: f.dir });
+  if (r.notes.length) { for (const p of r.files.keys()) pending.set(p, true); await flushFolder(); }
+  return { notes: r.notes, from: r.from, editor: manifest.editor, skipped: f.skipped };
+}
+
+// the project into a folder (its full path), which is the project from then on: every file written
+export async function saveToFolder(dir) {
+  folder = dir;
+  name = dir.split(/[\\/]/).filter(Boolean).pop() || name;
+  pending.clear();
+  for (const p of files.keys()) pending.set(p, true);
+  dirty = true;
+  notify();
+  return flushFolder();
+}
+
+// the changes into the folder now: true when every one was written (else folderProblem() says why, and
+// they are tried again with the next change or flush). keepalive: while the page is left
+export function flushFolder({ keepalive = false } = {}) {
+  clearTimeout(folderTimer);
+  if (!folder) return Promise.resolve(true);
+  if (flushing) return flushing.then(() => flushFolder({ keepalive }));
+  flushing = (async () => {
+    const dir = folder;
+    const list = [...pending];
+    pending.clear();
+    let ok = true;
+    for (const [p, keep] of list) {
+      try {
+        if (keep && files.has(p)) await disk('write', { dir, path: p, data: toBase64(files.get(p)) }, { keepalive });
+        else if (!keep) await disk('remove', { dir, path: p }, { keepalive });
+      } catch (e) {
+        ok = false;
+        folderError = `${p}: ${e.message}`;
+        if (!pending.has(p)) pending.set(p, keep);
+      }
+    }
+    if (ok && list.length && folder === dir) {
+      try { await disk('write', { dir, path: MANIFEST, data: toBase64(makeManifest(new Map([...files].filter(([p]) => !isReference(p))), editorVersion)) }, { keepalive }); } catch { /* the manifest: next time */ }
+    }
+    if (ok) folderError = null;
+    if (folder === dir && !pending.size) dirty = false;
+    store();
+    notify();
+    return ok;
+  })().finally(() => { flushing = null; });
+  return flushing;
 }
 
 // --- the last build: what the server built (script.prg, game.prg, the disk images, the cartridge) -
@@ -314,11 +419,11 @@ export function flushSession() {
   if (!sessionId) return Promise.resolve();
   // whether a project is open, for index.html: it hides the rail before the first paint
   try { if (name === null) sessionStorage.removeItem('nerdsuite-open'); else sessionStorage.setItem('nerdsuite-open', '1'); } catch { /* no storage */ }
-  const value = name === null ? null : { name, dirty, time: Date.now(), format: PROJECT_FORMAT, files: [...files] };
+  const value = name === null ? null : { name, dirty, time: Date.now(), format: PROJECT_FORMAT, files: [...files], folder };
   return tx('readwrite', s => (value ? s.put(value, sessionId) : s.delete(sessionId)))
     .catch(e => console.warn('the project could not be kept in the session:', e));
 }
-if (typeof addEventListener === 'function') addEventListener('pagehide', () => { flushSession(); });
+if (typeof addEventListener === 'function') addEventListener('pagehide', () => { flushSession(); if (pending.size) flushFolder({ keepalive: true }); });
 
 // the projects of tabs that were closed with changes not exported to a zip package (the browser
 // lets no page ask before a tab closes but its own "Leave site?"): [{ id, name, time, files }],
@@ -370,6 +475,27 @@ function migrateSession(saved) {
 export let restoredNotes = [];
 export const discardProject = id => tx('readwrite', s => s.delete(id));
 
+// a folder project after a reload: its files as the folder has them now (changed outside meanwhile too) -
+// with the changes of the session that were not written yet (saved.dirty), which are written then. null:
+// the folder cannot be read (the session's copy is the project then)
+async function restoreFolder(saved) {
+  let f;
+  try { f = await readFolder(saved.folder); } catch (e) { console.warn(`${saved.folder} could not be read:`, e); return null; }
+  const fromDisk = projectFiles(f.entries);
+  const ours = saved.dirty ? migrateSession(saved).files : new Map();
+  const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  name = f.name;
+  files = new Map(fromDisk);
+  folder = f.dir;
+  pending.clear();
+  for (const [p, d] of ours) if (!fromDisk.has(p) || !same(fromDisk.get(p), d)) { files.set(p, d); pending.set(p, true); }
+  dirty = pending.size > 0;
+  restoredNotes = [];
+  notify();
+  if (pending.size) flushFolder();
+  return name;
+}
+
 // the project of this tab after a reload, or null; the projects of closed tabs are removed
 export async function restoreSession() {
   try {
@@ -398,6 +524,10 @@ export async function restoreSession() {
     });
     const saved = await tx('readonly', s => s.get(sessionId));
     if (!saved) return null;
+    if (saved.folder) {
+      const back = await restoreFolder(saved);
+      if (back) return back;
+    }
     const r = migrateSession(saved);
     name = saved.name;
     files = r.files;

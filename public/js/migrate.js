@@ -38,7 +38,7 @@ export const MANIFEST = 'nerdsuite.manifest.json';
 
 // the binary files with a version, by their magic: the versions the readers read as they are
 export const FORMATS = {
-  YSCR: { ext: '.scr', kind: 'screen', oldest: 1, newest: 2 },
+  YSCR: { ext: '.scr', kind: 'screen', oldest: 1, newest: 3 },      // 3: with its look (gfxfile.js LOOK)
   YSPR: { ext: '.spr', kind: 'sprites', oldest: 1, newest: 1 },
   YTIL: { ext: '.til', kind: 'tileset', oldest: 1, newest: 2 },
   YSNG: { ext: '.sng', kind: 'song', oldest: 1, newest: 5 },

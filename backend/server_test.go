@@ -156,6 +156,43 @@ func TestCleanToolchain(t *testing.T) {
 
 // a desktop start without a console window: /api/info tells the IDE how long the server waits for it,
 // and every request is the last one
+// the server of a desktop start ends when its last window says bye - not on a reload, not while another
+// window is open; a window that says nothing: Idle after the last request
+func TestWindowsBye(t *testing.T) {
+	s := testServer(t)
+	s.opts.Idle = 5 * time.Minute
+	idle := s.opts.Idle
+	last := func() time.Time { return time.Unix(0, s.last.Load()) }
+	do(s, "GET", "/api/info?window=a", "", nil)
+	do(s, "GET", "/api/info?window=b", "", nil)
+	if code, _, _ := do(s, "POST", "/api/bye?window=a", "", nil); code != 204 {
+		t.Fatalf("bye: %d", code)
+	}
+	later := time.Now().Add(byeGrace + time.Second)
+	if s.win.done(later, last(), idle) {
+		t.Fatal("ends while window b is open")
+	}
+	do(s, "POST", "/api/bye?window=b", "", nil)
+	if s.win.done(time.Now(), last(), idle) {
+		t.Fatal("ends before the grace of a reload")
+	}
+	if !s.win.done(time.Now().Add(byeGrace+time.Second), last(), idle) {
+		t.Fatal("does not end after the last window")
+	}
+	// a reload: the new page asks after the bye
+	time.Sleep(2 * time.Millisecond)
+	do(s, "GET", "/api/info?window=c", "", nil)
+	if s.win.done(time.Now().Add(byeGrace+time.Second), last(), idle) {
+		t.Fatal("ends after a reload")
+	}
+	// no bye at all: Idle after the last request
+	var w windows
+	now := time.Now()
+	if w.done(now, now.Add(-time.Minute), idle) || !w.done(now, now.Add(-idle-time.Second), idle) {
+		t.Fatal("the idle time")
+	}
+}
+
 func TestIdle(t *testing.T) {
 	s := testServer(t)
 	s.opts.Idle = 5 * time.Minute

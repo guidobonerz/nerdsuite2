@@ -9,11 +9,13 @@
 //	--root        serve public/ and examples/demo of a checkout instead of the files built in (development)
 //	--no-browser  start the server only
 //	--background  as a double click: no console window - it leaves the terminal (Linux, macOS), and the
-//	              server ends a few minutes after the last window of the IDE is closed
+//	              server ends when the last window of the IDE is closed
 //
 // A double click (no arguments) is --background. The Windows binary is a program with windows
 // (-H windowsgui, tools/dist.mjs): it opens no console window; started in a console it writes into that
 // one (console_windows.go). A second start while one runs on the port opens a window of the running one.
+// The windows have a browser profile of their own (~/.nerdsuite/browser, window.go): the projects of the
+// IDE live there (IndexedDB), apart from the browser the user browses with.
 //
 // env: PORT, HOST, NERDSUITE_SETTINGS (the file of the settings), NERDSUITE_VERSION, and the variables of
 // the tools (VICE, KICKASS, JAVA, ALTIRRA ...) the Settings of the IDE can set instead.
@@ -120,7 +122,7 @@ func run() error {
 		url := fmt.Sprintf("http://localhost:%d", *port)
 		fmt.Printf("NerdSuite is running already: %s\n", url)
 		if !*noBrowser {
-			openWindow(url)
+			openWindow(url, nil)
 		}
 		return nil
 	}
@@ -160,10 +162,15 @@ func run() error {
 	url := fmt.Sprintf("http://localhost:%d", ln.Addr().(*net.TCPAddr).Port)
 	fmt.Printf("NerdSuite %s: %s\n", v, url)
 	if idle > 0 {
-		fmt.Printf("the IDE ends %v after its last window is closed\n", idleQuit)
+		fmt.Println("the IDE ends when its last window is closed")
 	}
+	// the window's browser process (a profile of its own, window.go): when it ends, the windows are closed
+	var closed chan struct{}
 	if !*noBrowser {
-		openWindow(url)
+		if idle > 0 {
+			closed = make(chan struct{})
+		}
+		openWindow(url, closed)
 	}
 
 	hs := &http.Server{Handler: srv, ReadHeaderTimeout: 10 * time.Second}
@@ -177,10 +184,11 @@ func run() error {
 			return err
 		}
 	case <-stop:
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		hs.Shutdown(ctx)
+	case <-closed: // nil without a window to wait for: never
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	hs.Shutdown(ctx)
 	return nil
 }
 

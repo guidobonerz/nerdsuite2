@@ -38,7 +38,9 @@ import {
   listSources, readText, writeText, readBinary, writeBinary, hasFile, removeFile, allFiles, projectPath, PROJECT_EXT,
   saveFileAs, closedProjects, recoverProject, discardProject, setBuild as setProjectBuild, hasBuild, buildName, buildFiles, downloadBuild,
   fromBase64, toBase64, restoreSession, flushSession, setEditorVersion, restoredNotes,
+  projectFolder, openFolder, saveToFolder, flushFolder, folderProblem, listDirs, makeDir,
 } from './project.js';
+import { chooseFolder, forgetFolder } from './folderchooser.js';
 import { setWriterTag } from './filetag.js';
 import { keepUi, loadUi, watchUi } from './uistate.js';
 import { readSettings, writeSettings, machineOf, MACHINES, SETTINGS } from './nsbuild.js';
@@ -534,16 +536,20 @@ function unsavedEdits() {
   return codeView.isDirty() || hexView.isDirty() || store.dirty || dirtyCharsets().length > 0 || tileEditor.isDirty() || soundEditor.isDirty() || bitmapEditor.isDirty();
 }
 
-function mayReplaceProject({ closing = false } = {}) {
+async function mayReplaceProject({ closing = false } = {}) {
+  const inFolder = isOpen() && !!projectFolder();
+  if (inFolder) await flushFolder();              // the folder is the project: what is still on its way
   const edits = isOpen() && unsavedEdits(), files = isOpen() && isProjectDirty();
-  if (!edits && !files) return Promise.resolve(true);
+  if (!edits && !files) return true;
+  const what = edits ? 'changes that are not saved' : inFolder ? `files that could not be written to ${projectFolder()} (${folderProblem() ?? 'unknown'})` : 'files that are not exported to a project package';
   return new Promise(resolve => dialog({
     title: 'Unsaved work',
-    content: h('div', { class: 'md-body-medium' }, `${projectName()} has ${edits ? 'changes that are not saved' : 'files that are not exported to a project package'}. ${closing ? 'Close it anyway?' : 'Open another project anyway?'}`),
+    content: h('div', { class: 'md-body-medium' }, `${projectName()} has ${what}. ${closing ? 'Close it anyway?' : 'Open another project anyway?'}`),
     actions: [
       { label: 'Cancel', value: false },
       { label: closing ? 'Close' : 'Discard', value: true, danger: true },
-      { label: 'Save and export', icon: 'archive', variant: 'filled', value: true, onclick: saveAndExport },
+      inFolder ? { label: 'Save', icon: 'save', variant: 'filled', value: true, onclick: saveToDisk }
+        : { label: 'Save and export', icon: 'archive', variant: 'filled', value: true, onclick: saveAndExport },
     ],
     onclose: v => resolve(v === true),
   }));
@@ -569,11 +575,41 @@ async function newProject() {
   if (!(await mayReplaceProject())) return;
   const v = await projectWizard();
   if (!v) return;
+  // where it is kept: a folder of its name in the folder chosen - none chosen: in this browser
+  const dir = await newProjectFolder(v.name);
+  if (dir === false) return;
   setProject(v.name, v.files, { isDirty: true });
+  if (dir && !(await saveToFolder(dir))) snackbar(`Not saved in ${dir}: ${folderProblem()} - the project is kept in this browser`, { error: true, timeout: 10000 });
   await startProject();
   setView('code');
   if (v.main) codeView.open(v.main);
-  snackbar(`${v.name} is ready for the ${machineOf(v.platform).name}: Ctrl+B builds, F5 runs it`);
+  snackbar(projectFolder() ? `${v.name} is in ${projectFolder()}, ready for the ${machineOf(v.platform).name}: Ctrl+B builds, F5 runs it`
+    : `${v.name} is ready for the ${machineOf(v.platform).name} - kept in this browser (File › Save to a folder… puts it on your disk)`, { timeout: 8000 });
+}
+
+// the folder of a new project: NAME in a folder the user chooses, made there - null: none chosen (the browser
+// keeps the project), false: given up (a project of that name is there and is not to be replaced)
+async function newProjectFolder(projectName) {
+  const name = projectName.replace(/[\\/:*?"<>|]/g, '_').trim() || 'project';
+  const parent = await chooseFolder({ title: `Where should ${projectName} be kept?`, ok: 'Create here',
+    note: `A folder "${name}" is made in the folder chosen; the project's files are written into it. Cancel: the project is kept in this browser.` });
+  if (!parent) return null;
+  const sep = parent.includes('\\') ? '\\' : '/';
+  const dir = parent.endsWith(sep) ? parent + name : parent + sep + name;
+  try {
+    const there = (await listDirs(parent)).dirs.find(d => d.name.toLowerCase() === name.toLowerCase());
+    if (there?.project && !(await new Promise(resolve => dialog({
+      title: 'A project is there',
+      content: h('div', { class: 'md-body-medium' }, `${dir} holds a nerdsuite project already. Its files with the names of the new project's files are replaced.`),
+      actions: [{ label: 'Cancel', value: false }, { label: 'Replace', value: true, danger: true }],
+      onclose: r => resolve(r === true),
+    })))) return false;
+    await makeDir(dir);
+  } catch (e) {
+    snackbar(`${dir} could not be made: ${e.message} - the project is kept in this browser`, { error: true, timeout: 10000 });
+    return null;
+  }
+  return dir;
 }
 
 async function openProject() {
@@ -631,9 +667,65 @@ async function saveEditors() {
 async function saveAll() {
   const kept = await saveEditors();
   if (!kept) return;
+  if (projectFolder() && !(await flushFolder())) return snackbar(`Not saved in ${projectFolder()}: ${folderProblem()}`, { error: true, timeout: 10000 });
   if (kept.length) snackbar(`Saved - not ${kept.join(', ')}`, { error: true, timeout: 8000 });
-  else snackbar('Saved. Export (the download icon) writes the project package to your disk.');
+  else if (projectFolder()) snackbar(`Saved in ${projectFolder()}`);
+  else snackbar('Saved. Export (the download icon) writes the project package to your disk - or File › Save to a folder…');
 }
+
+// the editors into their files and those into the project's folder: false when something was not saved
+async function saveToDisk() {
+  const kept = await saveEditors();
+  if (!kept || kept.length) return false;
+  if (!(await flushFolder())) { snackbar(`Not saved in ${projectFolder()}: ${folderProblem()}`, { error: true, timeout: 10000 }); return false; }
+  return true;
+}
+
+// a folder of the computer as the project (backend/disk): the files are read from it and written back
+async function openProjectFolder() {
+  if (!(await mayReplaceProject())) return;
+  const dir = await chooseFolder({ title: 'Open a project folder', ok: 'Open' });
+  if (!dir) return;
+  let r;
+  try { r = await openFolder(dir); } catch (e) {
+    snackbar(`${dir} could not be opened: ${e.message}`, { error: true, timeout: 8000 });
+    return;
+  }
+  if (!allFiles().length) snackbar(`${dir} has no files of a project - new ones are written into it`, { timeout: 8000 });
+  await startProject();
+  if (r.skipped.length) snackbar(`Left out (larger than 1 MB): ${r.skipped.slice(0, 4).join(', ')}${r.skipped.length > 4 ? ' …' : ''}`, { timeout: 10000 });
+  else if (allFiles().length) snackbar(`${dir} opened: changes are written into it`);
+}
+
+// the project into a folder of the computer, which is the project from then on
+async function saveProjectToFolder() {
+  const kept = await saveEditors();
+  if (!kept) return;
+  const dir = await chooseFolder({ title: 'Save the project into a folder', ok: 'Save here' });
+  if (!dir) return;
+  // another project there: its files of the same names are replaced
+  const there = await listDirs(dir).catch(() => null);
+  if (there?.project && dir !== projectFolder() && !(await new Promise(resolve => dialog({
+    title: 'A project is there',
+    content: h('div', { class: 'md-body-medium' }, `${dir} holds a nerdsuite project. Its files with the names of this project's files are replaced.`),
+    actions: [{ label: 'Cancel', value: false }, { label: 'Replace', value: true, danger: true }],
+    onclose: v => resolve(v === true),
+  })))) return;
+  if (!(await saveToFolder(dir))) {
+    forgetFolder(dir);
+    return snackbar(`Not saved in ${dir}: ${folderProblem()}`, { error: true, timeout: 10000 });
+  }
+  updateChrome();
+  snackbar(`Saved in ${dir}: changes are written into it from now on`);
+}
+
+// a write into the folder that failed in the background: said once
+let toldProblem = null;
+onProjectChange(() => {
+  const p = projectFolder() && folderProblem();
+  if (p && p !== toldProblem) snackbar(`Not written to ${projectFolder()}: ${p}`, { error: true, timeout: 10000 });
+  toldProblem = p || null;
+});
 
 async function saveAndExport() {
   const kept = await saveEditors();
@@ -736,7 +828,8 @@ function showStart() {
       'An IDE for 8 bit machines - Commodore, Atari, Amstrad / Schneider CPC: assembler (ACME, 6502 and Z80) and BASIC with autocompletion, the screen, sprite, char, tile and bitmap editors, the composer, a hex view, and a debugger in VICE.'),
     h('div', { class: 'start-screen__actions' },
       button('New project', { icon: 'add', variant: 'filled', onclick: newProject }),
-      button('Open project…', { icon: 'folder_open', variant: 'tonal', onclick: openProject }),
+      button('Open folder…', { icon: 'folder_open', variant: 'tonal', onclick: openProjectFolder }),
+      button('Open project…', { icon: 'archive', variant: 'tonal', onclick: openProject }),
       button('Open example', { icon: 'lightbulb', variant: 'text', onclick: openExample }))]);
 }
 function hideStart() {
@@ -748,8 +841,10 @@ function hideStart() {
 $('#btn-file').onclick = e => openMenu(e.currentTarget, [
   { header: 'Project' },
   { label: 'New project…', icon: 'add', onclick: newProject },
-  { label: 'Open project…', icon: 'folder_open', onclick: openProject },
+  { label: 'Open folder…', icon: 'folder_open', onclick: openProjectFolder },
+  { label: 'Open project package…', icon: 'archive', onclick: openProject },
   { label: 'Open example', icon: 'lightbulb', onclick: openExample },
+  isOpen() && { label: projectFolder() ? 'Save to another folder…' : 'Save to a folder…', icon: 'save', onclick: saveProjectToFolder },
   isOpen() && { label: `Export the project (${zipName()})`, icon: 'archive', onclick: saveAndExport },
   isOpen() && { divider: true },
   isOpen() && { label: 'Project settings…', icon: 'tune', onclick: projectSettings },
@@ -798,6 +893,7 @@ function updateChrome() {
   if (start) start.hidden = isOpen();
   const main = isOpen() ? buildTarget() : null;
   $('#file-name').textContent = !isOpen() ? t('no project') : `${projectName()} · ${machineOf(readSettings().machine).name}`;
+  $('#file-name').title = isOpen() ? (projectFolder() ? `in the folder ${projectFolder()}` : 'in this browser - Export or File › Save to a folder… writes it to your disk') : '';
   $('#btn-save').disabled = !isOpen();
   $('#search-box').hidden = !isOpen() || !SEARCH[view];
   // Build, Run, Debug and the Ultimate as the bar of the code editor shows them (codeview.js)
@@ -871,7 +967,7 @@ lang.subscribe(() => { updateChrome(); STATIC_CHROME.forEach(sel => document.que
 const search = $('#search');
 let matchIndex = -1;
 const SEARCH = {
-  code: { placeholder: 'Find in the source', next: dir => findInCode(search.value, dir) },
+  code: { placeholder: 'Find in the source', next: dir => findInCode(search.value, dir), live: v => codeView.setSearch(v) },
   screen: { placeholder: 'Find a screen', list: async () => { const { screensOf } = await import('./adv.js'); return screensOf(store.game).map(r => ({ label: r.name, go: () => screenEditor.open(r.id) })); } },
   sprites: { placeholder: 'Find a sprite', list: async () => { const { symbols } = await import('./adv.js'); return store.game ? symbols(store.game).costumes.map(c => ({ label: c.name, go: () => { spriteEditor.select(c.id, 'stand'); spriteEditor.open(); } })) : []; } },
   chars: { placeholder: 'Find a charset', list: () => allFiles().filter(f => /\.(chr|fnt|bin|raw)$/i.test(f)).map(f => ({ label: f, go: () => { charEditor.selectKey(f); charEditor.open(); } })) },
@@ -973,7 +1069,9 @@ vice.onEvent(() => updateChrome());
 
 (async () => {
   try {
-    const info = await api('GET', 'api/info');
+    // this window of the IDE: a desktop start ends when its windows are gone (backend/windows.go)
+    const win = `w${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const info = await api('GET', `api/info?window=${win}`);
     setEditorVersion(info.version);
     setWriterTag(info.version);
     if (info.version) {
@@ -982,10 +1080,12 @@ vice.onEvent(() => updateChrome());
       v.dataset.tip = `nerdsuite ${info.version}`;
       v.hidden = false;
     }
-    if (info.idle) {                                  // a desktop start without a console window: it ends when no window asks any more
-      const alive = () => api('GET', 'api/info').catch(() => {});
+    if (info.idle) {                                  // a desktop start without a console window: it ends when its last window closes
+      const alive = () => api('GET', `api/info?window=${win}`).catch(() => {});
       setInterval(alive, Math.max(10, info.idle / 5) * 1000);
       addEventListener('visibilitychange', () => { if (!document.hidden) alive(); });
+      // closed (or reloaded: the new page asks at once, the server waits for that)
+      addEventListener('pagehide', () => navigator.sendBeacon(`api/bye?window=${win}`));
     }
   } catch (e) {
     snackbar(`The server does not answer: ${e.message}`, { error: true, timeout: 0 });

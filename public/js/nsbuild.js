@@ -8,6 +8,8 @@
 
 import { assemble, disassemble } from './acme/acme.js';
 import { tokenize } from './basic/basic.js';
+import { typedLength, tokenBased } from './basic/typed.js';
+import { platformPref } from './platformprefs.js';
 import { resolveLabels } from './basic/labels.js';
 import { preprocess } from './basic/preprocess.js';
 import { DIALECTS } from './basic/dialects.js';
@@ -69,6 +71,19 @@ export function assemblerFiles(over = new Map()) {
 }
 
 const baseName = p => p.split('/').pop().replace(/\.[^.]*$/, '');
+
+// the lines of a BASIC program longer than the screen editor of the machine takes (max, 0: no limit) -
+// warnings: the program is built, but it could not be typed in. The length is the keys of the line
+// (basic/typed.js): a BASIC of tokens with its keywords as short as they can be typed, one of text as written
+export function longLines(text, max, dialect) {
+  if (!max) return [];
+  const out = [];
+  text.split('\n').forEach((l, k) => {
+    const n = typedLength(l, dialect);
+    if (n > max) out.push({ line: k + 1, length: n });
+  });
+  return out;
+}
 const BASIC_EXT = { 'atascii-lst': 'lst', 'cpc-ascii': 'bas', 'zx81-p': 'p', 'trs80-ascii': 'bas', 'bbc-ascii': 'bas' };
 
 // build a program: { ok, kind: 'asm' | 'basic', main, name, file: { name, bytes, format }, prg (a cbm
@@ -99,11 +114,18 @@ export function buildProgram(main, { over = new Map(), settings = readSettings()
       r = { ok: false, errors: [{ line: e.line ?? null, msg: e.message }] };
     }
     const errors = (r.errors ?? []).map(e => ({ file: main, line: e.line ?? null, col: e.col ?? null, msg: e.msg ?? e.message, severity: 'error' }));
+    // the lines too long to be typed in on the machine (the Settings: Editor › BASIC per platform)
+    const max = platformPref(platform.id, 'basicLine');
+    const warnings = longLines(labeled ? labeled.text : flat, max, dialect).map(l => ({ file: main, line: fromFlat(l).line, col: max + 1,
+      msg: tokenBased(dialect)
+        ? `the line takes ${l.length} keys to type, even with the keywords abbreviated: the ${platform.short} takes ${max} (Settings › Editor › BASIC and assembler per platform)`
+        : `the line is ${l.length} characters long: the ${platform.short} takes ${max} as typed in (Settings › Editor › BASIC and assembler per platform)`,
+      severity: 'warning' }));
     // a Commodore dialect gives a tokenized .prg; Atari BASIC and Locomotive BASIC a listing to ENTER / LOAD
     const bytes = r.prg ?? r.listing ?? null;
     const format = r.prg ? 'cbm' : r.format ?? 'text';
     const file = bytes && { name: `${name}.${r.prg ? 'prg' : BASIC_EXT[format] ?? 'txt'}`, bytes, format };
-    return { ok: !!r.ok && !errors.length && !!bytes, kind: 'basic', main, name, dialect, platform: platform.id, file, prg: r.prg ?? null, start: r.start, errors, basicLines: r.lines ?? [], symbols: [], lines: [] };
+    return { ok: !!r.ok && !errors.length && !!bytes, kind: 'basic', main, name, dialect, platform: platform.id, file, prg: r.prg ?? null, start: r.start, errors: [...errors, ...warnings], basicLines: r.lines ?? [], symbols: [], lines: [] };
   }
   if (assemblerOf(main, settings) === 'kickass') return kickassBuild(main, name, platform, over);
   const cpu = settings.cpu || platform.cpu;
