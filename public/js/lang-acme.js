@@ -7,7 +7,7 @@
 
 import * as docs from './acme/docs.js';
 import { spans, filterItems } from './codeeditor.js';
-import { mnemonicDoc, registerDoc, asmHelp } from './cpudocs.js';
+import { mnemonicDoc, registerDoc, asmHelp, asmHover } from './cpudocs.js';
 
 // --- the data of the assembler, whatever form docs.js gives it --------------------------------
 
@@ -122,6 +122,17 @@ export function acmeLanguage(ctx = {}) {
     comment: ';',
     autoTrigger: ch => ch === '!' || ch === '+',
     highlight: text => highlight(text, cpu()),
+    // Shift and the mouse: the instruction, the pseudo op, the number or the symbol under the pointer
+    hover(text, at) {
+      const defs = ctx.definitions?.() ?? [], syms = ctx.symbols?.() ?? [];
+      const num = v => (v && /^\$[0-9a-f]+$/i.test(v) ? parseInt(v.slice(1), 16) : /^\d+$/.test(v ?? '') ? Number(v) : null);
+      return asmHover(text, at, {
+        cpu: cpu(), machine: ctx.machine?.(), isMnemonic: w => isMnemonic(w, cpu()),
+        pseudo: w => { const p = pseudoOps().find(x => x.name === w.toLowerCase()); return p ? { title: p.name, syntax: p.syntax, desc: p.desc } : null; },
+        valueOf: name => syms.find(s => s.name === name)?.value ?? num(defs.find(d => d.name === name)?.value?.trim()),
+        whereOf: name => { const d = defs.find(x => x.name === name); return d ? `${d.kind} ${d.name}${d.value ? ' = ' + d.value : ''} - ${d.file ?? ''}:${d.line}` : null; },
+      });
+    },
     complete(text, caret, { force } = {}) {
       const lineFrom = text.lastIndexOf('\n', caret - 1) + 1;
       const before = text.slice(lineFrom, caret);

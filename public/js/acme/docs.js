@@ -98,6 +98,28 @@ const MNEMONIC_DESC = {
   // w65c02
   wai: 'Wait for interrupt',
   stp: 'Stop the processor until reset',
+  // 65ce02, 4502 (the C65, the MEGA65)
+  ldz: 'Load Z register', cpz: 'Compare memory with Z register', inz: 'Increment Z register', dez: 'Decrement Z register',
+  phz: 'Push Z register on stack', plz: 'Pull Z register from stack', taz: 'Transfer accumulator to Z', tza: 'Transfer Z to accumulator',
+  tab: 'Transfer accumulator to base page register B', tba: 'Transfer base page register B to accumulator',
+  tsy: 'Transfer stack pointer high byte to Y', tys: 'Transfer Y to stack pointer high byte',
+  cle: 'Clear extend disable flag (16 bit stack)', see: 'Set extend disable flag (8 bit stack)',
+  neg: 'Negate accumulator (two\'s complement)', asr: 'Arithmetic shift right (bit 7 kept)',
+  inw: 'Increment 16 bit word in zero page', dew: 'Decrement 16 bit word in zero page',
+  asw: 'Arithmetic shift left 16 bit word', row: 'Rotate 16 bit word left',
+  phw: 'Push 16 bit word (immediate or from memory) on stack', rtn: 'Return from subroutine and drop #n bytes of stack',
+  bsr: 'Branch to subroutine (16 bit relative)', aug: '4 byte no operation (reserved)',
+  lbpl: 'Branch on plus (16 bit relative)', lbmi: 'Branch on minus (16 bit relative)', lbvc: 'Branch on overflow clear (16 bit relative)',
+  lbvs: 'Branch on overflow set (16 bit relative)', lbra: 'Branch always (16 bit relative)', lbcc: 'Branch on carry clear (16 bit relative)',
+  lbcs: 'Branch on carry set (16 bit relative)', lbne: 'Branch on not equal (16 bit relative)', lbeq: 'Branch on equal (16 bit relative)',
+  map: 'Set the memory map from A X Y Z (4502)', eom: 'End of mapping sequence: interrupts again (the NOP opcode)',
+  // 45gs02 (the MEGA65): the quad instructions on Q = A X Y Z
+  ldq: 'Load Q (A X Y Z, 32 bits)', stq: 'Store Q (A X Y Z, 32 bits)', adcq: 'Add with carry to Q (32 bits)', sbcq: 'Subtract with borrow from Q (32 bits)',
+  andq: 'AND memory with Q (32 bits)', orq: 'OR memory with Q (32 bits)', eorq: 'Exclusive OR memory with Q (32 bits)',
+  cpq: 'Compare memory with Q (32 bits)', cmpq: 'Compare memory with Q (32 bits)', bitq: 'Test bits of memory with Q (32 bits)',
+  aslq: 'Shift Q or memory left (32 bits)', lsrq: 'Shift Q or memory right (32 bits)', rolq: 'Rotate Q or memory left (32 bits)',
+  rorq: 'Rotate Q or memory right (32 bits)', asrq: 'Arithmetic shift Q or memory right (32 bits)', inq: 'Increment Q or memory (32 bits)',
+  deq: 'Decrement Q or memory (32 bits)',
 };
 for (let n = 0; n < 8; n++) {
   MNEMONIC_DESC[`rmb${n}`] = `Reset (clear) bit ${n} of zero page location`;
@@ -106,7 +128,7 @@ for (let n = 0; n < 8; n++) {
   MNEMONIC_DESC[`bbs${n}`] = `Branch if bit ${n} of zero page location is set`;
 }
 
-const MODE_ORDER = ['imp', 'imm', 'zp', 'zpx', 'zpy', 'abs', 'absx', 'absy', 'ind', 'indx', 'indy', 'izp', 'iax', 'rel', 'zprel'];
+const MODE_ORDER = ['imp', 'imm', 'imm16', 'zp', 'zpx', 'zpy', 'abs', 'absx', 'absy', 'ind', 'indx', 'indy', 'izp', 'izpz', 'izl', 'izlq', 'sry', 'iax', 'rel', 'rel16', 'zprel'];
 
 function buildMnemonics(table) {
   return Object.keys(table).sort().map(name => ({
@@ -203,9 +225,9 @@ export const CPUS = [
   { name: 'w65c02', desc: 'WDC 65C02: r65c02 plus wai/stp', supported: true },
   { name: 'z80', desc: 'Zilog Z80 (Zilog syntax, incl. undocumented ixh/ixl/iyh/iyl and sll)', supported: true },
   { name: '65816', desc: 'WDC 65816 (SNES): long addresses, [dp], sr,s, mvn/mvp; !al/!as and !rl/!rs set the size of immediates', supported: true },
-  { name: '65ce02', desc: 'CSG 65CE02 (not supported by nerdsuite)', supported: false },
-  { name: '4502', desc: 'CSG 4502 (not supported by nerdsuite)', supported: false },
-  { name: 'm65', desc: 'MEGA65 CPU (not supported by nerdsuite)', supported: false },
+  { name: '65ce02', desc: 'CSG 65CE02: r65c02 plus the Z register, (zp),z, 16 bit branches (lbxx, bsr), word instructions', supported: true },
+  { name: '4502', desc: 'CSG 4502 (C65): 65ce02 with map and eom', supported: true },
+  { name: 'm65', desc: 'MEGA65 45GS02: 4502 plus [zp],z (32 bit pointers) and the quad instructions on Q (ldq, adcq ...)', supported: true },
   { name: 'c64dtv2', desc: 'C64 DTV2 CPU (not supported by nerdsuite)', supported: false },
 ];
 

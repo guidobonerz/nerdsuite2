@@ -11,11 +11,11 @@
 //              trs80 (a TRS-80 /CMD file)
 //   start      where a new assembler program starts; basicStart: the BASIC area (a SYS line)
 //   emulator   { kind: 'vice', machine } - run and debug in VICE (the binary monitor);
-//              { kind: 'emu', platform }  - run in Altirra, WinAPE, Stella … (backend/emu)
+//              { kind: 'emu', platform }  - run in Altirra, WinAPE, Stella, Xemu … (backend/emu)
 //   commodore  the graphics editors (VIC-II and SID) make data for it as it is
 
 export const FAMILIES = [
-  { id: 'commodore', name: 'Commodore', desc: '6502/6510 · VIC-II, VIC, TED · BASIC 2 to 7 · run and debug in VICE' },
+  { id: 'commodore', name: 'Commodore', desc: '6502/6510, 45GS02 · VIC-II, VIC, TED, VIC-IV · BASIC 2 to 7, BASIC 65 · run and debug in VICE, the MEGA65 in Xemu' },
   { id: 'atari', name: 'Atari', desc: '6502 · ANTIC/GTIA, TIA · Atari BASIC · run in Altirra or Stella' },
   { id: 'amstrad', name: 'Amstrad / Schneider', desc: 'Z80 · Gate Array · Locomotive BASIC · run in WinAPE' },
   { id: 'nintendo', name: 'Nintendo', desc: '6502 (2A03) and 65816 · PPU, APU · run in Mesen, FCEUX, bsnes or Snes9x' },
@@ -37,6 +37,8 @@ export const PLATFORMS = [
     start: 0x1010, basicStart: 0x1001, screen: 0x0c00, border: 0xff19, emulator: { kind: 'vice', machine: 'plus4', args: ['-model', 'c16'] }, commodore: true },
   { id: 'pet', family: 'commodore', name: 'PET / CBM 4032', short: 'PET', cpu: '6502', cpus: ['6502'], basic: ['v4', 'v2'], format: 'cbm', ext: 'prg',
     start: 0x0410, basicStart: 0x0401, screen: 0x8000, border: null, emulator: { kind: 'vice', machine: 'pet' }, commodore: true },
+  { id: 'mega65', family: 'commodore', name: 'MEGA65', short: 'MEGA65', cpu: 'm65', cpus: ['m65', '4502', '65ce02', '6502'], basic: ['v65'], format: 'cbm', ext: 'prg',
+    start: 0x2010, basicStart: 0x2001, screen: 0x0800, border: 0xd020, emulator: { kind: 'emu', platform: 'mega65' }, commodore: true },
   { id: 'atari8', family: 'atari', name: 'Atari 800 XL / 130 XE', short: 'Atari XL', cpu: '6502', cpus: ['6502'], basic: ['atari', 'turbo'], format: 'xex', ext: 'xex',
     start: 0x2000, basicStart: null, screen: null, border: 0xd01a, emulator: { kind: 'emu', platform: 'atari' } },
   { id: 'vcs', family: 'atari', name: 'Atari 2600 (VCS)', short: 'VCS', cpu: '6502', cpus: ['6502'], basic: [], format: 'plain', ext: 'a26',
@@ -61,6 +63,8 @@ export const PLATFORMS = [
 
 export const platformOf = id => PLATFORMS.find(p => p.id === id) ?? PLATFORMS[0];
 export const canDebug = p => p.emulator.kind === 'vice';
+// the name of a CPU as the machine's papers write it (m65 is ACME's name of the MEGA65's 45GS02)
+export const cpuName = cpu => ({ m65: '45GS02' }[cpu] ?? cpu.toUpperCase());
 
 const hex = n => '$' + n.toString(16).padStart(4, '0');
 
@@ -407,6 +411,7 @@ export function starterBasic(p, dialect) {
     case 'trs80': return '10 REM NERDSUITE DEMO IN LEVEL II BASIC\n20 CLS\n30 PRINT @ 448, "HELLO FROM NERDSUITE!"\n40 FOR X=0 TO 127:SET(X,30+10*SIN(X/10)):NEXT\n50 GOTO 50\n';
     case 'bbc': return '10 REM nerdsuite demo in BBC BASIC\n20 MODE 2\n30 PRINT "Hello from nerdsuite!"\n40 FOR C%=1 TO 7:GCOL 0,C%:MOVE 640,512:DRAW 640+400*COS(C%*PI/4),512+400*SIN(C%*PI/4):NEXT\n50 END\n';
     case 'loco': return '10 REM nerdsuite demo in Locomotive BASIC\n20 MODE 1\n30 PRINT "Hello from nerdsuite!"\n40 FOR i=0 TO 26:BORDER i:FOR d=1 TO 50:NEXT:NEXT\n50 GOTO 40\n';
+    case 'v65': return '10 rem nerdsuite demo in basic 65\n20 background 0:border 0:print "{clr}hello from nerdsuite!"\n30 play "o4 qcdefgab"\n40 for i=0 to 15:border i:for d=1 to 2000:next:next\n50 goto 40\n';
     case 'v7': return '10 rem nerdsuite demo in basic 7.0\n20 color 0,1:color 4,1\n30 print "{clr}hello from nerdsuite!"\n40 for i=1 to 16:color 4,i:sleep 1:next\n50 goto 40\n';
     case 'v35': return '10 rem nerdsuite demo in basic 3.5\n20 print "{clr}hello from nerdsuite!"\n30 for i=1 to 16:color 4,i,3:for d=1 to 200:next:next\n40 goto 30\n';
     case 'v4': return '10 rem nerdsuite demo in basic 4.0\n20 print "{clr}hello from nerdsuite!"\n30 goto 30\n';
@@ -416,7 +421,7 @@ export function starterBasic(p, dialect) {
 
 // the first KickAssembler program of a Commodore machine (KickAssembler writes .prg files)
 export function starterKick(p, name = 'main') {
-  const basic = { c64: '', c128: '.const BASIC = $1c01\n', vic20: '.const BASIC = $1001\n', plus4: '.const BASIC = $1001\n', c16: '.const BASIC = $1001\n', pet: '.const BASIC = $0401\n' }[p.id] ?? '';
+  const basic = { c64: '', c128: '.const BASIC = $1c01\n', vic20: '.const BASIC = $1001\n', plus4: '.const BASIC = $1001\n', c16: '.const BASIC = $1001\n', pet: '.const BASIC = $0401\n', mega65: '.const BASIC = $2001\n' }[p.id] ?? '';
   const upstart = p.id === 'c64' ? 'BasicUpstart2(start)              // 10 SYS start, at $0801' : `*= BASIC "Basic"\n:BasicUpstart(start)               // 10 SYS start`;
   return `// ${name}.asm - a program for the ${p.name}, assembled with KickAssembler
 // Build: Ctrl+B · Run: F5 · Debug: F6 (click a line number for a breakpoint)

@@ -1,6 +1,6 @@
 # NerdSuite
 
-An IDE in the browser for programs of 8 bit machines: the Commodore family (C64, C128, VIC-20, Plus/4, C16, PET), the Atari 8-bit computers and the Atari 2600, the Amstrad / Schneider CPC, the Nintendo NES and SNES, the Sinclair ZX81, the Tandy TRS-80 Model I and III and the BBC Micro. It has the layout, look and feel of [yopaca](../yopaca) and takes its graphics editors and its composer; in place of yopaca's story it has a tabbed code editor for assembler and BASIC, and a debugger that drives the VICE emulator.
+An IDE in the browser for programs of 8 bit machines: the Commodore family (C64, C128, VIC-20, Plus/4, C16, PET) and the MEGA65, the Atari 8-bit computers and the Atari 2600, the Amstrad / Schneider CPC, the Nintendo NES and SNES, the Sinclair ZX81, the Tandy TRS-80 Model I and III and the BBC Micro. It has the layout, look and feel of [yopaca](../yopaca) and takes its graphics editors and its composer; in place of yopaca's story it has a tabbed code editor for assembler and BASIC, and a debugger that drives the VICE emulator.
 
 | View | What it does |
 |---|---|

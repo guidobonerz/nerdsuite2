@@ -11,13 +11,13 @@ import { asciiToPetscii, parseControlCode, charOut, PETSCII_BYTE } from './basic
 import { h, signal } from './pui.js';
 
 // the Commodore dialects are written in lower case (petcat); Atari BASIC and Locomotive BASIC in capitals
-const COMMODORE = new Set(['v2', 'v4', 'v35', 'v7', 'simons']);
+const COMMODORE = new Set(['v2', 'v4', 'v35', 'v7', 'v65', 'simons']);
 export const keywordCase = (dialect, name) => (COMMODORE.has(dialect) ? name.toLowerCase() : name.toUpperCase());
 export const isCommodore = dialect => COMMODORE.has(dialect);
 import { spans, filterItems, setCustomGlyphs } from './codeeditor.js';
 import { charsetByKey, charsetFileSize, onCharsetChange } from './chr.js';
 import { hasFile, onProjectChange } from './project.js';
-import { keywordDoc, registerDoc, registersLike } from './cpudocs.js';
+import { keywordDoc, registerDoc, registersLike, basicHover } from './cpudocs.js';
 import { labelOf, scanLabels } from './basic/labels.js';
 import { activeLines, isDirective } from './basic/preprocess.js';
 
@@ -396,6 +396,8 @@ export function basicLanguage(ctx = {}) {
   const labelMode = () => !!ctx.labelMode?.();
   return {
     comment: 'rem',
+    // Shift and the mouse: the keyword (its syntax, its token) or the address under the pointer
+    hover: (text, at) => basicHover(text, at, { keywords: keywords(dialect()), dialect: DIALECTS[dialect()]?.name ?? dialect(), machine: ctx.machine?.() }),
     commentRe: /^(\s*\d*\s*)rem ?/i,
     commentLine: l => l.replace(/^(\s*\d*\s*)/, '$1rem '),
     autoTrigger: ch => ch === '{',

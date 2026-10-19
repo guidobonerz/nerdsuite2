@@ -5,7 +5,7 @@
 // projectWizard() -> Promise<{ name, platform, files: Map path -> bytes, main } | null>
 
 import { h, signal, dialog, field, select, checkbox, icon } from './pui.js';
-import { FAMILIES, PLATFORMS, platformOf, canDebug, starterAsm, starterBasic, starterKick } from './platforms.js';
+import { FAMILIES, PLATFORMS, platformOf, canDebug, cpuName, starterAsm, starterBasic, starterKick } from './platforms.js';
 import { includeSource, hasMemoryMap } from './memmap.js';
 import { DIALECTS } from './basic/dialects.js';
 import { CHARGEN } from './chargen.js';
@@ -136,7 +136,7 @@ export function projectWizard() {
           h('span', { class: 'ns-wiz-platform__text' },
             h('span', { class: 'ns-wiz-platform__name' }, x.name),
             h('span', { class: 'ns-wiz-platform__desc', 'data-i18n': 'off' },
-              `${x.cpu.toUpperCase()} · ${x.basic.length ? x.basic.map(d => DIALECTS[d]?.name ?? d).join(', ') : 'no BASIC'} · .${x.ext} · ${canDebug(x) ? 'run and debug in VICE' : `run in ${{ atari: 'Altirra', vcs: 'Stella', cpc: 'WinAPE', nes: 'Mesen or FCEUX', snes: 'Mesen, bsnes or Snes9x', zx81: 'EightyOne or ZEsarUX', trs80: 'trs80gp or MAME', bbc: 'BeebEm, b2 or MAME' }[x.emulator.platform] ?? 'its emulator'}`}`))))),
+              `${cpuName(x.cpu)} · ${x.basic.length ? x.basic.map(d => DIALECTS[d]?.name ?? d).join(', ') : 'no BASIC'} · .${x.ext} · ${canDebug(x) ? 'run and debug in VICE' : `run in ${{ atari: 'Altirra', vcs: 'Stella', cpc: 'WinAPE', nes: 'Mesen or FCEUX', snes: 'Mesen, bsnes or Snes9x', zx81: 'EightyOne or ZEsarUX', trs80: 'trs80gp or MAME', bbc: 'BeebEm, b2 or MAME', mega65: 'Xemu' }[x.emulator.platform] ?? 'its emulator'}`}`))))),
       ];
     },
     project: () => {
@@ -145,7 +145,7 @@ export function projectWizard() {
         field({ label: 'Name of the project', value: v.name, mono: true, oninput: t => set({ name: t.trim() }) }),
         h('div', { class: 'md-label-large' }, 'The programs to start with'),
         h('div', { class: 'ns-wiz-prog' },
-          checkbox(`Assembler (${x.cpu.toUpperCase()})`, v.asm, on => set({ asm: on, main: on ? v.main : 'basic' })),
+          checkbox(`Assembler (${cpuName(x.cpu)})`, v.asm, on => set({ asm: on, main: on ? v.main : 'basic' })),
           v.asm && field({ label: 'File name (.asm)', value: v.asmName, mono: true, dense: true, oninput: t => set({ asmName: t.trim() }) }),
           v.asm && select({ label: 'Assembler', value: x.family === 'commodore' ? v.assembler : 'acme', dense: true,
             options: x.family === 'commodore' ? [{ value: 'acme', label: 'ACME' }, { value: 'kickass', label: 'KickAssembler (Java, on the server)' }] : [{ value: 'acme', label: 'ACME' }],

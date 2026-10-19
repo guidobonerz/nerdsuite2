@@ -22,6 +22,7 @@ export const MODE_LEN = {
   imp: 1, imm: 2, zp: 2, zpx: 2, zpy: 2, abs: 3, absx: 3, absy: 3,
   ind: 3, indx: 2, indy: 2, izp: 2, iax: 3, rel: 2, zprel: 3,
   sr: 2, sry: 2, ildp: 2, ildpy: 2, long: 4, longx: 4, ialong: 3, rell: 3, blk: 3,
+  izpz: 2, imm16: 3, rel16: 3, izl: 2, izlq: 2,
 };
 
 /** Human readable operand syntax per addressing mode. */
@@ -29,6 +30,15 @@ export const MODE_SYNTAX = {
   imp: '', imm: '#imm', zp: 'zp', zpx: 'zp,x', zpy: 'zp,y', abs: 'abs', absx: 'abs,x', absy: 'abs,y',
   ind: '(abs)', indx: '(zp,x)', indy: '(zp),y', izp: '(zp)', iax: '(abs,x)', rel: 'rel', zprel: 'zp,rel',
   sr: 'sr,s', sry: '(sr,s),y', ildp: '[dp]', ildpy: '[dp],y', long: 'long', longx: 'long,x', ialong: '[abs]', rell: 'rel16', blk: 'src,dst',
+  izpz: '(zp),z', imm16: '#imm16', rel16: 'rel16', izl: '[zp],z', izlq: '[zp]',
+};
+
+// the opcode of a mode with its prefixes (the 45GS02: $42 $42 quad, $ea long): one number, the
+// prefixes in its high bytes - 0x4242eab2 is $42 $42 $ea $b2
+export const opBytes = op => {
+  const out = [];
+  for (; op > 0xff; op = Math.floor(op / 256)) out.unshift(op % 256);
+  return [op, ...out];
 };
 
 function parseTable(src) {
@@ -203,6 +213,77 @@ stp imp=db
 xba imp=eb
 xce imp=fb
 `);
+// the 65CE02: the R65C02 with a Z register, 16 bit branches (ACME: lbxx, bsr), (zp) is (zp),z
+const CE02 = parseTable(`
+ora izpz=12
+and izpz=32
+eor izpz=52
+adc izpz=72
+sta izpz=92 sry=82
+lda izpz=b2 sry=e2
+cmp izpz=d2
+sbc izpz=f2
+cle imp=02
+see imp=03
+tsy imp=0b
+inz imp=1b
+tys imp=2b
+dez imp=3b
+neg imp=42
+asr imp=43 zp=44 zpx=54
+taz imp=4b
+tab imp=5b
+tza imp=6b
+tba imp=7b
+phz imp=db
+plz imp=fb
+jsr ind=22 iax=23
+rtn imm=62
+bsr rel16=63
+lbpl rel16=13
+lbmi rel16=33
+lbvc rel16=53
+lbvs rel16=73
+lbra rel16=83
+lbcc rel16=93
+lbcs rel16=b3
+lbne rel16=d3
+lbeq rel16=f3
+sty absx=8b
+stx absy=9b
+ldz imm=a3 abs=ab absx=bb
+cpz imm=c2 zp=d4 abs=dc
+dew zp=c3
+inw zp=e3
+asw abs=cb
+row abs=eb
+phw imm16=f4 abs=fc
+`);
+const AUG = parseTable('aug imp=5c');
+// the 4502 (the C65, the MEGA65): aug is map, nop is eom too
+const MAP = parseTable('map imp=5c\neom imp=ea');
+// the 45GS02 (the MEGA65, ACME's m65): [zp],z with 32 bit pointers ($ea), the quad instructions on Q
+// = A X Y Z ($42 $42), both ($42 $42 $ea)
+let m65 = '';
+for (const [m, q, op] of [['ora', 'orq', 0x00], ['and', 'andq', 0x20], ['eor', 'eorq', 0x40], ['adc', 'adcq', 0x60], ['sta', 'stq', 0x80], ['lda', 'ldq', 0xa0], ['cmp', 'cpq', 0xc0], ['sbc', 'sbcq', 0xe0]]) {
+  const x = n => (op + n).toString(16).padStart(2, '0');
+  m65 += `${m} izl=ea${x(0x12)}\n${q} zp=4242${x(5)} abs=4242${x(0x0d)} izp=4242${x(0x12)} izlq=4242ea${x(0x12)}\n`;
+}
+for (const [q, op] of [['aslq', 0x00], ['rolq', 0x20], ['lsrq', 0x40], ['rorq', 0x60]]) {
+  const x = n => (op + n).toString(16).padStart(2, '0');
+  m65 += `${q} imp=4242${x(0x0a)} zp=4242${x(6)} zpx=4242${x(0x16)} abs=4242${x(0x0e)} absx=4242${x(0x1e)}\n`;
+}
+const M65 = parseTable(`${m65}
+cmpq zp=4242c5 abs=4242cd izp=4242d2 izlq=4242ead2
+inq imp=42421a zp=4242e6 zpx=4242f6 abs=4242ee absx=4242fe
+deq imp=42423a zp=4242c6 zpx=4242d6 abs=4242ce absx=4242de
+bitq zp=424224 abs=42422c
+asrq imp=424243 zp=424244 zpx=424254
+`);
+// the 65C02 without (zp): the 65CE02 has (zp),z there
+const C02_CE = Object.fromEntries(Object.entries(C02).map(([m, modes]) => [m, Object.fromEntries(Object.entries(modes).filter(([mode]) => mode !== 'izp'))])
+  .filter(([, modes]) => Object.keys(modes).length));
+
 // the immediates that are 16 bits with !al (the accumulator) or !rl (the index registers)
 const IMM_A = new Set(['lda', 'adc', 'and', 'bit', 'cmp', 'eor', 'ora', 'sbc']);
 const IMM_X = new Set(['ldx', 'ldy', 'cpx', 'cpy']);
@@ -220,29 +301,38 @@ const CPU_PARTS = {
   r65c02: [BASE, C02, R02],
   w65c02: [BASE, C02, R02, W02],
   '65816': [BASE, C02, W816],
+  '65ce02': [BASE, C02_CE, R02, CE02, AUG],
+  '4502': [BASE, C02_CE, R02, CE02, MAP],
+  m65: [BASE, C02_CE, R02, CE02, MAP, M65],
 };
 
 /** Opcode tables per (canonical) CPU name: { mnemonic: { mode: opcode } }. */
 export const CPU_TABLES = {};
 const REVERSE = {};
+// the opcodes with prefixes (the 45GS02): opcode number -> { m, mode }
+const PREFIXED = {};
 for (const [cpu, parts] of Object.entries(CPU_PARTS)) {
   CPU_TABLES[cpu] = mergeTables(parts);
-  const rev = new Array(256).fill(null);
+  const rev = new Array(256).fill(null), pre = new Map();
   for (const t of parts) {
     for (const [m, modes] of Object.entries(t)) {
-      for (const [mode, op] of Object.entries(modes)) if (!rev[op]) rev[op] = { m, mode };
+      for (const [mode, op] of Object.entries(modes)) {
+        if (op > 0xff) { if (!pre.has(op)) pre.set(op, { m, mode }); } else if (!rev[op]) rev[op] = { m, mode };
+      }
     }
   }
   REVERSE[cpu] = rev;
+  PREFIXED[cpu] = pre;
 }
 
 /** Accepted !cpu names -> canonical table name. */
 export const CPU_ALIASES = {
   '6502': '6502', nmos6502: 'nmos6502', '6510': 'nmos6502',
   '65c02': '65c02', r65c02: 'r65c02', w65c02: 'w65c02', '65816': '65816',
+  '65ce02': '65ce02', '4502': '4502', m65: 'm65',
 };
 CPU_ALIASES.z80 = 'z80';
-const UNSUPPORTED_CPUS = new Set(['65ce02', '4502', 'm65', 'c64dtv2']);
+const UNSUPPORTED_CPUS = new Set(['c64dtv2']);
 /** Output formats accepted by !to and opts.format (zx81: a .p file, trs80: a /CMD file). */
 export const OUTPUT_FORMATS = ['cbm', 'plain', 'apple', 'xex', 'amsdos', 'zx81', 'trs80'];
 const ALL_MNEMONICS = new Set();
@@ -1200,7 +1290,7 @@ class Asm {
   setCpu(name) {
     const k = CPU_ALIASES[name];
     if (!k) {
-      if (UNSUPPORTED_CPUS.has(name)) this.err(`Unsupported CPU "${name}" (supported: 6502, nmos6502/6510, 65c02, r65c02, w65c02, 65816, z80).`);
+      if (UNSUPPORTED_CPUS.has(name)) this.err(`Unsupported CPU "${name}" (supported: 6502, nmos6502/6510, 65c02, r65c02, w65c02, 65816, 65ce02, 4502, m65, z80).`);
       this.err(`Unknown processor "${name}".`);
     }
     this.cpuName = name;
@@ -1246,6 +1336,7 @@ class Asm {
     else {
       const c = r.peek();
       const w816 = this.cpuKey === '65816';
+      const ce02 = ['65ce02', '4502', 'm65'].includes(this.cpuKey);
       if (c === '#') { r.pos++; mode = 'imm'; v = this.expr(r); }
       else if (tab.blk !== undefined) {               // mvn / mvp: the source bank, the target bank
         v = this.expr(r);
@@ -1262,6 +1353,14 @@ class Asm {
         r.pos++;
         r.ws();
         if (r.peek() === ',') { r.pos++; this.readIndex(r, ['y']); mode = 'ildpy'; } else mode = 'ildp';
+      } else if (this.cpuKey === 'm65' && c === '[') {    // [zp],z and the quad's [zp]: 32 bit pointers
+        r.pos++;
+        v = this.expr(r);
+        r.ws();
+        if (r.peek() !== ']') this.err("Missing ']'.");
+        r.pos++;
+        r.ws();
+        if (r.peek() === ',') { r.pos++; this.readIndex(r, ['z']); mode = 'izl'; } else mode = 'izlq';
       } else if (tab.zprel !== undefined) {
         v = this.expr(r);
         r.ws();
@@ -1275,7 +1374,7 @@ class Asm {
         r.ws();
         if (r.peek() === ',') {
           r.pos++;
-          const ix = this.readIndex(r, w816 ? ['x', 's'] : ['x']);
+          const ix = this.readIndex(r, w816 || ce02 ? ['x', 's'] : ['x']);
           r.ws();
           if (r.peek() !== ')') this.err("Missing ')'.");
           r.pos++;
@@ -1285,7 +1384,7 @@ class Asm {
           if (r.peek() !== ')') this.err("Missing ')'.");
           r.pos++;
           r.ws();
-          if (r.peek() === ',') { r.pos++; this.readIndex(r, ['y']); mode = 'indy'; } else mode = 'ind';
+          if (r.peek() === ',') { r.pos++; mode = this.readIndex(r, ce02 ? ['y', 'z'] : ['y']) === 'z' ? 'izpz' : 'indy'; } else mode = 'ind';
         }
       } else {
         v = this.expr(r);
@@ -1296,25 +1395,42 @@ class Asm {
     this.encode(mn, tab, mode, v, v2, force);
   }
 
+  // an opcode with its prefixes (opBytes)
+  emitOp(op) {
+    for (const b of opBytes(op)) this.emit(b);
+  }
+
   encode(mn, tab, mode, v, v2, force) {
     switch (mode) {
       case 'imp':
         if (tab.imp === undefined) this.err(ILLEGAL_MODE);
-        this.emit(tab.imp);
+        this.emitOp(tab.imp);
         return;
+      case 'izpz': case 'izl': case 'izlq': {         // (zp),z [zp],z [zp] - a quad takes [zp] and [zp],z
+        const op = mode === 'izpz' ? tab.izpz : tab[mode] ?? (mode === 'izl' ? tab.izlq : undefined);
+        if (op === undefined || force >= 2) this.err(ILLEGAL_MODE);
+        this.emitOp(op);
+        this.emitVal(this.toInt(v), 1, v, true);
+        return;
+      }
       case 'imm': {
+        if (tab.imm16 !== undefined) {                 // phw #imm16
+          this.emitOp(tab.imm16);
+          this.emitVal(this.toInt(v), 2, v);
+          return;
+        }
         if (tab.imm === undefined || force >= 3) this.err(ILLEGAL_MODE);
         const n = this.toInt(v);
         const wide = this.cpuKey === '65816' && ((IMM_A.has(mn) && this.al) || (IMM_X.has(mn) && this.rl));
         if (force === 2 && !wide) this.err(ILLEGAL_MODE);
-        this.emit(tab.imm);
+        this.emitOp(tab.imm);
         this.emitVal(n, wide ? 2 : 1, v);
         return;
       }
       case 'zprel': {
         const pc = this.pcVal();
         const zp = this.toInt(v);
-        this.emit(tab.zprel);
+        this.emitOp(tab.zprel);
         this.emitVal(zp, 1, v, true);
         this.branch(v2, pc + 3);
         return;
@@ -1322,14 +1438,21 @@ class Asm {
       case 'plain':
         if (tab.rel !== undefined) {
           const pc = this.pcVal();
-          this.emit(tab.rel);
+          this.emitOp(tab.rel);
           this.branch(v, pc + 2);
+          return;
+        }
+        if (tab.rel16 !== undefined) {                  // the 65CE02's lbxx and bsr: from the third byte of the instruction
+          const pc = this.pcVal(), off = this.toInt(v) - (pc + 2);
+          if (!v.u && (off < -32768 || off > 32767)) this.error(`Target out of range (${off}).`);
+          this.emitOp(tab.rel16);
+          this.emitVal(((off % 65536) + 65536) % 65536, 2, v, true);
           return;
         }
         if (tab.rell !== undefined) {                   // brl, per: 16 bits relative
           const pc = this.pcVal(), off = this.toInt(v) - (pc + 3);
           if (!v.u && (off < -32768 || off > 32767)) this.error(`Target out of range (${off}).`);
-          this.emit(tab.rell);
+          this.emitOp(tab.rell);
           this.emitVal(((off % 65536) + 65536) % 65536, 2, v, true);
           return;
         }
@@ -1337,17 +1460,17 @@ class Asm {
       case 'x': return this.sized(tab.zpx, tab.absx, v, force, tab.longx);
       case 'sr': case 'sry': case 'ildpy':
         if (tab[mode] === undefined) this.err(ILLEGAL_MODE);
-        this.emit(tab[mode]);
+        this.emitOp(tab[mode]);
         this.emitVal(this.toInt(v), 1, v, true);
         return;
       case 'ildp':
-        if (tab.ialong !== undefined) { this.emit(tab.ialong); this.emitVal(this.toInt(v), 2, v, true); return; }
+        if (tab.ialong !== undefined) { this.emitOp(tab.ialong); this.emitVal(this.toInt(v), 2, v, true); return; }
         if (tab.ildp === undefined) this.err(ILLEGAL_MODE);
-        this.emit(tab.ildp);
+        this.emitOp(tab.ildp);
         this.emitVal(this.toInt(v), 1, v, true);
         return;
       case 'blk':
-        this.emit(tab.blk);
+        this.emitOp(tab.blk);
         this.emitVal(this.toInt(v2), 1, v2, true);       // the target bank first, as the CPU wants it
         this.emitVal(this.toInt(v), 1, v, true);
         return;
@@ -1370,7 +1493,7 @@ class Asm {
     const n = this.toInt(v);
     // 24 bits: asked for (+3, six hex digits), too big for 16 bits, or the only mode (jsl, jml)
     if (longOp !== undefined && (force === 3 || (!force && (v.force === 3 || (!v.u && n > 0xffff))) || (zpOp === undefined && absOp === undefined))) {
-      this.emit(longOp);
+      this.emitOp(longOp);
       this.emitVal(n, 3, v, true);
       return;
     }
@@ -1384,11 +1507,11 @@ class Asm {
     else zp = !(v.u || v.e || v.force >= 2) && n >= 0 && n <= 255;
     if (zp) {
       if (zpOp === undefined) this.err(ILLEGAL_MODE);
-      this.emit(zpOp);
+      this.emitOp(zpOp);
       this.emitVal(n, 1, v, true);
     } else {
       if (absOp === undefined) this.err(ILLEGAL_MODE);
-      this.emit(absOp);
+      this.emitOp(absOp);
       this.emitVal(n, 2, v, true);
     }
   }
@@ -2157,7 +2280,7 @@ export function assemble(main, files, opts = {}) {
 export function disassemble(bytes, addr = 0, cpu = '6502', flags = { m8: true, x8: true }) {
   const key = CPU_ALIASES[String(cpu).toLowerCase()] || '6502';
   if (key === 'z80') return disassembleZ80(bytes, addr);
-  const rev = REVERSE[key];
+  const rev = REVERSE[key], pre = PREFIXED[key];
   const out = [];
   const h2 = n => '$' + hex2(n);
   const h4 = n => '$' + hex4(n & 0xffff);
@@ -2165,8 +2288,15 @@ export function disassemble(bytes, addr = 0, cpu = '6502', flags = { m8: true, x
   while (i < bytes.length) {
     const a = (addr + i) & 0xffff;
     const op = bytes[i];
-    const e = rev[op];
-    let len = e ? MODE_LEN[e.mode] : 1;
+    let e = rev[op], np = 0;
+    // the 45GS02: $42 $42 ($ea) and $ea before an opcode - the longest prefix that makes an instruction
+    for (const n of pre.size ? [3, 2, 1] : []) {
+      if (i + n >= bytes.length) continue;
+      let code = 0;
+      for (let k = 0; k <= n; k++) code = code * 256 + bytes[i + k];
+      if (pre.has(code)) { e = pre.get(code); np = n; break; }
+    }
+    let len = e ? MODE_LEN[e.mode] + np : 1;
     const wide = key === '65816' && e?.mode === 'imm' && ((IMM_A.has(e.m) && !flags.m8) || (IMM_X.has(e.m) && !flags.x8));
     if (wide) len = 3;
     if (!e || i + len > bytes.length) {
@@ -2174,7 +2304,8 @@ export function disassemble(bytes, addr = 0, cpu = '6502', flags = { m8: true, x
       i++;
       continue;
     }
-    const b = Array.from(bytes.slice(i, i + len));
+    const all = Array.from(bytes.slice(i, i + len));
+    const b = all.slice(np);
     const w = b[1] | (b[2] << 8);
     const h6 = n => '$' + n.toString(16).padStart(6, '0');
     const rel = (o, base) => h4(base + (o < 128 ? o : o - 256));
@@ -2204,8 +2335,13 @@ export function disassemble(bytes, addr = 0, cpu = '6502', flags = { m8: true, x
       case 'ialong': operand = '[' + h4(w) + ']'; break;
       case 'rell': operand = h4(a + 3 + (w < 32768 ? w : w - 65536)); break;
       case 'blk': operand = h2(b[2]) + ',' + h2(b[1]); break;
+      case 'izpz': operand = '(' + h2(b[1]) + '),z'; break;
+      case 'imm16': operand = '#' + h4(w); break;
+      case 'rel16': operand = h4(a + 2 + (w < 32768 ? w : w - 65536)); break;
+      case 'izl': operand = '[' + h2(b[1]) + '],z'; break;
+      case 'izlq': operand = '[' + h2(b[1]) + ']'; break;
     }
-    const item = { addr: a, bytes: b, text: operand ? `${e.m} ${operand}` : e.m };
+    const item = { addr: a, bytes: all, text: operand ? `${e.m} ${operand}` : e.m };
     if (key === '65816') {
       item.flags = { ...flags };
       if (e.m === 'rep') { if (b[1] & 0x20) flags.m8 = false; if (b[1] & 0x10) flags.x8 = false; }

@@ -123,6 +123,46 @@ const C128_EXTRA = [
 ];
 const C128 = [...C64.filter(e => !['BASIC_START', 'BASIC_ROM', 'BASIC_COLD', 'KERNAL_ROM', 'KERNAL_IRQ', 'KERNAL_IRQ_EXIT', 'SPRITE_PTRS', 'JIFFIES'].includes(e[1])), ...C128_EXTRA];
 
+// the MEGA65: the C64's chips where the C64 has them, the VIC-III and VIC-IV (unlocked by writing $47, $53
+// to VIC_KEY), four SIDs, the DMA controller, the math unit and the palette; BASIC 65 at $2001, the 80
+// column screen at $0800
+const VIC4 = [
+  [0xd02f, 'VIC_KEY', 'VIC-IV: the knock register ($a5 $96 the VIC-III, $47 $53 the VIC-IV)'],
+  [0xd030, 'VIC3_CTRLA', 'VIC-III: control A - ROM banks at $8000-$e000, the palette in RAM'],
+  [0xd031, 'VIC3_CTRLB', 'VIC-III: control B - 80 columns, fast CPU, attributes, bitplanes, 400 lines, interlace'],
+  [0xd054, 'VIC4_CTRLC', 'VIC-IV: control C - 16 bit chars, full colour chars, the speed of the CPU'],
+  [0xd058, 'VIC4_LINESTEP', 'VIC-IV: the bytes of a screen row', 2],
+  [0xd05e, 'VIC4_CHRCOUNT', 'VIC-IV: the characters of a screen row'],
+  [0xd060, 'VIC4_SCRNPTR', 'VIC-IV: the address of the screen (28 bits)', 4],
+  [0xd064, 'VIC4_COLPTR', 'VIC-IV: the offset of the colour RAM', 2],
+  [0xd068, 'VIC4_CHARPTR', 'VIC-IV: the address of the character set (24 bits)', 3],
+  [0xd06c, 'VIC4_SPRPTRADR', 'VIC-IV: the address of the sprite pointers', 3],
+  [0xd070, 'VIC4_PALSEL', 'VIC-IV: the palette shown, the palette written, the palette of the sprites'],
+  [0xd100, 'PALETTE_RED', 'VIC-IV: the red of the 256 palette entries', 256],
+  [0xd200, 'PALETTE_GREEN', 'VIC-IV: the green of the 256 palette entries', 256],
+  [0xd300, 'PALETTE_BLUE', 'VIC-IV: the blue of the 256 palette entries', 256],
+];
+const MEGA65 = [
+  [0x00, 'CPU_DDR', '45GS02: data direction of the port'], [0x01, 'CPU_PORT', '45GS02: memory configuration (the C64 mode)'],
+  ...CBM_RAM_VECTORS,
+  [0x0800, 'SCREEN_RAM', 'the screen of BASIC 65 (80 x 25)', 2000],
+  [0x2001, 'BASIC_START', 'the start of a BASIC 65 program'],
+  ...VIC2, ...VIC4, ...SID,
+  [0xd420, 'SID2', 'SID 2: its 29 registers as SID 1', 32], [0xd440, 'SID3', 'SID 3: its 29 registers as SID 1', 32], [0xd460, 'SID4', 'SID 4: its 29 registers as SID 1', 32],
+  [0xd640, 'HYPERVISOR_TRAPS', 'Hypervisor: the traps (a write calls the Hypervisor)', 64],
+  [0xd700, 'DMA_ADDRLSB', 'DMA: the low byte of the address of a job list - writing it starts the job'],
+  [0xd701, 'DMA_ADDRMSB', 'DMA: the high byte of the address of a job list'], [0xd702, 'DMA_ADDRBANK', 'DMA: the bank of a job list'],
+  [0xd703, 'DMA_EN018B', 'DMA: F018B job lists (bit 0)'], [0xd704, 'DMA_ADDRMB', 'DMA: the megabyte of a job list'],
+  [0xd705, 'DMA_ETRIG', 'DMA: writing it starts an enhanced job list'],
+  [0xd768, 'MATH_DIVOUT', 'Math unit: the quotient of MULTINA / MULTINB', 8],
+  [0xd770, 'MATH_MULTINA', 'Math unit: the first factor, the dividend', 4], [0xd774, 'MATH_MULTINB', 'Math unit: the second factor, the divisor', 4],
+  [0xd778, 'MATH_MULTOUT', 'Math unit: the product', 8],
+  [0xd800, 'COLOR_RAM', 'the colour RAM (2K here, all 32K at $ff80000)', 2048],
+  ...cia(0xdc00, 1, ['keyboard columns, joystick 2', 'keyboard rows, joystick 1']),
+  ...cia(0xdd00, 2, ['VIC bank, serial bus', 'user port']),
+  ...KERNAL_JUMPS, ...VECTORS_6502,
+];
+
 const VIC20 = [
   ...range(0x9000, ['VIC_HORIZ', 'VIC_VERT', 'VIC_COLUMNS', 'VIC_ROWS', 'VIC_RASTER', 'VIC_MEMORY', 'VIC_LPEN_X', 'VIC_LPEN_Y', 'VIC_POT_X', 'VIC_POT_Y',
     'VIC_BASS', 'VIC_ALTO', 'VIC_SOPRANO', 'VIC_NOISE', 'VIC_VOLUME', 'VIC_COLOR'], 'VIC', {
@@ -365,7 +405,7 @@ const BBC = [
 ];
 
 const MAPS = { c64: C64, c128: C128, vic20: VIC20, plus4: PLUS4, c16: PLUS4, pet: PET, atari8: ATARI8, vcs: VCS, nes: NES, snes: SNES, cpc464: CPC, cpc6128: CPC,
-  zx81: ZX81, trs80: TRS80, trs80m3: TRS80, bbcb: BBC };
+  zx81: ZX81, trs80: TRS80, trs80m3: TRS80, bbcb: BBC, mega65: MEGA65 };
 
 // --- lookups ---------------------------------------------------------------------------------------
 
@@ -560,8 +600,11 @@ const SNES_BITS = {
   ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6, 7].map(k => [`DMAP${k}`, DMAP])),
 };
 
-const BITS = { c64: C64_BITS, c128: C128_BITS, vic20: VIC20_BITS, plus4: PLUS4_BITS, c16: PLUS4_BITS, atari8: ATARI8_BITS, vcs: VCS_BITS, nes: NES_BITS, snes: SNES_BITS };
-const COLOR_NAMES = { c64: C64_COLORS, c128: C64_COLORS, vic20: VIC20_COLORS, plus4: TED_COLORS, c16: TED_COLORS };
+const MEGA65_BITS = { ...C64_BITS,
+  VIC3_CTRLB: [[0, 0, 'interlace'], [1, 1, 'monochrome'], [2, 2, '1280 pixels'], [3, 3, '400 lines'], [4, 4, 'bitplanes'], [5, 5, 'attributes'], [6, 6, 'fast CPU'], [7, 7, '80 columns']],
+};
+const BITS = { mega65: MEGA65_BITS, c64: C64_BITS, c128: C128_BITS, vic20: VIC20_BITS, plus4: PLUS4_BITS, c16: PLUS4_BITS, atari8: ATARI8_BITS, vcs: VCS_BITS, nes: NES_BITS, snes: SNES_BITS };
+const COLOR_NAMES = { mega65: C64_COLORS, c64: C64_COLORS, c128: C64_COLORS, vic20: VIC20_COLORS, plus4: TED_COLORS, c16: TED_COLORS };
 
 // the fields of a register of a machine, or null
 export const bitsOf = (machine, name) => BITS[machine]?.[name] ?? null;

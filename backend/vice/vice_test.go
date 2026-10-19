@@ -459,6 +459,23 @@ func (l *eventLog) wait(t *testing.T, name string, timeout time.Duration, since 
 	return nil
 }
 
+// waitLog: a log event since an index whose text starts so
+func (l *eventLog) waitLog(timeout time.Duration, since int, prefix string) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		l.mu.Lock()
+		for _, e := range l.events[min(since, len(l.events)):] {
+			if e.event == "log" && strings.HasPrefix(fmt.Sprint(e.data["text"]), prefix) {
+				l.mu.Unlock()
+				return true
+			}
+		}
+		l.mu.Unlock()
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
+}
+
 func (l *eventLog) has(name string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -852,16 +869,17 @@ func TestReconnect(t *testing.T) {
 	f := <-started
 	mark := events.len()
 	f.dropConnections()
+	// the log of the reconnect first: until the bridge has seen the drop, the status still says connected
+	check(t, events.waitLog(5*time.Second, mark, "reconnecting"), "no log of the reconnect")
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		r = call(t, base, "GET", "/api/vice/status", nil)
-		if r.obj()["connected"] == true && events.len() > mark {
+		if r.obj()["connected"] == true {
 			break
 		}
 		check(t, time.Now().Before(deadline), "not connected again: %v", r.json)
 		time.Sleep(50 * time.Millisecond)
 	}
-	check(t, events.has("log"), "the log of the reconnect")
 	r = call(t, base, "GET", "/api/vice/registers", nil)
 	check(t, r.status == 200, "registers after the reconnect %v", r.json)
 }

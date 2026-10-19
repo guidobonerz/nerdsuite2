@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { assemble, disassemble, CPU_TABLES, MODE_LEN } from '../public/js/acme/acme.js';
+import { assemble, disassemble, CPU_TABLES, MODE_LEN, opBytes } from '../public/js/acme/acme.js';
 import { MNEMONICS, PSEUDO_OPS, CPUS } from '../public/js/acme/docs.js';
 
 // ---------------------------------------------------------------- helpers
@@ -66,6 +66,7 @@ const OPERAND = {
   sr: ['$12,s', [0x12]], sry: ['($12,s),y', [0x12]], ildp: ['[$12]', [0x12]], ildpy: ['[$12],y', [0x12]],
   long: ['$123456', [0x56, 0x34, 0x12]], longx: ['$123456,x', [0x56, 0x34, 0x12]], ialong: ['[$1234]', [0x34, 0x12]],
   rell: ['* + $1234', [0x31, 0x12]], blk: ['$01, $02', [0x02, 0x01]],
+  izpz: ['($12),z', [0x12]], imm16: ['#$1234', [0x34, 0x12]], rel16: ['* + $1234', [0x32, 0x12]], izl: ['[$12],z', [0x12]], izlq: ['[$12]', [0x12]],
 };
 
 describe('opcode encoding', () => {
@@ -155,11 +156,11 @@ describe('opcode encoding', () => {
   });
 
   test('unsupported CPUs report an error', () => {
-    const r = asm('!cpu 65ce02\n');
+    const r = asm('!cpu c64dtv2\n');
     assert.equal(r.ok, false);
-    assert.match(r.errors[0].msg, /Unsupported CPU "65ce02"/);
+    assert.match(r.errors[0].msg, /Unsupported CPU "c64dtv2"/);
     assert.equal(asm('*=$1000\n!al\n').ok, false);
-    assert.equal(asm('*=$1000\nnop', { cpu: 'm65' }).ok, false);
+    assert.equal(asm('*=$1000\nnop', { cpu: 'c64dtv2' }).ok, false);
   });
 
   test('size postfixes +1 / +2', () => {
@@ -673,7 +674,8 @@ describe('disassemble', () => {
   const textFor = (mn, mode) => {
     const op = { imp: '', imm: '#$12', zp: '$12', zpx: '$12,x', zpy: '$12,y', abs: '$1234', absx: '$1234,x', absy: '$1234,y',
       ind: '($1234)', indx: '($12,x)', indy: '($12),y', izp: '($12)', iax: '($1234,x)', rel: '$1012', zprel: '$12,$1013',
-      sr: '$12,s', sry: '($12,s),y', ildp: '[$12]', ildpy: '[$12],y', long: '$123456', longx: '$123456,x', ialong: '[$1234]', rell: '$2234', blk: '$01,$02' }[mode];
+      sr: '$12,s', sry: '($12,s),y', ildp: '[$12]', ildpy: '[$12],y', long: '$123456', longx: '$123456,x', ialong: '[$1234]', rell: '$2234', blk: '$01,$02',
+      izpz: '($12),z', imm16: '#$1234', rel16: '$2234', izl: '[$12],z', izlq: '[$12]' }[mode];
     return op ? `${mn} ${op}` : mn;
   };
 
@@ -685,8 +687,9 @@ describe('disassemble', () => {
           const r = asm(`!cpu ${cpu}\n*= $1000\n ${mn} ${operand}\n`);
           assert.deepEqual(r.errors, [], `${cpu} ${mn} ${operand}`);
           const code = r.output.slice(2);
-          assert.equal(code.length, MODE_LEN[mode]);
-          assert.equal(code[0], op);
+          const ops = opBytes(op);                     // the 45GS02: the opcode with its prefixes
+          assert.equal(code.length, MODE_LEN[mode] + ops.length - 1);
+          assert.deepEqual(Array.from(code.slice(0, ops.length)), ops);
           const d = disassemble(code, 0x1000, cpu);
           assert.equal(d.length, 1);
           assert.equal(d[0].addr, 0x1000);

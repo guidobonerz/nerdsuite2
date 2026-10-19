@@ -316,6 +316,36 @@ export function CodeEditor(o) {
     document.querySelector('.ns-complete .md-menu__item--active')?.scrollIntoView({ block: 'nearest' });
   });
 
+  // Shift and the mouse: the whole doc of the word under the pointer (lang.hover) - while Shift is held over
+  // the text; Shift alone shows it after a moment, so typing capitals does not
+  const tip = useRef(null), pointer = useRef(null), tipKey = useRef(''), tipTimer = useRef(0);
+  tip.current ??= floater();
+  const hideTip = () => { clearTimeout(tipTimer.current); if (tipKey.current) { tip.current.close(); tipKey.current = ''; } };
+  const showTip = useRef(null);
+  showTip.current = () => {
+    const el = ta.current, p = pointer.current;
+    if (!el || !p || !o.lang?.hover) return hideTip();
+    const r = o.lang.hover(el.value, offsetAt(el, p.x, p.y));
+    if (!r?.docs?.length) return hideTip();
+    const key = `${r.from}:${r.to}`;
+    if (key === tipKey.current) return;
+    tipKey.current = key;
+    close();
+    tip.current.show(h('div', { class: 'md-menu code-complete ns-complete ns-complete--info ns-hover', role: 'tooltip', 'data-i18n': 'off' },
+      h('div', { class: 'ns-complete__docs' }, r.docs.map(docView))), caretRect(el, el.value, r.from));
+  };
+  useLayoutEffect(() => {
+    const down = e => {
+      if (e.key !== 'Shift') { hideTip(); return; }
+      if (!e.repeat && pointer.current) { clearTimeout(tipTimer.current); tipTimer.current = setTimeout(() => showTip.current(), 250); }
+    };
+    const up = e => { if (e.key === 'Shift') hideTip(); };
+    addEventListener('keydown', down, true);
+    addEventListener('keyup', up, true);
+    addEventListener('blur', hideTip);
+    return () => { removeEventListener('keydown', down, true); removeEventListener('keyup', up, true); removeEventListener('blur', hideTip); hideTip(); tip.current.close(); };
+  }, []);
+
   const numbers = [];
   for (let i = 1; i <= lines; i++) {
     const err = o.errors?.get(i);
@@ -390,7 +420,12 @@ export function CodeEditor(o) {
           const typed = e.data ?? '';
           suggest(e.target, !!(typed && o.lang?.autoTrigger?.(typed, e.target.value, e.target.selectionStart)));
         },
-        onscroll: () => { sync(); if (list) close(); },
+        onscroll: () => { sync(); if (list) close(); hideTip(); },
+        onmousemove: e => {
+          pointer.current = { x: e.clientX, y: e.clientY };
+          if (e.shiftKey && !e.buttons) showTip.current(); else if (tipKey.current) hideTip();
+        },
+        onmouseleave: () => { pointer.current = null; hideTip(); },
         onclick: e => {
           close();
           caretMoved(e.target);
@@ -465,6 +500,7 @@ function docView(d) {
   return h('div', { class: 'ns-doc' },
     h('div', { class: 'ns-doc__head' }, h('span', { class: 'ns-doc__title' }, d.title), d.desc && h('span', { class: 'ns-doc__desc' }, d.desc)),
     d.syntax && h('code', { class: 'ns-doc__syntax' }, d.syntax),
+    d.operation && h('div', { class: 'ns-doc__op' }, h('span', { class: 'ns-doc__flags-label' }, 'does'), h('code', {}, d.operation)),
     d.params?.length > 0 && h('div', { class: 'ns-doc__params' }, d.params.map((p, k) => h('div', { class: `ns-doc__param ${k === Math.min(d.active ?? -1, d.params.length - 1) ? 'ns-doc__param--on' : ''}` },
       h('code', {}, p.name), p.desc && h('span', {}, p.desc)))),
     d.modes?.length > 0 && h('table', { class: 'ns-doc__modes' },

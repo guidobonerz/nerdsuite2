@@ -150,6 +150,13 @@ func TestBbcPlansAndSsd(t *testing.T) {
 	planFails(t, runRequest{Platform: "bbc", Emulator: "beebem", Name: "x", Data: []byte{1}, Format: "bbc-bin"}, `load address`)
 }
 
+func TestPlanMega65(t *testing.T) {
+	m := mustPlan(t, runRequest{Platform: "mega65", Emulator: "xemu", Name: "demo", Data: []byte{0x01, 0x20, 0x60}, Format: "cbm"})
+	eq(t, "xemu args", m.Args, []string{"-prg", m.File})
+	matches(t, "xemu file", m.File, `demo\.prg$`)
+	planFails(t, runRequest{Platform: "mega65", Emulator: "xemu", Name: "x", Data: []byte{1}, Format: "prg"}, `no \.prg`)
+}
+
 func TestFormatCommandQuotes(t *testing.T) {
 	eq(t, "command", core.FormatCommand("a b.exe", []string{"/x", `ENTER "H:A"~`}), `"a b.exe" /x "ENTER \"H:A\"~"`)
 }
@@ -171,7 +178,7 @@ func TestStatusAndRunChecks(t *testing.T) {
 			t.Errorf("%s/%s: available %v, exe %v", e.ID, e.Platform, e.Available, e.Exe)
 		}
 	}
-	for _, id := range []string{"altirra/atari", "atari800/atari", "winape/cpc", "caprice/cpc", "mame/cpc", "stella/vcs", "mame/vcs", "mesen/nes", "fceux/nes", "mesen/snes", "bsnes/snes", "snes9x/snes", "eightyone/zx81", "zesarux/zx81", "trs80gp/trs80", "mame/trs80", "beebem/bbc", "b2/bbc", "mame/bbc"} {
+	for _, id := range []string{"altirra/atari", "atari800/atari", "winape/cpc", "caprice/cpc", "mame/cpc", "stella/vcs", "mame/vcs", "mesen/nes", "fceux/nes", "mesen/snes", "bsnes/snes", "snes9x/snes", "eightyone/zx81", "zesarux/zx81", "trs80gp/trs80", "mame/trs80", "beebem/bbc", "b2/bbc", "mame/bbc", "xemu/mega65"} {
 		if !ids[id] {
 			t.Errorf("status lacks %s", id)
 		}
@@ -200,12 +207,12 @@ func TestEmulatorDefinitions(t *testing.T) {
 			t.Errorf("%s: name %q", d.ID, d.Name)
 		}
 	}
-	eq(t, "order", order, []string{"altirra", "atari800", "winape", "caprice", "stella", "mesen", "fceux", "nestopia", "bsnes", "snes9x", "eightyone", "zesarux", "trs80gp", "beebem", "b2", "mame"})
+	eq(t, "order", order, []string{"altirra", "atari800", "winape", "caprice", "stella", "mesen", "fceux", "nestopia", "bsnes", "snes9x", "eightyone", "zesarux", "trs80gp", "beebem", "b2", "xemu", "mame"})
 	var platforms []string
 	for _, p := range Preferred {
 		platforms = append(platforms, p.ID)
 	}
-	eq(t, "platforms", platforms, []string{"atari", "cpc", "vcs", "nes", "snes", "zx81", "trs80", "bbc"})
+	eq(t, "platforms", platforms, []string{"atari", "cpc", "vcs", "nes", "snes", "zx81", "trs80", "bbc", "mega65"})
 }
 
 func TestHTTPRoutes(t *testing.T) {
@@ -230,7 +237,7 @@ func TestHTTPRoutes(t *testing.T) {
 	if code, v := do("POST", "/api/emu/run", "{"); code != 400 || v["error"] != "invalid JSON body" {
 		t.Errorf("bad JSON: %d %v", code, v)
 	}
-	if code, v := do("POST", "/api/emu/run", `{"platform":"zx"}`); code != 400 || v["error"] != "unknown platform 'zx' (one of atari, cpc, vcs, nes, snes, zx81, trs80, bbc)" {
+	if code, v := do("POST", "/api/emu/run", `{"platform":"zx"}`); code != 400 || v["error"] != "unknown platform 'zx' (one of atari, cpc, vcs, nes, snes, zx81, trs80, bbc, mega65)" {
 		t.Errorf("unknown platform: %d %v", code, v)
 	}
 	if code, v := do("POST", "/api/emu/run", `{"platform":"atari","format":"xex","data":5}`); code != 400 || v["error"] != "'data' must be a base64 string" {
