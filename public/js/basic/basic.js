@@ -20,8 +20,8 @@ function getDialect(id) {
   if (cache.has(id)) return cache.get(id);
   const d = DIALECTS[id];
   if (!d) throw new Error(`Unknown BASIC dialect "${id}"`);
-  // petcat: common keyword range is $80-$CB, or $80-$FD for BASIC 3.5/7.0 ($CE excluded on 7.0)
-  const maxCommon = id === 'v35' || id === 'v7' ? 0xfd : 0xcb;
+  // petcat: common keyword range is $80-$CB, or $80-$FD for BASIC 3.5/7.0/65 ($CE excluded on 7.0 and 65)
+  const maxCommon = id === 'v35' || id === 'v7' || id === 'v65' ? 0xfd : 0xcb;
   const prefixed = []; // matched first (Simons' $64xx, 7.0 $FExx/$CExx); petcat tries $FE before $CE
   const common = [];
   const ext = []; // extension tokens > common range (BASIC 4.0 $CC-$DA)

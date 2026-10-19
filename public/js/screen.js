@@ -428,6 +428,9 @@ export function createScreenEditor(el, store, actions, bar) {
     if (!rebuildFrame) rebuildFrame = requestAnimationFrame(rebuild);
   }
 
+  // the screen shown condensed: wider than 40 columns, on a machine whose screen has 80 (video.js: cols80)
+  const condensed = info => !!video().cols80 && info.width > 40;
+
   function rebuild() {
     cancelAnimationFrame(rebuildFrame);
     rebuildFrame = 0;
@@ -435,6 +438,8 @@ export function createScreenEditor(el, store, actions, bar) {
     if (!rm || !ui) return;
     if (dirartOn()) st.code &= 0x7f;              // the directory art: no reverse brush
     const info = placeInfo(store.game, rm);
+    // condensed: the cells drawn at a multiple of 16, half of it wide on the page - sharp pixels
+    if (condensed(info)) st.cell = Math.max(16, Math.round(st.cell / 16) * 16);
     const s = st.cell;
     base ??= document.createElement('canvas');
     base.width = info.width * s;
@@ -521,6 +526,11 @@ export function createScreenEditor(el, store, actions, bar) {
     const s = st.cell;
     // a new size allocates the canvas anew; else reset it: cleared, with the default state
     if (canvas.width !== base.width || canvas.height !== base.height) { canvas.width = base.width; canvas.height = base.height; }
+    // a screen of more than 40 columns on a machine that shows 80 (the MEGA65): its cells half as wide, as
+    // the machine shows them (the pointer maps by the size on the page: cellAt, canvasXY)
+    const narrow = condensed(info);
+    canvas.style.width = narrow ? `${canvas.width / 2}px` : '';
+    canvas.style.height = narrow ? `${canvas.height}px` : '';
     const ctx = canvas.getContext('2d');
     if (ctx.reset) ctx.reset(); else canvas.width = base.width;
     ctx.imageSmoothingEnabled = false;
@@ -1026,7 +1036,7 @@ export function createScreenEditor(el, store, actions, bar) {
   }
 
   // pixel mode zooms closer: up to 8 screen pixels a C64 pixel, the canvas scrolls in its box
-  const zoomSteps = () => (st.pixels ? [8, 10, 12, 16, 20, 24, 32, 48, 64] : [8, 10, 12, 16, 20, 24, 32]);
+  const zoomSteps = () => (ui?.info && condensed(ui.info) ? [16, 32, 48, 64] : st.pixels ? [8, 10, 12, 16, 20, 24, 32, 48, 64] : [8, 10, 12, 16, 20, 24, 32]);
   function zoom(dir) {
     const steps = zoomSteps();
     const k = steps.indexOf(st.cell);
@@ -1862,8 +1872,8 @@ export function createScreenEditor(el, store, actions, bar) {
 
   // the corner or the edge under the pointer: { corner } or { edge } (the corner it starts at), or null
   function walkHit(e) {
-    const r = ui.canvas.getBoundingClientRect(), k = ui.canvas.width / r.width;
-    const p = [(e.clientX - r.left) * k, (e.clientY - r.top) * k], near = 7 * k;
+    const r = ui.canvas.getBoundingClientRect(), k = ui.canvas.width / r.width, ky = ui.canvas.height / r.height;
+    const p = [(e.clientX - r.left) * k, (e.clientY - r.top) * ky], near = 7 * k;
     const pts = walkCorners().map(walkPx);
     const corner = pts.findIndex(q => Math.hypot(q[0] - p[0], q[1] - p[1]) <= near);
     if (corner >= 0) return { corner };

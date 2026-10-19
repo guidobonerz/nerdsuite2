@@ -68,7 +68,8 @@ const asciiFont = () => font256(k => ascii(k));
 // what each machine shows: 'vice' / 'winape' - read from there, else the font made here
 const MADE = { zx81, trs80, trs80m3: trs80, bbcb: asciiFont, cpc464: asciiFont, cpc6128: asciiFont, atari8: () => { const out = new Uint8Array(2048); out.set(atariFont()); return out; } };
 const READ = new Set(['vic20', 'pet', 'plus4', 'c16', 'c128', 'cpc464', 'cpc6128']);
-const COMMODORE = new Set(['c64', 'c128', 'vic20', 'pet', 'plus4', 'c16']);
+// the MEGA65: the C64's character set (its own ROM is not one the server reads)
+const COMMODORE = new Set(['c64', 'c128', 'vic20', 'pet', 'plus4', 'c16', 'mega65']);
 
 const loaded = new Map();        // machine -> { kind, data, source }: read from an emulator
 const made = new Map();          // machine -> the font made here

@@ -1,5 +1,5 @@
 // Package emu: the launcher of the emulators that are not VICE (Atari 8-bit, Amstrad CPC, Atari 2600,
-// NES, SNES, ZX81, TRS-80, BBC Micro) and the disc images it builds for them (CPC .dsk, BBC .ssd).
+// NES, SNES, ZX81, TRS-80, BBC Micro, MEGA65) and the disc images it builds for them (CPC .dsk, BBC .ssd).
 //
 //	GET  /api/emu/status -> { emulators: [{ id, platform, exe, available, running }] }
 //	POST /api/emu/run { platform, emulator?, name, data /*base64*/, format, load?, exec?, machine? }
@@ -20,6 +20,8 @@
 // zesarux --machine ZX81 x.p, trs80gp -m1|-m3 x.cmd|x.bas, mame trs80l2|trs80m3 -quik x.cmd,
 // BeebEm x.ssd, b2 -0 x.ssd -b, mame bbcb -flop1 x.ssd -autoboot_command "*EXEC !BOOT\n" - the
 // .ssd has the boot option 3: !BOOT does *RUN of the program or holds the BASIC listing and RUN.
+// MEGA65 (from Xemu's options, not installed here, not tried): xmega65 -prg x.prg - Xemu loads the program
+// into memory, as a C64 or a MEGA65 one by its load address ($0801 / $2001), and starts it.
 // Not installed here (command lines from their docs): atari800 -run x.xex,
 // cap32 -a "run\"PROG" x.dsk, mame cpc6128 -flop1 x.dsk -autoboot_command ..., mame a2600 -cart x.a26.
 //
@@ -61,6 +63,7 @@ var Emulators = []core.ToolDef{
 	emulator(core.ToolDef{ID: "trs80gp", Platforms: []string{"trs80"}, Env: "TRS80GP", Defaults: []string{}, Dir: apps("trs80gp"), DirNames: []string{"trs80gp.exe"}, Path: []string{"trs80gp"}}),
 	emulator(core.ToolDef{ID: "beebem", Platforms: []string{"bbc"}, Env: "BEEBEM", Defaults: []string{}, Dir: apps("beebem"), DirNames: []string{"BeebEm.exe"}, Path: []string{"BeebEm", "beebem"}}),
 	emulator(core.ToolDef{ID: "b2", Platforms: []string{"bbc"}, Env: "B2", Defaults: []string{}, Dir: apps("b2"), DirNames: []string{"b2.exe", "b2_Debug.exe"}, Path: []string{"b2"}}),
+	emulator(core.ToolDef{ID: "xemu", Platforms: []string{"mega65"}, Env: "XEMU", Defaults: []string{}, Dir: apps("xemu"), DirNames: []string{"xmega65.exe", "xmega65", "xemu-xmega65"}, Path: []string{"xmega65", "xemu-xmega65"}}),
 	emulator(core.ToolDef{ID: "mame", Platforms: []string{"cpc", "vcs", "nes", "snes", "trs80", "bbc"}, Env: "MAME",
 		Defaults: []string{apps("mame", "mame64.exe"), apps("mame", "mame.exe")},
 		Path:     []string{"mame64", "mame"}}),
@@ -82,6 +85,7 @@ var Preferred = []PlatformEmulators{
 	{"zx81", []string{"eightyone", "zesarux"}},
 	{"trs80", []string{"trs80gp", "mame"}},
 	{"bbc", []string{"beebem", "b2", "mame"}},
+	{"mega65", []string{"xemu"}},
 }
 
 // formats: the program formats each platform runs, in the order of the platforms
@@ -97,6 +101,7 @@ var formats = []struct {
 	{"zx81", []string{"zx81-p"}},
 	{"trs80", []string{"trs80-cmd", "trs80-ascii"}},
 	{"bbc", []string{"bbc-bin", "bbc-ascii"}},
+	{"mega65", []string{"cbm", "prg"}},
 }
 
 func formatsOf(platform string) ([]string, bool) {
@@ -362,6 +367,13 @@ func planRun(r runRequest, tmpDir, exe string) (plan, error) {
 		default:
 			args = []string{"bbcb", "-flop1", file, "-autoboot_delay", "2", "-autoboot_command", `*EXEC !BOOT\n`, "-window"}
 		}
+	case "mega65/xemu":
+		if len(data) < 3 {
+			return plan{}, core.Errorf(400, "no .prg (a load address and a program)")
+		}
+		file = filepath.Join(dir, strings.ToLower(stem)+".prg")
+		files = append(files, planFile{file, data})
+		args = []string{"-prg", file}
 	default:
 		return plan{}, core.Errorf(400, "emulator '%s' does not support platform '%s'", r.Emulator, r.Platform)
 	}

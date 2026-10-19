@@ -24,12 +24,18 @@
 //             (GRAPHICS 8 and 15: the colour registers of the whole picture, 192 rows - ataribitmap.js)
 //   sprite    { cols, rows, block } of a sprite: the C64's 24 x 21 (64 bytes) unless it says, an Atari player 8 x 16
 //   screen    { cols, rows } of the text screen (the NES and SNES: the tile map)
+//   cols80    the machine shows 80 columns: a screen wider than 40 is drawn condensed, its cells half as wide
 
 const hex = (r, g, b) => '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
 
 // the C64 (the colours of yopaca's editors, c64.js)
 export const VIC2_COLORS = ['#000000', '#ffffff', '#880000', '#aaffee', '#cc44cc', '#00cc55', '#0000aa', '#eeee77',
   '#dd8855', '#664400', '#ff7777', '#333333', '#777777', '#aaff66', '#0088ff', '#bbbbbb'];
+
+// the MEGA65 (VIC-IV): its system palette, 4 bits of red, green and blue each - the first 16 entries, the
+// C64's colours as the MEGA65 shows them (the MEGA65 wiki: Default color palette)
+const MEGA65 = [[0, 0, 0], [15, 15, 15], [15, 0, 0], [0, 15, 15], [15, 0, 15], [0, 15, 0], [0, 0, 15], [15, 15, 0],
+  [15, 6, 0], [10, 4, 0], [15, 7, 7], [5, 5, 5], [8, 8, 8], [9, 15, 9], [9, 9, 15], [11, 11, 11]].map(([r, g, b]) => hex(r * 17, g * 17, b * 17));
 
 // the VIC-20 (6561): 16 colours, as VICE 3.10 shows them (a screenshot of xvic)
 const VIC = ['#000000', '#ffffff', '#c13c0e', '#80ffff', '#e747e6', '#68ff90', '#6532f3', '#ffff4e',
@@ -92,6 +98,7 @@ const SNES = Array.from({ length: 128 }, (_, k) => hex([0, 85, 170, 255][k >> 5]
 
 export const PALETTES = {
   vic2: { name: 'VIC-II', colors: VIC2_COLORS, note: '16 colours' },
+  mega65: { name: 'VIC-IV (MEGA65)', colors: MEGA65, note: 'the 16 colours of the system palette (4 bits of red, green and blue each)' },
   vic: { name: 'VIC (6561)', colors: VIC, note: '16 colours (VICE); the colour of a character is one of the first 8' },
   ted: { name: 'TED', colors: TED, note: '121 colours (VICE): 16 hues in 8 luminances' },
   pet: { name: 'PET', colors: PET, note: 'green on black (VICE)' },
@@ -135,6 +142,9 @@ const PROFILES = {
   vic20: { editors: only('screen', 'chars', 'tiles'), palette: 'vic', cells: 'vic', ecm: false, bitmap: null, screen: { cols: 22, rows: 23 } },
   plus4: TEDM,
   c16: TEDM,
+  // the MEGA65: the VIC-II's modes (sprites, multicolor, ECM, a Koala bitmap) in its palette, BASIC 65's
+  // 80 x 25 screen
+  mega65: { ...C64, palette: 'mega65', screen: { cols: 80, rows: 25 }, cols80: true },
   pet: { editors: only('screen', 'tiles'), palette: 'pet', cells: 'mono', ecm: false, bitmap: null, screen: { cols: 40, rows: 25 } },
   atari8: { ...ATARI, editors: ALL, screen: { cols: 40, rows: 24 } },
   vcs: { ...ATARI, cells: 'free', editors: only('sprites'), palette: 'tia', start: { bg: 0, border: 0, text: 7 }, koala: null, screen: null },

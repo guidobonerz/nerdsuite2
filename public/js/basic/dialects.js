@@ -216,6 +216,100 @@ const V7FE = [
   k([0xfe, 0x26], 'slow', 'SLOW', 'Switches back to 1 MHz.'),
 ];
 
+// ---------------------------------------------------------------- BASIC 65 (MEGA65): BASIC 7.0 with new names of
+// some tokens, its own $CE xx and $FE xx (the tables of petcat -w65, VICE)
+const V65_RENAMED = [
+  k(0xcc, 'rgraphic', 'RGRAPHIC(screen, param)', 'Returns a setting of a graphics screen (open, width, height, depth ...).'),
+  k(0xcd, 'rcolor', 'RCOLOR(source)', 'Returns the colour of a colour source (0 background, 1 text, 2 highlight, 3 border).'),
+  k(0xd0, 'rpen', 'RPEN(n)', 'Returns the colour of a drawing pen.'),
+  k(0xe3, 'paste', 'PASTE x, y, w, h', 'Pastes the cut buffer onto the graphics screen.'),
+  k(0xe4, 'cut', 'CUT x, y, w, h', 'Copies an area of the graphics screen into the cut buffer and clears it.'),
+  k(0xe5, 'line', 'LINE x1, y1[, x2, y2 ...]', 'Draws a point or connected lines with the current pen.'),
+  k(0xe6, 'merge', 'MERGE "name"[, Dd][, Uu]', 'Adds the lines of a program on disk to the program in memory.'),
+  k(0xe9, 'xor', 'XOR(a, b)', 'Returns the bitwise exclusive OR of two values.'),
+  k(0xee, 'dir', 'DIR ["pattern"][, Dd][, Uu]', 'Lists the directory of a disk (DIRECTORY is DIR ECTORY).'),
+];
+const V65CE = [
+  k([0xce, 0x02], 'pot', 'POT(n)', 'Reads paddle n (1-4): 0-255, +256 when its fire button is pressed.'),
+  k([0xce, 0x03], 'bump', 'BUMP(n)', 'Returns the sprites involved in collisions (1 = sprite-sprite, 2 = sprite-data).'),
+  k([0xce, 0x04], 'lpen', 'LPEN(n)', 'Reads the light pen position: x (0) or y (1).'),
+  k([0xce, 0x05], 'rsppos', 'RSPPOS(sprite, n)', 'Returns a sprite\'s X (0), Y (1) position or speed (2).'),
+  k([0xce, 0x06], 'rsprite', 'RSPRITE(sprite, n)', 'Returns a sprite attribute (enabled, color, priority, expansion, mode).'),
+  k([0xce, 0x07], 'rspcolor', 'RSPCOLOR(n)', 'Returns sprite multicolor 1 or 2.'),
+  k([0xce, 0x08], 'log10', 'LOG10(x)', 'Returns the logarithm of x to the base 10.'),
+  k([0xce, 0x09], 'rwindow', 'RWINDOW(n)', 'Returns the window height (0), width (1) or screen width 40/80 (2).'),
+  k([0xce, 0x0a], 'pointer', 'POINTER(var)', 'Returns the address of a variable.'),
+  k([0xce, 0x0b], 'mod', 'MOD(a, b)', 'Returns the remainder of a divided by b.'),
+  k([0xce, 0x0c], 'pixel', 'PIXEL(x, y)', 'Returns the colour of a pixel of the graphics screen.'),
+  k([0xce, 0x0d], 'rpalette', 'RPALETTE(screen, index, rgb)', 'Returns the red (0), green (1) or blue (2) part of a palette entry.'),
+  k([0xce, 0x0e], 'rspeed', 'RSPEED(n)', 'Returns the speed of the CPU in MHz.'),
+  k([0xce, 0x0f], 'rplay', 'RPLAY(voice)', 'Returns whether PLAY still plays on a voice.'),
+  k([0xce, 0x10], 'wpeek', 'WPEEK(addr)', 'Returns the 16 bit word at an address.'),
+];
+const fe = (b, name, syntax, desc) => k([0xfe, b], name, syntax, desc);
+const V65FE = [
+  ...V7FE.filter(e => e.token[1] <= 0x1b),       // bank ... boot as in BASIC 7.0; from $1c on its own
+  fe(0x1c, 'fread#', 'FREAD# lf, pointer, bytes', 'Reads bytes of an open file into memory.'),
+  fe(0x1d, 'wpoke', 'WPOKE addr, word[, word ...]', 'Writes 16 bit words into memory.'),
+  fe(0x1e, 'fwrite#', 'FWRITE# lf, pointer, bytes', 'Writes bytes of memory into an open file.'),
+  fe(0x1f, 'dma', 'DMA command, length, source, sbank, target, tbank[, sub]', 'Runs a job of the DMA controller: copy (0), mix, swap or fill (3).'),
+  fe(0x21, 'edma', 'EDMA command, length, source, target', 'A DMA job with 28 bit addresses.'),
+  fe(0x23, 'mem', 'MEM mask4, mask5', 'Reserves 8K blocks of banks 4 and 5 for the program.'),
+  fe(0x24, 'off', 'OFF', 'Reserved.'),
+  fe(0x25, 'fast', 'FAST [mhz]', 'Switches the CPU to full speed (40 MHz), or to 1, 2 or 3.5 MHz.'),
+  fe(0x26, 'speed', 'SPEED [mhz]', 'Sets the speed of the CPU: 1, 2, 3.5 or 40 MHz.'),
+  fe(0x27, 'type', 'TYPE "name"[, Dd][, Uu]', 'Shows a sequential file of a disk.'),
+  fe(0x28, 'bverify', 'BVERIFY "name"[, Dd][, Uu][, Bbank][, Paddr]', 'Compares memory with a file of a disk.'),
+  fe(0x29, 'ectory', 'DIRECTORY', 'The rest of DIRECTORY: DIR ECTORY.'),
+  fe(0x2a, 'erase', 'ERASE "name"[, Dd][, Uu][, R]', 'Deletes files of a disk.'),
+  fe(0x2b, 'find', 'FIND /text/[, from-to]', 'Lists the lines of the program that contain a text.'),
+  fe(0x2c, 'change', 'CHANGE /old/ TO /new/[, from-to]', 'Replaces a text in the lines of the program.'),
+  fe(0x2d, 'set', 'SET DISK old TO new | SET DEF unit', 'Changes the unit number of a drive, or the default drive.'),
+  fe(0x2e, 'screen', 'SCREEN [CLR|DEF|OPEN|SET|CLOSE] ... | SCREEN w, h, depth', 'Opens, sets and closes graphics screens.'),
+  fe(0x2f, 'polygon', 'POLYGON x, y, xr, yr, sides[, drawsides[, subtend[, angle[, solid]]]]', 'Draws a regular polygon.'),
+  fe(0x30, 'ellipse', 'ELLIPSE x, y, xr, yr[, solid]', 'Draws an ellipse or a circle.'),
+  fe(0x31, 'viewport', 'VIEWPORT CLR | VIEWPORT DEF x, y, w, h', 'Clears or sets the area graphics are drawn in.'),
+  fe(0x32, 'gcopy', 'GCOPY x, y, w, h', 'Copies an area of the graphics screen into the cut buffer.'),
+  fe(0x33, 'pen', 'PEN [pen,] color', 'Sets the colour of a drawing pen.'),
+  fe(0x34, 'palette', 'PALETTE [screen|COLOR] index, red, green, blue | PALETTE RESTORE', 'Sets an entry of the palette (each part 0-15), or the system palette again.'),
+  fe(0x35, 'dmode', 'DMODE jam, complement, stencil, style, thick', 'Sets how graphics are drawn.'),
+  fe(0x36, 'dpat', 'DPAT type[, bytes, pattern ...]', 'Sets the pattern of lines.'),
+  fe(0x37, 'format', 'FORMAT "name", Iid[, Dd][, Uu]', 'Formats a disk (as HEADER).'),
+  fe(0x38, 'genlock', 'GENLOCK ON|OFF[, color ...]', 'Turns the genlock on or off.'),
+  fe(0x39, 'foreground', 'FOREGROUND color', 'Sets the colour of the text.'),
+  fe(0x3b, 'background', 'BACKGROUND color', 'Sets the colour of the background of the screen.'),
+  fe(0x3c, 'border', 'BORDER color', 'Sets the colour of the border.'),
+  fe(0x3d, 'highlight', 'HIGHLIGHT color[, mode]', 'Sets the colour the editor highlights with.'),
+  fe(0x3e, 'mouse', 'MOUSE ON[, port[, sprite[, x, y]]] | MOUSE OFF', 'Turns the mouse pointer (a sprite) on or off.'),
+  fe(0x3f, 'rmouse', 'RMOUSE x, y, buttons', 'Reads the position and the buttons of the mouse into variables.'),
+  fe(0x40, 'disk', 'DISK "command"[, Uu]', 'Sends a command to a drive.'),
+  fe(0x41, 'cursor', 'CURSOR [ON|OFF][, col, row[, style]]', 'Turns the cursor on or off, moves it, sets its style.'),
+  fe(0x42, 'rcursor', 'RCURSOR col, row', 'Reads the position of the cursor into variables.'),
+  fe(0x43, 'loadiff', 'LOADIFF "name"[, Dd][, Uu]', 'Loads an IFF picture onto the graphics screen.'),
+  fe(0x44, 'saveiff', 'SAVEIFF "name"[, Dd][, Uu]', 'Saves the graphics screen as an IFF picture.'),
+  fe(0x45, 'edit', 'EDIT ON|OFF', 'Turns the editing of sequential text files on or off.'),
+  fe(0x46, 'font', 'FONT A|B|C', 'Selects a character set.'),
+  fe(0x47, 'fgoto', 'FGOTO expr', 'Jumps to the line a value names.'),
+  fe(0x48, 'fgosub', 'FGOSUB expr', 'Calls the line a value names as a subroutine.'),
+  fe(0x49, 'mount', 'MOUNT "image.d81"[, Uu]', 'Mounts a disk image of the SD card.'),
+  fe(0x4a, 'freezer', 'FREEZER', 'Opens the freezer.'),
+  fe(0x4b, 'chdir', 'CHDIR "name"[, Uu]', 'Changes the directory of the SD card.'),
+  fe(0x4c, 'dot', 'DOT x, y[, color]', 'Draws a pixel.'),
+  fe(0x4d, 'info', 'INFO', 'Shows information about the system.'),
+  fe(0x4e, 'bit', 'BIT addr, bit, value', 'Sets or clears a bit of a memory address.'),
+  fe(0x4f, 'unlock', 'UNLOCK "name"[, Dd][, Uu]', 'Removes the write protection of a file.'),
+  fe(0x50, 'lock', 'LOCK "name"[, Dd][, Uu]', 'Protects a file against writing.'),
+  fe(0x51, 'mkdir', 'MKDIR "name", Lsize[, Uu]', 'Makes a subdirectory on a disk.'),
+  fe(0x52, '<<', 'a << n', 'Shifts a value n bits to the left.'),
+  fe(0x53, '>>', 'a >> n', 'Shifts a value n bits to the right.'),
+  fe(0x54, 'vsync', 'VSYNC line', 'Waits until the raster reaches a line.'),
+];
+// BASIC 7.0's single byte tokens with the names of BASIC 65
+function forV65(list) {
+  const renamed = new Map(V65_RENAMED.map(e => [e.token, e]));
+  return forV7(list).map(e => renamed.get(e.token) ?? e);
+}
+
 // ---------------------------------------------------------------- Simons' BASIC $64 xx
 const S = (b, name, syntax, desc) => k([0x64, b], name, syntax, desc);
 const SIMONS = [
@@ -794,6 +888,11 @@ export const DIALECTS = {
     name: 'BASIC 7.0', machine: 'c128', start: 0x1c01, output: 'prg',
     machines: { c128: { name: 'Commodore 128', start: 0x1c01 } },
     keywords: [...withRestoreLine(V2), ...forV7(V35X), ...V7CE, ...V7FE, PI],
+  },
+  v65: {
+    name: 'BASIC 65', machine: 'mega65', start: 0x2001, output: 'prg',
+    machines: { mega65: { name: 'MEGA65', start: 0x2001 } },
+    keywords: [...withRestoreLine(V2), ...forV65(V35X), ...V65CE, ...V65FE, PI],
   },
   simons: {
     name: "Simons' BASIC", machine: 'c64', start: 0x0801, output: 'prg',

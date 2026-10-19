@@ -9,7 +9,7 @@
 import { DIRECTIVES, PPDIRECTIVES, LIBRARY } from './kickass/docs.js';
 import { mnemonics } from './lang-acme.js';
 import { spans, filterItems } from './codeeditor.js';
-import { mnemonicDoc, registerDoc, asmHelp } from './cpudocs.js';
+import { mnemonicDoc, registerDoc, asmHelp, asmHover } from './cpudocs.js';
 
 // the CPUs of .cpu, and the macros KickAssembler includes by itself (autoinclude.asm)
 export const CPUS = ['_6502NoIllegals', '_6502', 'dtv', '_65c02'];
@@ -113,6 +113,21 @@ export function kickassLanguage(ctx = {}) {
     comment: '//',
     autoTrigger: ch => ch === '.' || ch === '#',
     highlight,
+    // Shift and the mouse: the instruction, the directive, the number or the symbol under the pointer
+    hover(text, at) {
+      const defs = ctx.definitions?.() ?? [], syms = ctx.symbols?.() ?? [];
+      const directive = w => {
+        const d = [...DIRECTIVES, ...PPDIRECTIVES].find(x => x.name === w);
+        if (d) return { title: d.name, syntax: d.example, desc: d.desc };
+        const l = LIBRARY.find(x => x.name === w);
+        return l ? { title: l.name, syntax: l.kind === 'function' ? `${l.name}(${l.args.join(' / ')})` : l.name, desc: `${l.lib} ${l.kind}` } : null;
+      };
+      return asmHover(text, at, {
+        cpu: cpuOf(ctx.cpu?.()), machine: ctx.machine?.(), isMnemonic, comment: '//', pseudo: directive,
+        valueOf: name => syms.find(s => s.name === name)?.value ?? null,
+        whereOf: name => { const d = defs.find(x => x.name === name); return d ? `${d.kind} ${d.name}${d.value ? ' = ' + d.value : ''} - ${d.file ?? ''}:${d.line}` : null; },
+      });
+    },
     complete(text, caret, { force } = {}) {
       const lineFrom = text.lastIndexOf('\n', caret - 1) + 1;
       const before = text.slice(lineFrom, caret);

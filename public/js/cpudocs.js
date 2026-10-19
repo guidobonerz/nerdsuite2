@@ -8,7 +8,7 @@
 // A doc: { title, syntax?, desc?, params?: [{ name, desc }], active?, modes?: [{ syntax, op, bytes, cycles }],
 //          flags?: { names, effects: [{ name, effect }] }, bits?: [{ where, what }], notes?: [text] }
 
-import { CPU_TABLES, CPU_ALIASES, MODE_SYNTAX } from './acme/acme.js';
+import { CPU_TABLES, CPU_ALIASES, MODE_SYNTAX, opBytes } from './acme/acme.js';
 import { MNEMONICS } from './acme/docs.js';
 import { symbolsFor, describeBits } from './memmap.js';
 
@@ -29,6 +29,11 @@ const F6502 = {
   // 65816
   rep: '*******', sep: '*******', xba: '*----*-', tdc: '*----*-', tsc: '*----*-', tcd: '*----*-', tyx: '*----*-', txy: '*----*-',
   pld: '*----*-', plb: '*----*-', xce: '------*',
+  // 65ce02, 4502, 45gs02 (the quad instructions as the ones they extend)
+  ldz: '*----*-', plz: '*----*-', tza: '*----*-', tba: '*----*-', tsy: '*----*-', inz: '*----*-', dez: '*----*-', cpz: '*----**',
+  neg: '*----*-', asr: '*----**', inw: '*----*-', dew: '*----*-', asw: '*----**', row: '*----**',
+  ldq: '*----*-', adcq: '**---**', sbcq: '**---**', andq: '*----*-', orq: '*----*-', eorq: '*----*-', cpq: '*----**', cmpq: '*----**',
+  aslq: '*----**', lsrq: '0----**', rolq: '*----**', rorq: '*----**', asrq: '*----**', inq: '*----*-', deq: '*----*-', bitq: 'mm---*-',
   // undocumented (NMOS)
   lax: '*----*-', dcp: '*----**', isc: '**---**', slo: '*----**', rla: '*----**', sre: '*----**', rra: '**---**',
   anc: '*----**', asr: '*----**', alr: '*----**', arr: '**---**', sbx: '*----**', axs: '*----**', las: '*----*-', lxa: '*----*-', ane: '*----*-',
@@ -51,7 +56,7 @@ function flags6502(name) {
 const RMW = new Set(['asl', 'lsr', 'rol', 'ror', 'inc', 'dec', 'slo', 'rla', 'sre', 'rra', 'dcp', 'isc', 'trb', 'tsb']);
 const STORE = new Set(['sta', 'stx', 'sty', 'stz', 'sax', 'sha', 'shx', 'shy', 'tas']);
 const BYTES = { imp: 1, imm: 2, zp: 2, zpx: 2, zpy: 2, abs: 3, absx: 3, absy: 3, ind: 3, indx: 2, indy: 2, izp: 2, iax: 3, rel: 2, zprel: 3,
-  sr: 2, sry: 2, ildp: 2, ildpy: 2, long: 4, longx: 4, ialong: 3, rell: 3, blk: 3 };
+  sr: 2, sry: 2, ildp: 2, ildpy: 2, long: 4, longx: 4, ialong: 3, rell: 3, blk: 3, izpz: 2, imm16: 3, rel16: 3, izl: 2, izlq: 2 };
 
 // the cycles of the NMOS 6502 ('4+': one more when a page is crossed) - the 65c02 and 65816 differ a little
 function cycles6502(name, mode) {
@@ -83,17 +88,22 @@ export function mnemonicDoc(cpu, name, desc) {
   const modes = tableOf(cpu)?.[name];
   if (!modes) return null;
   const c816 = /65816/.test(cpu);
+  // the 65CE02 family (the MEGA65's 45GS02): other cycles than the NMOS 6502, the prefixes before the opcode
+  const ce02 = ['65ce02', '4502', 'm65'].includes(CPU_ALIASES[String(cpu).toLowerCase()]);
   const accu = ['asl', 'lsr', 'rol', 'ror', 'inc', 'dec'].includes(name);
   const order = Object.keys(BYTES);
   const rows = Object.entries(modes).sort(([a], [b]) => order.indexOf(a) - order.indexOf(b)).map(([mode, op]) => ({
     syntax: mode === 'imp' ? (accu ? `${name} a` : name) : `${name} ${MODE_SYNTAX[mode] ?? mode}`,
-    op: `$${op.toString(16).padStart(2, '0')}`,
-    bytes: c816 && mode === 'imm' && !['rep', 'sep', 'cop', 'brk', 'wdm'].includes(name) ? '2/3' : BYTES[mode] ?? '',
-    cycles: c816 ? '' : cycles6502(name, mode) ?? '',
+    op: opBytes(op).map(b => `$${b.toString(16).padStart(2, '0')}`).join(' '),
+    bytes: c816 && mode === 'imm' && !['rep', 'sep', 'cop', 'brk', 'wdm'].includes(name) ? '2/3' : BYTES[mode] != null ? BYTES[mode] + opBytes(op).length - 1 : '',
+    cycles: c816 || ce02 ? '' : cycles6502(name, mode) ?? '',
   }));
   const notes = [];
   if (rows.some(r => String(r.cycles).endsWith('+'))) notes.push(modes.rel != null || modes.zprel != null ? '+1 cycle when the branch is taken, +2 when it goes to another page' : '+1 cycle when a page is crossed');
   if (c816) notes.push('65816: #imm is 2 or 3 bytes, as the m and x flags set the width');
+  if (modes.izpz != null) notes.push('(zp),z: the 65CE02 indexes the pointer with Z - (zp) of the 65C02 when Z is 0');
+  if (modes.rel16 != null) notes.push('the offset counts from the third byte of the instruction');
+  if (/q$/.test(name) && opBytes(Object.values(modes)[0])[0] === 0x42) notes.push('Q is A X Y Z, 32 bits: A the low byte, Z the high one');
   if (name === 'bit' && modes.imm != null) notes.push('BIT #imm changes Z only');
   if (name === 'jmp' && modes.ind != null && !/c02|816/.test(cpu)) notes.push('NMOS: jmp ($xxff) reads the high byte from $xx00');
   return { title: name, desc: desc ?? MNEMONICS[cpu]?.find(m => m.name === name)?.desc, modes: rows, flags: flags6502(name), notes };
@@ -261,4 +271,160 @@ export function activeParam(syntax, keyword, rest) {
 export function keywordDoc(k, rest = null) {
   const active = rest == null ? null : typeof rest === 'number' ? rest : activeParam(k.syntax, k.name, rest);
   return { title: k.name.toUpperCase(), syntax: k.syntax, desc: k.desc, params: paramsOf(k.syntax, k.name), active };
+}
+
+// --- Shift and the mouse: the whole doc of what is under the pointer (codeeditor.js: lang.hover) -----------
+
+// what an instruction does: M the operand, -> where the result goes
+const OPERATION = {
+  adc: 'A + M + C -> A, C', sbc: 'A - M - (1 - C) -> A, C (C set: no borrow)', and: 'A AND M -> A', ora: 'A OR M -> A', eor: 'A XOR M -> A',
+  asl: 'C <- [7..0] <- 0', lsr: '0 -> [7..0] -> C', rol: 'C <- [7..0] <- C', ror: 'C -> [7..0] -> C',
+  bit: 'A AND M sets Z; bit 7 of M -> N, bit 6 -> V', cmp: 'A - M sets N Z C (C set: A >= M)', cpx: 'X - M sets N Z C', cpy: 'Y - M sets N Z C',
+  dec: 'M - 1 -> M', inc: 'M + 1 -> M', dex: 'X - 1 -> X', dey: 'Y - 1 -> Y', inx: 'X + 1 -> X', iny: 'Y + 1 -> Y',
+  lda: 'M -> A', ldx: 'M -> X', ldy: 'M -> Y', sta: 'A -> M', stx: 'X -> M', sty: 'Y -> M',
+  tax: 'A -> X', tay: 'A -> Y', txa: 'X -> A', tya: 'Y -> A', tsx: 'S -> X', txs: 'X -> S',
+  pha: 'A -> stack', php: 'P -> stack (B and bit 5 set)', pla: 'stack -> A', plp: 'stack -> P',
+  jmp: 'the address -> PC', jsr: 'PC + 2 -> stack, the address -> PC', rts: 'stack + 1 -> PC', rti: 'stack -> P, stack -> PC',
+  brk: 'PC + 2 -> stack, P -> stack, I set, ($fffe) -> PC', nop: 'nothing',
+  bcc: 'branch if C = 0', bcs: 'branch if C = 1', beq: 'branch if Z = 1', bne: 'branch if Z = 0', bmi: 'branch if N = 1', bpl: 'branch if N = 0',
+  bvc: 'branch if V = 0', bvs: 'branch if V = 1',
+  clc: '0 -> C', sec: '1 -> C', cld: '0 -> D', sed: '1 -> D', cli: '0 -> I', sei: '1 -> I', clv: '0 -> V',
+  // 65c02
+  bra: 'branch always', stz: '0 -> M (the 65CE02: Z -> M)', phx: 'X -> stack', phy: 'Y -> stack', plx: 'stack -> X', ply: 'stack -> Y',
+  trb: 'M AND NOT A -> M; A AND M sets Z', tsb: 'M OR A -> M; A AND M sets Z', wai: 'wait for an interrupt', stp: 'stop until reset',
+  // 65ce02, 4502, 45gs02
+  ldz: 'M -> Z', cpz: 'Z - M sets N Z C', inz: 'Z + 1 -> Z', dez: 'Z - 1 -> Z', phz: 'Z -> stack', plz: 'stack -> Z', taz: 'A -> Z', tza: 'Z -> A',
+  tab: 'A -> B (the base page)', tba: 'B -> A', tsy: 'the high byte of S -> Y', tys: 'Y -> the high byte of S', neg: '0 - A -> A', asr: 'bit 7 -> [7..0] -> C',
+  inw: 'the word M + 1 -> M', dew: 'the word M - 1 -> M', asw: 'C <- the word M <- 0', row: 'C <- the word M <- C',
+  phw: 'a word -> stack', rtn: 'stack + 1 -> PC, then S + n -> S', bsr: 'PC + 2 -> stack, PC + offset -> PC',
+  map: 'A X Y Z -> the memory map; interrupts off until EOM', eom: 'the end of a MAP: interrupts again (the NOP opcode)', aug: 'nothing (4 bytes)',
+  cle: '0 -> E: a 16 bit stack', see: '1 -> E: an 8 bit stack',
+  ldq: 'M (4 bytes) -> Q', stq: 'Q -> M (4 bytes)', adcq: 'Q + M + C -> Q, C', sbcq: 'Q - M - (1 - C) -> Q, C', andq: 'Q AND M -> Q', orq: 'Q OR M -> Q',
+  eorq: 'Q XOR M -> Q', cpq: 'Q - M sets N Z C', cmpq: 'Q - M sets N Z C', bitq: 'Q AND M sets Z; bit 31 of M -> N, bit 30 -> V',
+  aslq: 'C <- Q <- 0', lsrq: '0 -> Q -> C', rolq: 'C <- Q <- C', rorq: 'C -> Q -> C', asrq: 'bit 31 -> Q -> C', inq: 'Q + 1 -> Q', deq: 'Q - 1 -> Q',
+  // 65816
+  xba: 'the high and the low byte of C swap', xce: 'C <-> E (the emulation mode)', rep: 'P AND NOT #n -> P', sep: 'P OR #n -> P',
+  jsl: 'PB, PC + 3 -> stack, the long address -> PB, PC', jml: 'the long address -> PB, PC', rtl: 'stack -> PC + 1, PB', brl: 'branch always, 16 bit offset',
+  mvn: 'C + 1 bytes from X to Y, upwards (the banks: the operands)', mvp: 'C + 1 bytes from X to Y, downwards', tcd: 'C -> D', tdc: 'D -> C', tcs: 'C -> S', tsc: 'S -> C',
+  txy: 'X -> Y', tyx: 'Y -> X', phb: 'DB -> stack', plb: 'stack -> DB', phd: 'D -> stack', pld: 'stack -> D', phk: 'PB -> stack', pea: 'a word -> stack',
+  pei: '(dp) -> stack', per: 'PC + offset -> stack', cop: 'the COP interrupt', wdm: 'nothing (reserved)',
+  // undocumented (NMOS)
+  lax: 'M -> A, X', sax: 'A AND X -> M', dcp: 'M - 1 -> M, then CMP', isc: 'M + 1 -> M, then SBC', slo: 'ASL M, then ORA', rla: 'ROL M, then AND',
+  sre: 'LSR M, then EOR', rra: 'ROR M, then ADC', anc: 'A AND #n -> A, N -> C', alr: 'A AND #n, then LSR A', arr: 'A AND #n, then ROR A', sbx: '(A AND X) - #n -> X',
+  las: 'M AND S -> A, X, S', jam: 'the CPU stops (only a reset goes on)',
+};
+for (const [m, t] of Object.entries({ lbcc: 'C = 0', lbcs: 'C = 1', lbeq: 'Z = 1', lbne: 'Z = 0', lbmi: 'N = 1', lbpl: 'N = 0', lbvc: 'V = 0', lbvs: 'V = 1' })) OPERATION[m] = `branch if ${t}, 16 bit offset`;
+OPERATION.lbra = 'branch always, 16 bit offset';
+for (let n = 0; n < 8; n++) {
+  OPERATION[`rmb${n}`] = `0 -> bit ${n} of M`;
+  OPERATION[`smb${n}`] = `1 -> bit ${n} of M`;
+  OPERATION[`bbr${n}`] = `branch if bit ${n} of M = 0`;
+  OPERATION[`bbs${n}`] = `branch if bit ${n} of M = 1`;
+}
+// what an instruction does; the NMOS 6502's asr is the undocumented ALR
+export const operationOf = (cpu, name) => (name === 'asr' && /^(6510|nmos6502)$/i.test(String(cpu)) ? OPERATION.alr : OPERATION[name] ?? null);
+
+// a value with what it is on the machine: the register or the area it addresses (its bits), as hex, decimal
+// and binary. name: the symbol it is the value of; immediate: #n, a value and no address; decimal: BASIC
+// (decimal first); where: where the symbol is defined
+export function valueDoc(machine, value, { name = null, immediate = false, decimal = false, where = null } = {}) {
+  if (value == null || !Number.isFinite(value)) return null;
+  const v = Math.trunc(value), u = v < 0 ? v & 0xffff : v, wide = u > 0xff;
+  const hexs = `$${u.toString(16).padStart(wide ? 4 : 2, '0')}`;
+  const bin = `%${u.toString(2).padStart(wide ? 16 : 8, '0')}`;
+  const forms = decimal ? `${v} · ${hexs} · ${bin}` : `${hexs} · ${v} · ${bin}`;
+  const s = !immediate && machine && u <= 0xffff ? symbolsFor(machine).at(u) : null;
+  const notes = [where];
+  if (s?.sym.read) notes.push(`read: ${s.sym.read}`);
+  if (immediate && u <= 0xff) notes.push(`low nibble ${u & 15}, high nibble ${u >> 4}`);
+  return {
+    title: name ? `${name} = ${hexs}` : s ? `${s.name}${s.offset ? `+${s.offset}` : ''}` : forms.split(' · ')[0],
+    desc: s ? s.desc : immediate ? 'a value' : name ? 'an address or a value' : 'an address (no register of the machine)',
+    syntax: forms,
+    bits: s && !s.offset ? describeBits(machine, s.sym.name) : [],
+    notes: notes.filter(Boolean),
+  };
+}
+
+// where the code of a line ends: at its comment (outside the strings)
+function codeEnd(line, comment) {
+  let quote = false;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '"') quote = !quote;
+    else if (!quote && line.startsWith(comment, i)) return i;
+  }
+  return line.length;
+}
+const inString = (line, col) => ((line.slice(0, col).match(/"/g) ?? []).length % 2) === 1;
+const lineOf = (text, at) => {
+  const ls = text.lastIndexOf('\n', at - 1) + 1, nl = text.indexOf('\n', at);
+  return { ls, line: text.slice(ls, nl < 0 ? text.length : nl), col: at - ls };
+};
+
+// the doc of the word of an assembler source at an offset: a mnemonic (its modes, opcodes, cycles, flags and
+// what it does), a pseudo op or directive, a number or a symbol (its value, the register it is on the
+// machine with its bits). -> { from, to, docs } or null
+export function asmHover(text, at, { cpu = '6502', machine = null, isMnemonic, comment = ';', pseudo = () => null, valueOf = () => null, whereOf = () => null }) {
+  const { ls, line, col } = lineOf(text, at);
+  if (col >= codeEnd(line, comment) || inString(line, col)) return null;
+  const re = /(#?)(\$[0-9a-f]+|0x[0-9a-f]+|%[01]+|\d+|[!.]?@?[A-Za-z_]\w*)/gi;
+  for (let m; (m = re.exec(line));) {
+    if (col < m.index || col >= m.index + m[0].length) continue;
+    const word = m[2], from = ls + m.index, to = from + m[0].length;
+    const num = /^\$/.test(word) ? parseInt(word.slice(1), 16) : /^0x/i.test(word) ? parseInt(word.slice(2), 16)
+      : /^%/.test(word) ? parseInt(word.slice(1), 2) : /^\d/.test(word) ? Number(word) : null;
+    if (num != null) return { from, to, docs: [valueDoc(machine, num, { immediate: !!m[1] })] };
+    const p = (m[1] && pseudo('#' + word)) || pseudo(word);
+    if (p) return { from, to, docs: [p] };
+    if (isMnemonic(word)) {
+      const d = mnemonicDoc(cpu, word);
+      if (!d) return null;
+      return { from, to, docs: [{ ...d, operation: operationOf(cpu, word.toLowerCase()), notes: [...(d.notes ?? []), `CPU: ${cpu}`] }] };
+    }
+    const v = valueOf(word), where = whereOf(word);
+    if (v == null && !where) return null;
+    return { from, to, docs: [valueDoc(machine, v, { name: word, where }) ?? { title: word, desc: 'a symbol: its value comes with a build', notes: [where] }] };
+  }
+  return null;
+}
+
+// the doc of what is at an offset of a BASIC source: a keyword (its syntax, parameters, token and dialect) or
+// a number (the register it addresses). keywords: the dialect's, longest first. -> { from, to, docs } or null
+export function basicHover(text, at, { keywords = [], dialect = null, machine = null }) {
+  const { ls, line, col } = lineOf(text, at);
+  const low = line.toLowerCase();
+  if (inString(line, col)) return null;
+  const lead = /^\s*\d*\s*/.exec(line)[0].length;            // the line number
+  if (col < lead) return null;
+  // the keywords as the tokenizer finds them: from the left, the longest at each place, none in strings or after REM
+  for (let pos = lead, quote = false; pos < line.length;) {
+    if (line[pos] === '"') { quote = !quote; pos++; continue; }
+    if (quote) { pos++; continue; }
+    const k = keywords.find(x => x.name && low.startsWith(x.name.toLowerCase(), pos));
+    if (k) {
+      const end = pos + k.name.length;
+      if (col >= pos && col < end) {
+        const d = keywordDoc(k);
+        const token = Array.isArray(k.token) ? k.token : k.token != null ? [k.token] : null;
+        d.notes = [token && `token ${token.map(b => `$${b.toString(16).padStart(2, '0')}`).join(' ')}`, k.short && `short form: ${k.short}`, dialect && `dialect: ${dialect}`].filter(Boolean);
+        return { from: ls + pos, to: ls + end, docs: [d] };
+      }
+      if (/^rem$/i.test(k.name)) return null;
+      pos = end;
+      continue;
+    }
+    const n = /^(\$[0-9a-f]+|&h[0-9a-f]+|\d+)/i.exec(line.slice(pos));
+    if (n && !/[a-z_]/i.test(line[pos - 1] ?? '')) {
+      const end = pos + n[0].length;
+      if (col >= pos && col < end) {
+        const t = n[0], hexed = t[0] === '$' || /^&h/i.test(t);
+        const v = t[0] === '$' ? parseInt(t.slice(1), 16) : hexed ? parseInt(t.slice(2), 16) : Number(t);
+        return { from: ls + pos, to: ls + end, docs: [valueDoc(machine, v, { decimal: !hexed })] };
+      }
+      pos = end;
+      continue;
+    }
+    pos++;
+  }
+  return null;
 }

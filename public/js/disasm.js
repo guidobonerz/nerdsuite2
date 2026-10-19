@@ -158,10 +158,10 @@ function decode(data, off, base, cpu, flags = FLAGS) {
     else if (mn === 'jr' || mn === 'djnz' || mn === 'call') { jumps = [target]; if (mn === 'jr' && !cond) flow = 'stop'; }
     else if (mn === 'ret') { if (!arg) flow = 'stop'; }
     else if (mn === 'reti' || mn === 'retn') flow = 'stop';
-  } else if (/^(bcc|bcs|beq|bmi|bne|bpl|bvc|bvs|bbr\d|bbs\d|jsr|jsl)$/.test(mn)) jumps = [target];
+  } else if (/^(bcc|bcs|beq|bmi|bne|bpl|bvc|bvs|bbr\d|bbs\d|jsr|jsl|bsr|lb(cc|cs|eq|mi|ne|pl|vc|vs))$/.test(mn)) jumps = [target];
   else if (mn === 'jmp' || mn === 'jml') { if (!/^[([]/.test(arg)) jumps = [target]; flow = 'stop'; }
-  else if (mn === 'bra' || mn === 'brl') { jumps = [target]; flow = 'stop'; }
-  else if (/^(rts|rti|rtl|brk|stp)$/.test(mn)) flow = 'stop';
+  else if (mn === 'bra' || mn === 'brl' || mn === 'lbra') { jumps = [target]; flow = 'stop'; }
+  else if (/^(rts|rti|rtl|rtn|brk|stp)$/.test(mn)) flow = 'stop';
   return { len: ins.bytes.length, text, mn, arg, addrs, jumps: jumps.filter(x => x != null), flow, flags: f, before: { ...flags } };
 }
 
