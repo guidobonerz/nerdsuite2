@@ -5,7 +5,7 @@
 // The text of an open file is kept here until it is saved (Save of the app bar, Ctrl+S) - the
 // build takes what the editor shows (texts()), saved or not.
 
-import { h, mount, signal, icon, iconButton, select, promptDialog, snackbar, confirmRemove, openMenu, sidePanel, section, button } from './pui.js';
+import { h, mount, signal, icon, iconButton, select, promptDialog, snackbar, confirmRemove, openMenu, sidePanel, section, button, toggleSwitch } from './pui.js';
 import { codeEditor, revealLine, caretAt } from './codeeditor.js';
 import { acmeLanguage, scanDefinitions, cpus } from './lang-acme.js';
 import { kickassLanguage, scanDefinitions as scanKick } from './lang-kickass.js';
@@ -21,7 +21,7 @@ import { openPetsciiPanel } from './petsciipanel.js';
 import { listSources, hasFile, readText, readBinary, writeText, removeFile, isOpen, allFiles, isSource } from './project.js';
 import { embedInlay } from './embedview.js';
 import { EMBED, resolveEmbeds } from './basic/preprocess.js';
-import { readSettings, writeSettings, isAsm, isBasic, dialectOf, labelModeOf, machineOf, assemblerOf, ASSEMBLERS, kickassStatus } from './nsbuild.js';
+import { readSettings, writeSettings, isAsm, isBasic, dialectOf, labelModeOf, machineOf, assemblerOf, ASSEMBLERS, kickassStatus, codeAddresses } from './nsbuild.js';
 import * as vice from './vice.js';
 import { exportName } from './export.js';
 
@@ -72,9 +72,12 @@ export function createCodeView(el, bar, hooks = {}) {
     carets: new Map(),              // path -> { from, to, scroll }
     outline: true,
     embeds: false,                  // BASIC: the data of every DATA @embed shown after its line
+    addresses: true,                // assembler: the addresses of the last build in the gutter, not the line numbers
     caret: { line: 1, col: 1 },
   };
-  try { const kept = JSON.parse(localStorage.getItem(KEY) ?? '{}'); Object.assign(st, { outline: kept.outline ?? true, embeds: !!kept.embeds }); } catch { /* none */ }
+  try { const kept = JSON.parse(localStorage.getItem(KEY) ?? '{}'); Object.assign(st, { outline: kept.outline ?? true, embeds: !!kept.embeds, addresses: kept.addresses ?? true }); } catch { /* none */ }
+  // the addresses of the instruction lines of the last good build: path -> { text: at the build, lines: Map line -> address }
+  let addresses = new Map();
   const version = signal(0);
   const input = { current: null };
   let views = null;
@@ -141,7 +144,7 @@ export function createCodeView(el, bar, hooks = {}) {
   }
 
   function persist() {
-    try { localStorage.setItem(KEY, JSON.stringify({ outline: st.outline, embeds: st.embeds })); } catch { /* no storage */ }
+    try { localStorage.setItem(KEY, JSON.stringify({ outline: st.outline, embeds: st.embeds, addresses: st.addresses })); } catch { /* no storage */ }
     try { sessionStorage.setItem(`${KEY}.tabs`, JSON.stringify({ open: st.open, current: st.current })); } catch { /* no storage */ }
   }
 
@@ -416,7 +419,10 @@ export function createCodeView(el, bar, hooks = {}) {
       const m = errors.get(e.file);
       m.set(e.line, m.has(e.line) ? `${m.get(e.line)}\n${e.msg}` : e.msg);
     }
-    if (build?.kind === 'asm' && build.ok) symbols = build.symbols ?? [];
+    if (build?.kind === 'asm' && build.ok) {
+      symbols = build.symbols ?? [];
+      addresses = new Map([...codeAddresses(build)].map(([file, lines]) => [file, { text: text(file), lines }]));
+    }
     update();
   }
 
@@ -481,6 +487,9 @@ export function createCodeView(el, bar, hooks = {}) {
           if (v === 'kickass') kickassStatus().then(k => { if (!k.available) snackbar('KickAssembler was not found on the server: set KICKASS (and JAVA) and restart it', { error: true, timeout: 8000 }); });
           update();
         } }),
+      // the gutter: the addresses of the last build or the line numbers
+      path && isAsm(path) && toggleSwitch('Addresses', st.addresses, on => { st.addresses = on; persist(); update(); },
+        { cls: 'ns-bar__switch', tip: 'On: the gutter shows the addresses of the last build (instruction and label lines). Off: line numbers' }),
       path && isAsm(path) && !kick(path) && select({ label: 'CPU', hideLabel: true, dense: true, value: s.cpu || machineOf(s.machine).cpu || '6510', cls: 'ns-bar__select',
         options: cpus().map(c => ({ value: c, label: c })),
         onchange: v => { writeSettings({ cpu: v }); update(); } }),
@@ -521,10 +530,14 @@ export function createCodeView(el, bar, hooks = {}) {
     const marks = vice.breakpointMarks(path);
     const at = vice.here.value;
     if (at?.file === path) marks.set(at.line, marks.has(at.line) ? `${marks.get(at.line)} here` : 'here');
+    // the addresses of the last build on the instruction lines (st.addresses), dimmed once the file changed
+    const built = isAsm(path) && st.addresses ? addresses.get(path) : null;
     return codeEditor({
       value: b.text,
       lang: langOf(path),
       marks, errors: errors.get(path),
+      gutterText: built && new Map([...built.lines].map(([line, a]) => [line, a.toString(16).padStart(4, '0')])),
+      gutterStale: built && built.text !== b.text ? 'the addresses of the last build - the file changed since: build again' : null,
       inputRef: input,
       // breakpoints: the lines of an assembler source (BASIC runs in the interpreter: no breakpoints)
       onGutter: isAsm(path) ? line => vice.toggleBreakpoint(path, line) : undefined,
