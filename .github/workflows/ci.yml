@@ -1,15 +1,14 @@
-# Every push, every pull request and a run by hand (Actions > CI > Run workflow): on Linux, Windows and
+# A new version: a pushed tag v* (git tag v1.2.0 && git push origin v1.2.0). On Linux, Windows and
 # macOS the server (Go: vet, build, tests) and the IDE (Node: its tests) are tested, the binaries are
-# built (one file per system: the Go server with the IDE built in, tools/dist.mjs) and each starts on
-# its system (tools/smoke.mjs). The binaries are the artifacts of the run. A pushed tag v* (git tag
-# v1.2.0 && git push origin v1.2.0) is a new version: then a release with them as well.
+# built (one file per system: the Go server with the IDE built in, tools/dist.mjs), each starts on its
+# system (tools/smoke.mjs), then a release with them. Pushes to branches and pull requests run nothing;
+# a run by hand (Actions > CI > Run workflow) builds and tests the same, its binaries are the artifacts
+# of the run, no release.
 name: CI
 
 on:
   push:
-    branches: ['**']
     tags: ['v*']
-  pull_request:
   workflow_dispatch:
 
 permissions:
