@@ -17,7 +17,8 @@ function demo() {
   const files = new Map();
   const walk = d => { for (const n of readdirSync(join(dir, d))) { const p = d ? `${d}/${n}` : n; if (statSync(join(dir, p)).isDirectory()) walk(p); else if (p.startsWith('gfx/')) files.set(p, new Uint8Array(readFileSync(join(dir, p)))); } };
   walk('');
-  return { text: readFileSync(join(dir, 'assets.json'), 'utf8'), files };
+  // its line ends as the app reads them (project.js readText): a checkout on Windows has CRLF
+  return { text: readFileSync(join(dir, 'assets.json'), 'utf8').replace(/\r\n?/g, '\n'), files };
 }
 
 test('the demo has its screens and its sprite, unchanged when read', () => {
