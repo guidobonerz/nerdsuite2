@@ -2267,9 +2267,6 @@ export function createScreenEditor(el, store, actions, bar) {
     return h('div', { class: 'screen-bar' },
       h('span', { class: 'md-title-medium' }, 'Screen'),
       h('span', { class: 'screen-bar__sep' }),
-      select({ label: 'Place', hideLabel: true, value: rm.id, dense: true, cls: 'screen-bar__place',
-        options: screensOf(store.game).map(c => ({ value: c.id, label: c.canvas.dirart ? tr('§1740', c.name) : c.name })),
-        onchange: v => { st.placeId = v; st.layer = 'background'; st.camPx = 0; st.sel = null; render(); } }),
       iconButton('add', 'New screen', addScreen),
       h('span', { class: 'screen-bar__sep' }),
       defaultTools({

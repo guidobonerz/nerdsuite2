@@ -1,9 +1,9 @@
 // actions.js - editing operations shared by the storyboard, inspector and app bar
 
 import { walkAreaWith, walkPoints, clampToArea } from './walkarea.js';
-import { OPS, newId, walk, actionVerbs, bodiesOf, symbols, objectHome, objectStartPlace, getAttr, checkExpr, PLACE_COLS, MAX_PLACE_COLS, PLACE_ROWS, FULL_ROWS, MAX_FULL_COLS, gameRows, maxPlaceCols, MAX_CANVAS, DIRART_COLS, MAX_DIRART_ROWS, hasScreen, CLICK_VERB, onName, parseBody, walkBody, LOCKED_TEXT } from './adv.js';
+import { OPS, newId, walk, actionVerbs, bodiesOf, symbols, objectHome, objectStartPlace, getAttr, PLACE_COLS, MAX_PLACE_COLS, PLACE_ROWS, FULL_ROWS, MAX_FULL_COLS, gameRows, maxPlaceCols, MAX_CANVAS, DIRART_COLS, MAX_DIRART_ROWS, hasScreen, CLICK_VERB, onName, walkBody, LOCKED_TEXT } from './adv.js';
 import {
-  newPlace, newObject, newHandler, newStmt, newTop, cloneFresh, uniqueName, renameSymbol, numValue, placeWidth, setObjAttr, behindStrips,
+  newPlace, newObject, newHandler, newStmt, newBody, newTop, cloneFresh, uniqueName, renameSymbol, numValue, placeWidth, setObjAttr, behindStrips,
 } from './advgen.js';
 import { openMenu, promptDialog, snackbar, setSideCollapsed, confirmRemove } from './pui.js';
 import { convertGameToPetscii } from './petscii.js';
@@ -246,22 +246,21 @@ export function createActions(store) {
         { name: 'title', label: '§0131', value: '', validate: t => (t ? null : 'required') },
         { name: 'place', label: '§0133', value: targets[0]?.name ?? place.name,
           options: (targets.length ? targets : [place]).map(r => ({ value: r.name, label: r.name })) },
-        { name: 'cond', label: '§0134', value: '', mono: true, placeholder: 'has(boat)',
-          validate: t => (t && checkExpr(t)) || null }],
+        { name: 'cond', label: '§0134', value: '', mono: true, placeholder: 'has(boat)' }],
     });
     if (!v) return null;
     const target = S().places.find(r => r.name === v.place);
     const wb = target && getAttr(target, 'walkbox');
     const [x, y] = walkSpot(target, wb ? numValue(wb[0]) + 36 : 40, wb ? numValue(wb[3]) : 120);
-    const go = `goto ${v.place} (${x}, ${y})`;
-    const travel = parseBody(v.cond ? `if ${v.cond} { ${go} }\nelse { say "${LOCKED_TEXT.replace(/"/g, '\\"')}" }` : go);
-    delete travel.inline;
-    walkBody(travel, s => { delete s.src; delete s.fp; });
+    const go = Object.assign(newStmt('goto'), { place: v.place, x: String(x), y: String(y) });
+    const travel = v.cond.trim()
+      ? [Object.assign(newStmt('if'), { branches: [{ cond: v.cond.trim(), body: newBody([go]) }], else: newBody([Object.assign(newStmt('say'), { text: LOCKED_TEXT })]) })]
+      : [go];
     const walkVerb = S().verbs[0]?.name ?? 'walk';
     const exit = {
       id: newTop('object').id, kind: 'object', name: v.name, title: v.title, blank: true,
       attrs: [{ key: 'at', values: ['18', '5'] }, { key: 'size', values: ['4', '3'] }],
-      handlers: [newHandler(walkVerb, null, travel.stmts), newHandler('look', null, [Object.assign(newStmt('say'), { text: `The ${v.title}.` })])],
+      handlers: [newHandler(walkVerb, null, travel), newHandler('look', null, [Object.assign(newStmt('say'), { text: `The ${v.title}.` })])],
     };
     store.mutate(() => { place.members.push(exit); }, { source: 'structure' });
     store.select(exit.id, { reveal: true });

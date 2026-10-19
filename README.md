@@ -57,8 +57,8 @@ The assembler is the same for all of them: ACME's syntax, with `!cpu z80` for th
 
 ```
 nerdsuite.json      the settings: the machine, the main program, the dialect of each BASIC file, the CPU, the marks of the Disassembler
-assets.adv          the graphics model, kept by the IDE: the screens with charset, colors and layers,
-                    the sprites with their frames and animations (the language of yopaca)
+assets.json         the graphics model, kept by the IDE: the charset and the sprites with their
+                    animations (JSON); the art is in gfx/, every screen a file of its own
 src/                the sources: .asm .a .s .inc .bas
 gfx/screen/         screens (.scr)              gfx/charset/   charsets (.chr, 2048 bytes)
 gfx/sprite/         sprites (.spr)              gfx/tiles/     tilesets (.til)

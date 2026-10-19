@@ -159,23 +159,6 @@ export function lookAttrs(look) {
 const layersOf = (file, look, charset) => (look?.patches ?? []).filter(p => file.patches.has(p.name)).map(p => ({
   id: newId(), kind: 'patch', name: p.name, col: p.col, row: p.row, ...mapToLines(file.patches.get(p.name), charset) }));
 
-// a place of a project of before (place NAME { screen { ... gfx "FILE" } patch ... }) as a screen: its size
-// the size of its map, its look and its layers - the parts of the adventure game (objects, walk areas, the
-// conditions of the layers) are left out. Its file: gfx/screen/NAME.scr, NAME the name of its old file
-export function placeToScreen(place, game) {
-  const bg = place.members.find(m => m.kind === 'background');
-  const lines = bg?.lines ?? [];
-  const cols = Math.max(1, ...lines.map(l => [...l].length)), rows = Math.max(1, lines.length);
-  const name = bg?.file ? canvasName(bg.file).replace(/\.gfx$/i, '') : place.name;
-  const { file, _form, ...background } = bg ?? { id: newId(), kind: 'background', lines: [], colors: null };
-  return { id: place.id, kind: 'place', keyword: 'place', name, canvas: { cols: Math.min(cols, MAX_CANVAS), rows: Math.min(rows, MAX_CANVAS) }, _noActors: true,
-    members: [
-      ...place.members.filter(m => m.kind === 'attr' && LOOK_ATTRS.includes(m.key)),
-      { ...background, colors: background.colors ?? Array(rows).fill('.'.repeat(cols)) },
-      ...place.members.filter(m => m.kind === 'patch').map(({ cond, _form: f, ...p }) => ({ ...p, col: numValue(p.col, {}) ?? 0, row: numValue(p.row, {}) ?? 0 })),
-    ] };
-}
-
 // a map of the file as model lines: glyphs of the game's character set, color digits ('.': the
 // text color of the place)
 export function mapToLines(m, charset = 'lower') {
@@ -352,12 +335,6 @@ export function placeToFile(place, charset) {
 }
 
 // --- the model and the files ------------------------------------------------------------------
-
-// the graphics files a script names, as written in it (relative to the script)
-const REF_RE = /^[ \t]*(?:gfx[ \t]+"([^"\n]+)"|costume[ \t]+\w+[ \t]+"([^"\n]+)"|sprite[ \t]+\w+(?:[ \t]+multicolor)?[ \t]+"([^"\n]+)"|dirart[ \t]+"([^"\n]+)")/gm;
-export function gfxRefs(text) {
-  return [...new Set([...text.matchAll(REF_RE)].map(m => m[1] ?? m[2] ?? m[3] ?? m[4]))];
-}
 
 // resolveGfx: the art of the files (files: Map path -> bytes) into the nodes that name them. A
 // node read from a file counts as unchanged: its fingerprint is taken again, so an untouched node

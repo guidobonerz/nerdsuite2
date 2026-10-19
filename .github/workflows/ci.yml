@@ -1,16 +1,22 @@
-# A new version, and only that: a pushed tag v* (git tag v1.2.0 && git push origin v1.2.0). On Linux,
-# Windows and macOS the server (Go: vet, build, tests) and the IDE (Node: its tests) are tested, the
-# binaries are built (one file per system: the Go server with the IDE built in, tools/dist.mjs), each
-# starts on its system (tools/smoke.mjs), then a release with them. Pushes to branches and pull
-# requests run nothing.
+# A new version: a pushed tag v* (git tag v1.2.0 && git push origin v1.2.0). On Linux, Windows and
+# macOS the server (Go: vet, build, tests) and the IDE (Node: its tests) are tested, the binaries are
+# built (one file per system: the Go server with the IDE built in, tools/dist.mjs), each starts on its
+# system (tools/smoke.mjs), then a release with them. Pushes to branches and pull requests run nothing;
+# a run by hand (Actions > CI > Run workflow) builds and tests the same, its binaries are the artifacts
+# of the run, no release.
 name: CI
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+# the version in the binaries and their file names: the tag of a release, else dev-RUN (dev-42)
+env:
+  VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('dev-{0}', github.run_number) }}
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -56,8 +62,8 @@ jobs:
       - name: IDE - tests
         run: npm test
 
-  # the binaries of Windows and Linux, packed with UPX; macOS in the job after it. The tag is the
-  # version, in the file names
+  # the binaries of Windows and Linux, packed with UPX; macOS in the job after it. The version is in
+  # the file names
   # (nerdsuite-v1.0-windows-amd64.exe); the artifacts keep names without it
   dist:
     name: Binaries
@@ -75,13 +81,13 @@ jobs:
           echo "$RUNNER_TEMP/upx-4.2.4-amd64_linux" >> "$GITHUB_PATH"
       - name: build
         run: |
-          node tools/dist.mjs --upx --only windows-amd64,linux-amd64,linux-arm64 --version "${{ github.ref_name }}"
+          node tools/dist.mjs --upx --only windows-amd64,linux-amd64,linux-arm64 --version "$VERSION"
       - uses: actions/upload-artifact@v4
-        with: { name: nerdsuite-windows-amd64.exe, path: build/dist/nerdsuite-*-windows-amd64.exe, if-no-files-found: error }
+        with: { name: nerdsuite-windows-amd64.exe, path: build/dist/nerdsuite-*-windows-amd64.exe, if-no-files-found: error, retention-days: 30 }
       - uses: actions/upload-artifact@v4
-        with: { name: nerdsuite-linux-amd64, path: build/dist/nerdsuite-*-linux-amd64, if-no-files-found: error }
+        with: { name: nerdsuite-linux-amd64, path: build/dist/nerdsuite-*-linux-amd64, if-no-files-found: error, retention-days: 30 }
       - uses: actions/upload-artifact@v4
-        with: { name: nerdsuite-linux-arm64, path: build/dist/nerdsuite-*-linux-arm64, if-no-files-found: error }
+        with: { name: nerdsuite-linux-arm64, path: build/dist/nerdsuite-*-linux-arm64, if-no-files-found: error, retention-days: 30 }
 
   # macOS on a Mac: its lipo joins arm64 (Apple silicon) and amd64 (Intel) into one file,
   # nerdsuite-VERSION-macos; not packed (UPX 4 does not pack macOS). dist.mjs signs it ad hoc
@@ -98,11 +104,11 @@ jobs:
         with: { node-version: 22 }
       - name: build
         run: |
-          node tools/dist.mjs --no-upx --only darwin-arm64,darwin-amd64 --version "${{ github.ref_name }}"
+          node tools/dist.mjs --no-upx --only darwin-arm64,darwin-amd64 --version "$VERSION"
           lipo -info build/dist/nerdsuite-*-macos
           codesign --verify --verbose build/dist/nerdsuite-*-macos
       - uses: actions/upload-artifact@v4
-        with: { name: nerdsuite-macos, path: build/dist/nerdsuite-*-macos, if-no-files-found: error }
+        with: { name: nerdsuite-macos, path: build/dist/nerdsuite-*-macos, if-no-files-found: error, retention-days: 30 }
 
   # each binary on its system, as a user gets it: it starts, answers with its version, hands out the IDE,
   # the example project and the settings
@@ -125,12 +131,13 @@ jobs:
         with: { name: '${{ matrix.file }}', path: dist }
       - shell: bash
         run: |
-          node tools/smoke.mjs dist/nerdsuite-*-${{ matrix.system }} --version "${{ github.ref_name }}"
+          node tools/smoke.mjs dist/nerdsuite-*-${{ matrix.system }} --version "$VERSION"
 
-  # the release of a version: the binaries of the three systems
+  # the release of a version - a pushed tag v* only: the binaries of the three systems
   release:
     name: Release
     needs: smoke
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write

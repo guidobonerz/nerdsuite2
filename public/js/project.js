@@ -1,17 +1,18 @@
-// project.js - the project: the .adv scripts and their files (graphics, charsets, pictures, songs),
+// project.js - the project: the sources, the graphics model and their files (graphics, charsets, pictures, songs),
 // held in the browser. It comes from a zip package the user opens and goes back into one the user
 // saves (zip.js); the editor has no access to the files of the computer, and the server keeps none.
 //
 // The project lives as long as the tab: its files are kept in IndexedDB under the id of the
 // session (sessionStorage), so a reload finds them again, and a closed tab leaves them behind for
-// the cleanup at the next start. Paths are relative to the root of the package: "demo.adv",
+// the cleanup at the next start. Paths are relative to the root of the package: "assets.json",
 // "gfx/demo/hall.gfx".
 
 import { readZip, writeZip } from './zip.js';
 import { MANIFEST, PROJECT_FORMAT, readManifest, makeManifest, migrateProject } from './migrate.js';
 
 // the text files: the sources of the code editor (assembler, BASIC, includes, C for the compiler of a
-// toolchain), the project settings and the hidden model of the graphics (assets.adv, see assets.js)
+// toolchain), the project settings and the hidden model of the graphics (assets.json, see assets.js) - .adv: the
+// scripts of a project of before, kept as files
 export const SOURCE_EXT = ['.asm', '.a', '.s', '.inc', '.bas', '.c', '.h', '.txt', '.cfg'];
 export const SCRIPT_EXT = ['.adv', '.json', ...SOURCE_EXT];
 // the charsets, the pictures of the bitmap editor, the songs of the sound editor, the graphics files of the scripts

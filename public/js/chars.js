@@ -936,13 +936,10 @@ export function createCharEditor(el, store, actions, bar) {
 
   function barView() {
     if (!store.game) return null;
-    const keys = knownKeys(), mc = multicolor();
+    const mc = multicolor();
     return h('div', { class: 'screen-bar' },
       h('span', { class: 'md-title-medium' }, 'Chars'),
       h('span', { class: 'screen-bar__sep' }),
-      select({ label: '§0676', hideLabel: true, value: st.key ?? '', dense: true, cls: 'screen-bar__sprite',
-        options: keys.length ? keys.map(k => ({ value: k, label: k + (isCharsetDirty(k) ? ' •' : '') })) : [{ value: '', label: '§0678' }],
-        onchange: v => { st.key = v || null; st.mode = null; st.colors = null; render(); ui?.wrap.focus({ preventScroll: true }); } }),
       iconButton('add', '§0679', () => newCharset()),
       st.key ? iconButton('delete', tr('§1608', scriptRelative(st.key)), deleteCharset) : '',
       st.key ? [h('span', { class: 'screen-bar__sep' }), defaultTools({
