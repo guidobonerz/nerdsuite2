@@ -6,6 +6,7 @@
 //   node tools/cdp.mjs eval "JS"             evaluate (async allowed), prints the JSON result
 //   node tools/cdp.mjs shot FILE.png         a screenshot
 //   node tools/cdp.mjs click "SELECTOR"      a real mouse click in the middle of an element
+//   node tools/cdp.mjs clickat X Y           a real mouse click at a point of the page
 //   node tools/cdp.mjs key KEY [ctrl] [shift] a key press
 //   node tools/cdp.mjs type "TEXT"           insert text at the focus
 //   node tools/cdp.mjs errors                the exceptions and console errors since the last call
@@ -63,6 +64,15 @@ try {
       await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...r, button, clickCount: 1 });
       await new Promise(res => setTimeout(res, 300));
       console.log('clicked', JSON.stringify(r));
+      break;
+    }
+    case 'clickat': {
+      const p = { x: Number(args[0]), y: Number(args[1]) };
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...p });
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...p, button: 'left', clickCount: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...p, button: 'left', clickCount: 1 });
+      await new Promise(res => setTimeout(res, 300));
+      console.log('clicked', JSON.stringify(p));
       break;
     }
     case 'key': {
