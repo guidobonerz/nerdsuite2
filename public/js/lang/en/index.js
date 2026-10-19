@@ -1,6 +1,6 @@
 // en/index.js - the English texts of the editor's UI: a label (§0001) and its text, a pattern with
-// {0}, {1} for the values the code hands t(). The sources name the texts by their labels; de/ and
-// tlh/ have the same labels. The game is not translated.
+// {0}, {1} for the values the code hands t(). The sources name the texts by their labels; de/ has
+// the same labels. The game is not translated.
 import model from './model.js';
 import app from './app.js';
 import board from './board.js';

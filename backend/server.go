@@ -100,7 +100,8 @@ func (s *Server) Close() {
 var mime = map[string]string{
 	".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
 	".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".json": "application/json",
-	".png": "image/png", ".ico": "image/x-icon", ".txt": "text/plain; charset=utf-8",
+	".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+	".ico": "image/x-icon", ".txt": "text/plain; charset=utf-8",
 	".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf",
 }
 

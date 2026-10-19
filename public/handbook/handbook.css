@@ -1,0 +1,74 @@
+/* handbook.css - the handbook of NerdSuite (handbook/en/, handbook/de/): one page a language, the contents
+   at the side, the screenshots of the IDE (img/LANG/) - light and dark as the system has it */
+@import url('../fonts/geist.css');
+
+:root {
+  --bg: #fafafa; --fg: #18181b; --muted: #52525b; --line: #e4e4e7; --card: #ffffff; --accent: #7c3aed;
+  --code-bg: #f4f4f5; --key-bg: #ffffff; --note-bg: #f5f3ff; --warn-bg: #fff7ed; --warn-line: #f97316;
+  --font: Geist, Inter, "Segoe UI", system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #09090b; --fg: #f4f4f5; --muted: #a1a1aa; --line: #27272a; --card: #111113; --accent: #a78bfa;
+    --code-bg: #18181b; --key-bg: #18181b; --note-bg: #1e1b2e; --warn-bg: #2a1a0e; --warn-line: #fb923c;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 var(--font); }
+a { color: var(--accent); }
+
+.hb { display: grid; grid-template-columns: 260px minmax(0, 1fr); max-width: 1280px; margin: 0 auto; }
+.hb__toc { position: sticky; top: 0; height: 100vh; overflow: auto; padding: 24px 16px; border-right: 1px solid var(--line); font-size: 14px; }
+.hb__toc .hb__logo { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; font-weight: 700; font-size: 16px; color: var(--fg); text-decoration: none; }
+.hb__toc .hb__logo img { width: 32px; height: 32px; }
+.hb__toc ol { list-style: none; margin: 0; padding: 0; }
+.hb__toc ol ol { padding-left: 14px; margin: 2px 0 8px; }
+.hb__toc li a { display: block; padding: 3px 8px; border-radius: 6px; color: var(--muted); text-decoration: none; }
+.hb__toc li a:hover { background: var(--code-bg); color: var(--fg); }
+.hb__toc > ol > li > a { color: var(--fg); font-weight: 600; }
+.hb__lang { margin-top: 16px; font-size: 13px; color: var(--muted); }
+
+.hb__main { padding: 32px 48px 96px; min-width: 0; }
+h1 { font-size: 32px; line-height: 1.2; margin: 0 0 8px; }
+h2 { font-size: 24px; margin: 56px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+h3 { font-size: 18px; margin: 32px 0 8px; }
+h4 { font-size: 15px; margin: 20px 0 6px; }
+p, ul, ol, table { margin: 0 0 12px; }
+.hb__lead { font-size: 17px; color: var(--muted); }
+
+code, kbd, pre { font-family: var(--mono); font-size: 13px; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 12px 14px; border-radius: 8px; overflow: auto; line-height: 1.5; }
+pre code { background: none; padding: 0; }
+kbd { display: inline-block; padding: 0 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--key-bg); white-space: nowrap; }
+.ui { font-weight: 600; }                                   /* a label of the IDE: a button, a menu item */
+
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; }
+
+figure { margin: 16px 0 24px; }
+figure a { display: block; }
+figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 2px 12px rgba(0, 0, 0, .12); }
+figcaption { margin-top: 8px; font-size: 13px; color: var(--muted); }
+
+.note, .warn { padding: 10px 14px; border-radius: 8px; margin: 12px 0 16px; }
+.note { background: var(--note-bg); border-left: 3px solid var(--accent); }
+.warn { background: var(--warn-bg); border-left: 3px solid var(--warn-line); }
+
+@media (max-width: 900px) {
+  .hb { grid-template-columns: 1fr; }
+  .hb__toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--line); }
+  .hb__main { padding: 24px 16px 64px; }
+}
+@media print {
+  .hb { display: block; }
+  .hb__toc { display: none; }
+  h2 { break-before: page; }
+  figure { break-inside: avoid; }
+}

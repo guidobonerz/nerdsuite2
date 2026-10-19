@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NerdSuite Handbook</title>
+<link rel="icon" href="../../images/nerdsuite.png">
+<link rel="stylesheet" href="../handbook.css">
+</head>
+<body>
+<div class="hb">
+<nav class="hb__toc" aria-label="Contents">
+  <a class="hb__logo" href="#top"><img src="../../images/nerdsuite.png" alt="">NerdSuite Handbook</a>
+  <ol>
+    <li><a href="#intro">Introduction</a></li>
+    <li><a href="#code">The Code view</a>
+      <ol>
+        <li><a href="#code-overview">Overview and bar</a></li>
+        <li><a href="#code-files">Sources, tabs, outline</a></li>
+        <li><a href="#code-editing">Editing</a></li>
+        <li><a href="#code-search">Search</a></li>
+        <li><a href="#code-gutter">The gutter</a></li>
+        <li><a href="#code-build">Build, run, debug</a></li>
+        <li><a href="#code-asm">Assembler</a></li>
+        <li><a href="#code-basic">BASIC</a></li>
+        <li><a href="#code-io">Export and import</a></li>
+      </ol>
+    </li>
+    <li><a href="#debug">The Debugger</a>
+      <ol>
+        <li><a href="#debug-start">Starting a session</a></li>
+        <li><a href="#debug-bar">The bar</a></li>
+        <li><a href="#debug-panels">Disassembly and memory</a></li>
+        <li><a href="#debug-side">Registers, breakpoints, watches</a></li>
+        <li><a href="#debug-code">Breakpoints in the code</a></li>
+      </ol>
+    </li>
+    <li><a href="#disasm">The Disassembler</a>
+      <ol>
+        <li><a href="#disasm-files">Files and formats</a></li>
+        <li><a href="#disasm-layout">Layout and bar</a></li>
+        <li><a href="#disasm-auto">Code and data</a></li>
+        <li><a href="#disasm-labels">Labels and names</a></li>
+        <li><a href="#disasm-panel">The side panel</a></li>
+        <li><a href="#disasm-out">Saving as source</a></li>
+      </ol>
+    </li>
+    <li><a href="#hex">The Hex view</a>
+      <ol>
+        <li><a href="#hex-files">Files</a></li>
+        <li><a href="#hex-bar">Bar and layout</a></li>
+        <li><a href="#hex-edit">Editing</a></li>
+        <li><a href="#hex-find">Find and go to</a></li>
+        <li><a href="#hex-panel">The side panel</a></li>
+      </ol>
+    </li>
+    <li><a href="#settings">Menu and settings</a>
+      <ol>
+        <li><a href="#menu">The menu</a></li>
+        <li><a href="#set-editor">Editor</a></li>
+        <li><a href="#set-colours">Colours</a></li>
+        <li><a href="#set-chains">Toolchains</a></li>
+        <li><a href="#set-tools">Assemblers and emulators</a></li>
+      </ol>
+    </li>
+    <li><a href="#keys">Keyboard shortcuts</a></li>
+  </ol>
+  <div class="hb__lang">Deutsch: <a href="../de/index.html">Handbuch</a></div>
+</nav>
+
+<main class="hb__main" id="top">
+<h1>NerdSuite Handbook</h1>
+<p class="hb__lead">Programming the 8-bit machines: the code editor for assembler and BASIC, the debugger in VICE, the disassembler, the hex view, and the settings.</p>
+
+<!-- ======================================================================================= -->
+<h2 id="intro">Introduction</h2>
+<p>NerdSuite is an IDE for 8-bit computers: the Commodore machines (C64, C128, VIC-20, Plus/4, C16, PET, MEGA65), the Atari 8-bit and 2600, the Amstrad / Schneider CPC, the NES and SNES, the ZX81, the TRS-80 and the BBC Micro. It runs as a small server on your computer and shows its user interface in a browser window.</p>
+<p>This handbook covers the programming part of NerdSuite:</p>
+<ul>
+  <li><a href="#code">The Code view</a>: assembler (ACME, KickAssembler) and BASIC sources, with completion, documentation, build and run.</li>
+  <li><a href="#debug">The Debugger</a>: a program in the emulator VICE, stopped at breakpoints, step by step.</li>
+  <li><a href="#disasm">The Disassembler</a>: programs and binaries of the project or from outside, as code and data.</li>
+  <li><a href="#hex">The Hex view</a>: every file as bytes, editable.</li>
+  <li><a href="#settings">The menu and the settings</a>: the editor, colours, toolchains, assemblers and emulators.</li>
+</ul>
+<p>The views are chosen in the rail on the left: <span class="ui">Code</span>, <span class="ui">Debugger</span>, <span class="ui">Disassembler</span> and <span class="ui">Hex</span>. Below them the rail has the graphics and sound editors, which are not part of this handbook. Below the views the <span class="ui">Problems</span> console lists the errors and warnings of the last build.</p>
+<div class="note">The examples and screenshots use the example project of NerdSuite (<span class="ui">Open example</span> on the start screen): a C64 program <code>src/main.asm</code> that shows a text and raster bars, and a BASIC program <code>src/hello.bas</code>.</div>
+
+<!-- ======================================================================================= -->
+<h2 id="code">The Code view</h2>
+
+<h3 id="code-overview">Overview and bar</h3>
+<figure><a href="../img/code-overview.webp"><img src="../img/code-overview.webp" alt="The Code view with main.asm" loading="lazy"></a>
+<figcaption>The Code view: the files of the project at the left, the tabs and the editor in the middle, the outline at the right. The gutter shows the addresses of the last build.</figcaption></figure>
+<p>The bar above the editor holds, from left to right:</p>
+<table>
+<tr><th>Control</th><th>What it does</th></tr>
+<tr><td>Build (hammer)</td><td>Builds the program, as <kbd>Ctrl+B</kbd>. Its tooltip names the file and, with a toolchain, its steps (e.g. <code>ACME › Exomizer › VICE</code>).</td></tr>
+<tr><td>Run (play)</td><td>Builds and starts the program in the emulator of the machine, as <kbd>F5</kbd>.</td></tr>
+<tr><td>Debug (bug)</td><td>Builds and starts it in VICE with its breakpoints, as <kbd>F6</kbd>. Only for the machines VICE runs.</td></tr>
+<tr><td>Ultimate (chip)</td><td>Builds and sends it to an Ultimate 64 on the network, as <kbd>Shift+F5</kbd>. Only shown for C64 projects with an Ultimate set up in the settings.</td></tr>
+<tr><td><span class="ui">New source file</span> (+)</td><td>A new assembler, BASIC or C source (see below).</td></tr>
+<tr><td><span class="ui">Open a source of the project</span></td><td>A menu of all sources of the project.</td></tr>
+<tr><td>Undo / Redo</td><td><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>.</td></tr>
+<tr><td>Main program (flag)</td><td><span class="ui">Make this the main program</span>; highlighted when the file is the main program.</td></tr>
+<tr><td>Assembler</td><td>Assembler files: <span class="ui">ACME</span> or <span class="ui">KickAssembler</span> for this file.</td></tr>
+<tr><td><span class="ui">Addresses</span></td><td>Assembler files: a switch - on, the gutter shows the addresses of the last build; off, line numbers.</td></tr>
+<tr><td>CPU</td><td>ACME files: the CPU of the project (6502, 6510, 65c02, 65816, z80, 45GS02 ...).</td></tr>
+<tr><td>Dialect</td><td>BASIC files: the BASIC dialect of the file.</td></tr>
+<tr><td>Label mode, embedded data, rename / renumber</td><td>BASIC files, see <a href="#code-basic">BASIC</a>.</td></tr>
+<tr><td><code>Ln, Col</code></td><td>The position of the caret.</td></tr>
+<tr><td><span class="ui">Show the outline</span></td><td>Shows or hides the side panel.</td></tr>
+</table>
+
+<h3 id="code-files">Sources, tabs, outline</h3>
+<p>Every open source has a tab: its name, a flag for the main program and a dot while it has changes that are not saved. A tab closes with its ×, or with a middle click; with unsaved changes NerdSuite asks first. A right click on a tab offers <span class="ui">Rename…</span>, <span class="ui">Make it the main program</span>, <span class="ui">Close</span> and <span class="ui">Delete the file</span>. The open tabs are remembered for the session of the browser tab.</p>
+<figure><a href="../img/code-newfile.webp"><img src="../img/code-newfile.webp" alt="The dialog New source file" loading="lazy"></a>
+<figcaption>A new source: its kind, its name, for BASIC its dialect.</figcaption></figure>
+<p><span class="ui">New source file</span> (the + of the bar or after the tabs) makes a source in <code>src/</code> from a template: <span class="ui">Assembler (ACME)</span> (<code>.asm</code>), <span class="ui">Assembler (KickAssembler)</span>, the includes of both (<code>.inc</code> for ACME), <span class="ui">BASIC</span> (<code>.bas</code>) or <span class="ui">C (for the compiler of a toolchain)</span>. A project without a main program takes the new file as its main program.</p>
+<p><kbd>Ctrl+S</kbd> (<span class="ui">Save every editor into its file</span> in the app bar) saves all editors. A build does not wait for it: it builds the text the editors show, saved or not.</p>
+<h4>The outline</h4>
+<p>For an assembler source the side panel lists <span class="ui">Labels</span>, <span class="ui">Macros and functions</span>, <span class="ui">Constants</span> (with their values), <span class="ui">Zones</span> (ACME <code>!zone</code>, KickAssembler <code>.namespace</code>) and the <span class="ui">Breakpoints</span> of the file. Local labels (<code>.name</code>, <code>@name</code>) are not listed. A click goes to the line. For BASIC the outline lists the labels of the label mode; a double click or a right click renames a label with every jump to it.</p>
+
+<h3 id="code-editing">Editing</h3>
+<h4>Completion</h4>
+<figure><a href="../img/code-completion.webp"><img src="../img/code-completion.webp" alt="Completion of lda with its addressing modes" loading="lazy"></a>
+<figcaption>Completion of an instruction: its addressing modes with opcode, bytes and cycles, and the flags it changes.</figcaption></figure>
+<p>While you type, NerdSuite offers what may follow: instructions of the CPU, pseudo ops, macros, labels and constants of the project, symbols of the last build, the registers of the machine (type <code>$d0</code> on a C64), BASIC keywords, PETSCII codes in strings. <kbd>Ctrl+Space</kbd> opens the list anywhere. Some characters open it at once: <code>!</code> and <code>+</code> in ACME, <code>.</code> and <code>#</code> in KickAssembler, <code>{</code> in a BASIC string.</p>
+<p>In the list: <kbd>↑</kbd> <kbd>↓</kbd> move, <kbd>PgUp</kbd> <kbd>PgDn</kbd> move by ten, <kbd>Enter</kbd> or <kbd>Tab</kbd> insert, <kbd>Esc</kbd> closes. Inside an operand NerdSuite may show only the help of the instruction, without a list, so that <kbd>Enter</kbd> still ends the line. Nothing is offered in comments, in strings (but BASIC's <code>{codes}</code>) and after <code>REM</code>.</p>
+<h4>Documentation with Shift</h4>
+<figure><a href="../img/code-hover.webp"><img src="../img/code-hover.webp" alt="Shift over BORDER shows the register" loading="lazy"></a>
+<figcaption>Shift held over <code>BORDER</code>: the register of the VIC-II, its address in three notations, its bits and where the constant is defined.</figcaption></figure>
+<p>Hold <kbd>Shift</kbd> with the mouse over a word: after a moment its documentation appears. For an instruction its modes, opcodes and flags; for a pseudo op its syntax; for a number or symbol its value and the register of the machine at that address, with its bits; for a BASIC keyword its syntax, parameters and token. The documentation depends on the CPU and the machine of the project.</p>
+<h4>Go to the definition, rename</h4>
+<figure><a href="../img/code-context.webp"><img src="../img/code-context.webp" alt="The context menu of the editor" loading="lazy"></a>
+<figcaption>The menu of a right click: rename the label, go to its definition, the clipboard, comments.</figcaption></figure>
+<ul>
+  <li><kbd>Ctrl+click</kbd> on a label or a <code>+macro</code> goes to its definition, in any source of the project (assembler).</li>
+  <li><kbd>F2</kbd> renames the label at the caret with every use of it. A global label is renamed in all sources of the same assembler; an ACME local label (<code>.name</code>) within its <code>!zone</code>; an <code>@name</code> between the global labels around it. Comments and strings stay as they are. The files changed open as tabs with unsaved changes; the message offers <span class="ui">Undo</span>. In BASIC, <kbd>F2</kbd> works in the label mode.</li>
+  <li>The right click opens a menu: <span class="ui">Rename…</span>, <span class="ui">Go to …</span>, <span class="ui">Cut</span>, <span class="ui">Copy</span>, <span class="ui">Paste</span>, <span class="ui">Comment or uncomment the lines</span>, <span class="ui">Select all</span>. In a string of a Commodore BASIC it opens the PETSCII panel instead.</li>
+</ul>
+<h4>More keys</h4>
+<ul>
+  <li><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> indent the selected lines by four spaces or take them back; without a selection <kbd>Tab</kbd> writes four spaces.</li>
+  <li><kbd>Ctrl+/</kbd> comments the lines in or out: <code>;</code> in ACME, <code>//</code> in KickAssembler and C, <code>rem</code> in BASIC.</li>
+  <li><kbd>Enter</kbd> keeps the indent; in BASIC it proposes the next line number.</li>
+  <li><kbd>Ctrl</kbd> + mouse wheel zooms the code (0.6× to 3×), <kbd>Ctrl+0</kbd> resets it. The zoom applies to every code editor.</li>
+</ul>
+
+<h3 id="code-search">Search</h3>
+<figure><a href="../img/code-search.webp"><img src="../img/code-search.webp" alt="Search for sta" loading="lazy"></a>
+<figcaption>The search of the header: every match yellow, the current one orange.</figcaption></figure>
+<p><kbd>Ctrl+F</kbd> goes to the search field of the header (<span class="ui">Find in the source</span>). While you type, every match in the editor is marked yellow. <kbd>Enter</kbd> goes to the next match, <kbd>Shift+Enter</kbd> to the previous one (or the arrows next to the field); the current match is orange. The search ignores case and wraps around. <kbd>Esc</kbd> clears it and returns to the editor.</p>
+
+<h3 id="code-gutter">The gutter</h3>
+<figure><a href="../img/code-breakpoint.webp"><img src="../img/code-breakpoint.webp" alt="A breakpoint in the gutter" loading="lazy"></a>
+<figcaption>Line numbers in the gutter (<span class="ui">Addresses</span> off) and a breakpoint on line 37.</figcaption></figure>
+<ul>
+  <li><strong>Line numbers or addresses</strong>: after a successful build of an assembler source the gutter shows the address of every line that makes bytes (instructions, data) and of every label; the other lines stay empty. The <span class="ui">Addresses</span> switch of the bar turns back to line numbers. When the file changed since the build, the addresses are dimmed until the next build.</li>
+  <li><strong>Caret and selection</strong>: the line of the caret is framed across the gutter and the code; its number or address is bold. Selected lines get the colour of the selection in the gutter too.</li>
+  <li><strong>Breakpoints</strong>: a click on a line number of an assembler source sets or removes a breakpoint (a red dot). See <a href="#debug-code">Breakpoints in the code</a>.</li>
+  <li><strong>Errors</strong>: the number of a line with an error is red; its tooltip is the message.</li>
+</ul>
+
+<h3 id="code-build">Build, run, debug</h3>
+<table>
+<tr><th>Key</th><th>Action</th></tr>
+<tr><td><kbd>Ctrl+B</kbd></td><td>Build.</td></tr>
+<tr><td><kbd>F5</kbd></td><td>Build and run in the emulator of the machine. While the debugger is stopped, <kbd>F5</kbd> continues instead.</td></tr>
+<tr><td><kbd>F6</kbd></td><td>Build and debug in VICE (see <a href="#debug">The Debugger</a>).</td></tr>
+<tr><td><kbd>Shift+F5</kbd></td><td>Build and run on the Ultimate 64 (C64 projects).</td></tr>
+</table>
+<div class="warn"><strong>Which file is built:</strong> in the Code view, Build, Run and Debug build the source of the selected tab - unless it is an include (<code>.inc</code>, <code>.h</code>, <code>.txt</code>); then they build the main program. In the other views they always build the main program. The main program is set with the flag of the bar, the menu of a tab or <span class="ui">File › Project settings…</span>.</div>
+<p>ACME and the BASIC tokenizer run in the browser, KickAssembler on the server. After a successful build a message names the file, its size and its start address, with the action <span class="ui">Download</span>. An assembler build also writes a label file for VICE (<code>.lbl</code>) and a listing (<code>.lst</code>).</p>
+<figure><a href="../img/code-problems.webp"><img src="../img/code-problems.webp" alt="A build error in the Problems console" loading="lazy"></a>
+<figcaption>A build error: the line is red in the gutter, the <span class="ui">Problems</span> console lists the message with its place.</figcaption></figure>
+<p>The <span class="ui">Problems</span> console below the view lists the errors and warnings; it opens by itself when a build fails. A click on a row opens the file at its line. The field <span class="ui">Filter the problems</span> narrows the list; the edge at its top can be dragged.</p>
+<h4>Where a program runs</h4>
+<table>
+<tr><th>Machine</th><th>Emulator</th></tr>
+<tr><td>C64, C128, VIC-20, Plus/4, C16, PET</td><td>VICE (run and debug)</td></tr>
+<tr><td>MEGA65</td><td>Xemu</td></tr>
+<tr><td>Atari 800 XL / 130 XE</td><td>Altirra, Atari800</td></tr>
+<tr><td>Atari 2600 (VCS)</td><td>Stella, MAME</td></tr>
+<tr><td>Amstrad / Schneider CPC</td><td>WinAPE, Caprice, MAME</td></tr>
+<tr><td>NES</td><td>Mesen, FCEUX, Nestopia, MAME</td></tr>
+<tr><td>SNES</td><td>Mesen, bsnes, Snes9x, MAME</td></tr>
+<tr><td>ZX81</td><td>EightyOne, ZEsarUX</td></tr>
+<tr><td>TRS-80</td><td>trs80gp, MAME</td></tr>
+<tr><td>BBC Micro</td><td>BeebEm, b2, MAME</td></tr>
+</table>
+<p>Without a choice NerdSuite takes the first emulator it finds; <span class="ui">Settings › Assemblers and emulators › Emulator per platform</span> chooses one. A <a href="#set-chains">toolchain</a> can replace the compiler, add a packer (Exomizer, pucrunch, Dali) and start another emulator.</p>
+
+<h3 id="code-asm">Assembler</h3>
+<h4>ACME and KickAssembler</h4>
+<p>Each assembler file is assembled with ACME or KickAssembler, chosen in the bar. ACME is built in and knows the CPUs 6502, nmos6502 (with the illegal opcodes), 6510, 65c02, r65c02, w65c02, 65816, 65ce02, 4502, m65 (45GS02 of the MEGA65) and z80. The CPU select of the bar sets the CPU of the <em>project</em>; <code>!cpu</code> in a source changes it for that source.</p>
+<p>KickAssembler runs on the server and needs Java: <code>KickAss.jar</code> (setting or environment variable <code>KICKASS</code>) and <code>java</code> (<code>JAVA</code>, else <code>JAVA_HOME</code> or the PATH) - see <a href="#set-tools">Assemblers and emulators</a>. KickAssembler makes 6502 code and <code>.prg</code> files, so it is for the Commodore machines.</p>
+<h4>Output</h4>
+<p>Without <code>!to</code> ACME writes the format of the platform: <code>.prg</code> (Commodore), <code>.xex</code> (Atari), <code>.a26</code> (VCS), <code>.bin</code> with an AMSDOS header (CPC), <code>.nes</code>, <code>.sfc</code>, <code>.p</code> (ZX81), <code>.cmd</code> (TRS-80). With <code>!to "name", cbm|plain|…</code> the source decides.</p>
+<h4>hardware.inc</h4>
+<p>A new ACME project gets <code>src/hardware.inc</code> when its machine has a memory map: the chips, ROM routines, vectors and RAM areas as constants, to include with <code>!source "hardware.inc"</code>.</p>
+
+<h3 id="code-basic">BASIC</h3>
+<figure><a href="../img/code-basic.webp"><img src="../img/code-basic.webp" alt="hello.bas with the red line of the line length" loading="lazy"></a>
+<figcaption>A BASIC program of the C64: PETSCII characters in the strings and the red line of the longest line (80).</figcaption></figure>
+<h4>Dialects</h4>
+<p>BASIC V2, BASIC 4.0, BASIC 3.5, BASIC 7.0, BASIC 65, Simons' BASIC, Atari BASIC, Turbo-Basic XL, Locomotive BASIC 1.1, ZX81 BASIC, TRS-80 Level II BASIC and BBC BASIC II. The dialect of a file is chosen in the bar. A Commodore BASIC is built into a tokenized <code>.prg</code>, ZX81 BASIC into a <code>.p</code> file; the others into a listing to type in or to load (<code>.lst</code>, <code>.bas</code>).</p>
+<h4>Line numbers and the label mode</h4>
+<p>A program may be written with line numbers, or in the <strong>label mode</strong> (the label button of the bar): no line numbers, a line <code>name:</code> names the next line, and <code>GOTO name</code>, <code>GOSUB</code>, <code>THEN</code>, <code>ON … GOTO</code>, <code>RESTORE</code> … jump to labels. The build numbers the lines 10, 20, 30 …. Switching converts the program in both directions. In the label mode <kbd>F2</kbd> or the bar renames a label with every jump to it; without it the bar has <span class="ui">Renumber the lines (10, 20, 30 …) with GOTO, GOSUB and THEN</span>.</p>
+<h4>PETSCII and control codes</h4>
+<figure><a href="../img/code-petscii.webp"><img src="../img/code-petscii.webp" alt="The PETSCII panel" loading="lazy"></a>
+<figcaption>The PETSCII panel: colours, keys, function keys and the characters of the charset.</figcaption></figure>
+<p>In a string of a Commodore BASIC, <code>{</code> offers the control codes (<code>{clr}</code>, <code>{red}</code>, <code>{rvs on}</code> …); a code that is complete becomes one PETSCII character, as the machine shows it. A right click in a string opens the <strong>PETSCII panel</strong>: the colours, the keys (CLR, HOME, RVS …), f1-f8 and every character; a click writes it at the caret. The panel's <span class="ui">Charset</span> switches between upper case / graphics, lower / upper case and a charset of the project. The files keep the readable <code>{codes}</code> of petcat.</p>
+<h4>DATA @embed</h4>
+<p>A line <code>DATA @embed kind "file"[, per row[, …]]</code> becomes DATA lines with the bytes of a file of the project when the program is built. <em>per row</em> is the number of values in a DATA line (1-255, empty: 16).</p>
+<table>
+<tr><th>Kind</th><th>Arguments after the file</th><th>Bytes</th></tr>
+<tr><td><code>sprite</code></td><td>per row, frame (index or name)</td><td>a sprite frame of the sprite editor, 64 bytes a sprite</td></tr>
+<tr><td><code>charset</code></td><td>per row, first, count</td><td>characters, 8 bytes each (without first: all)</td></tr>
+<tr><td><code>screen</code></td><td>per row, <code>colors</code></td><td>the characters of a screen, or its colours</td></tr>
+<tr><td><code>bitmap</code></td><td>per row, <code>all|bitmap|screen|colors|background</code></td><td>a Koala picture or a part of it</td></tr>
+<tr><td><code>sound</code></td><td>per row</td><td>the music of a <code>.sid</code> file</td></tr>
+<tr><td><code>binary</code></td><td>per row, from, count</td><td>any file</td></tr>
+</table>
+<pre><code>10 data @embed charset "gfx/charset/chars.chr", 8, 1, 26</code></pre>
+<p>The eye button of the bar shows after every <code>@embed</code> line what it embeds: a picture of the sprite, the characters or the screen and the number of bytes and DATA lines.</p>
+<h4>#define and @if</h4>
+<p><code>#define name [value]</code>, <code>#undef</code>, <code>@if name</code>, <code>@if !name</code>, <code>@if name = value</code>, <code>@elif</code>, <code>@else</code> and <code>@end</code> take lines in or out of the program before it is built. Lines that are out are dimmed. Names for the whole project are set in <span class="ui">File › Project settings… › Defines for @if in BASIC</span>.</p>
+<h4>The longest line</h4>
+<p>The screen editor of a machine takes lines of a certain length only (C64: 80, VIC-20: 88, C128: 160 …; <a href="#set-editor">Settings › Editor</a>). The editor shows this length as a red vertical line; the part of a line past it is red, and a key that would make a line longer is refused (Enter, deleting and pasting are not). How a line is counted depends on the BASIC:</p>
+<ul>
+  <li>A BASIC of <strong>tokens</strong> (the Commodores, the ZX81) is counted as it is typed: a keyword as its shortest form (<code>?</code> for PRINT, <code>pO</code> for POKE, <code>goS</code> for GOSUB; on the ZX81 one key). Such a line may go past the red line - but after <code>LIST</code> it is longer than the screen editor takes.</li>
+  <li>A BASIC of <strong>text</strong> (Atari, CPC, TRS-80, BBC) is counted as written.</li>
+</ul>
+<p>The build warns of lines that are too long, also in the label mode.</p>
+
+<h3 id="code-io">Export and import</h3>
+<p><span class="ui">Export…</span> (the download icon of the app bar) offers in the Code view the project as a package, the source of the tab (for BASIC with <code>@embed</code> also with the DATA lines resolved), and the files of the last build. <span class="ui">Import…</span> brings a source file (<code>.asm .a .s .inc .bas .txt</code>) into <code>src/</code>.</p>
+
+<!-- ======================================================================================= -->
+<h2 id="debug">The Debugger</h2>
+<figure><a href="../img/debug-stopped.webp"><img src="../img/debug-stopped.webp" alt="The Debugger stopped at a breakpoint" loading="lazy"></a>
+<figcaption>Stopped at <code>.wait</code>: the disassembly around the PC with the labels and source lines of the build, the memory, the registers, a breakpoint, a watch and the screen of the emulator.</figcaption></figure>
+
+<h3 id="debug-start">Starting a session</h3>
+<p>The debugger works with <strong>VICE</strong> (version 3.5 or newer), so with the C64, C128, VIC-20, Plus/4, C16 and PET. NerdSuite starts VICE itself with its binary monitor; VICE needs no setup of its own. The server looks for VICE in the path of the settings (<span class="ui">VICE</span> in <a href="#set-tools">Assemblers and emulators</a>), then in the environment variable <code>VICE</code>, then in the PATH.</p>
+<p><kbd>F6</kbd> (or the bug of the Code bar, or the hammer of the Debugger bar) builds the program, starts VICE for the machine of the project (or uses the VICE that runs), places the breakpoints, loads the program, starts it and shows the Debugger. <kbd>F5</kbd> runs a program in VICE too, but without its breakpoints. On other machines the program only runs.</p>
+<figure><a href="../img/debug-idle.webp"><img src="../img/debug-idle.webp" alt="The Debugger without VICE" loading="lazy"></a>
+<figcaption>Before a session: <span class="ui">VICE is not running</span>. The breakpoints of the sources are listed already.</figcaption></figure>
+
+<h3 id="debug-bar">The bar</h3>
+<table>
+<tr><th>Control</th><th>What it does</th></tr>
+<tr><td>Machine</td><td>The machine VICE emulates (the machine of the project).</td></tr>
+<tr><td><span class="ui">Start VICE</span> / <span class="ui">Stop VICE</span></td><td>Starts the emulator (without a program) or closes it.</td></tr>
+<tr><td>Hammer</td><td>Build, load and run the main program with its breakpoints, as <kbd>F6</kbd>.</td></tr>
+<tr><td><span class="ui">Continue</span> / <span class="ui">Pause</span></td><td><kbd>F8</kbd>; while stopped also <kbd>F5</kbd>.</td></tr>
+<tr><td><span class="ui">Step into</span></td><td><kbd>F11</kbd>: one instruction.</td></tr>
+<tr><td><span class="ui">Step over</span></td><td><kbd>F10</kbd>: one instruction, a <code>jsr</code> as a whole.</td></tr>
+<tr><td><span class="ui">Step out</span></td><td><kbd>Shift+F11</kbd>: runs until the <code>rts</code> of the routine.</td></tr>
+<tr><td><span class="ui">Reset the machine</span></td><td>A soft reset.</td></tr>
+<tr><td><span class="ui">Read the state again</span></td><td>Reads registers, memory and the rest again.</td></tr>
+<tr><td>Status</td><td><span class="ui">Running</span>, or <span class="ui">Stopped at $084e (.wait) · src/main.asm:38 · BASIC line 10</span>: the PC, its label, its source line and - on the C64, VIC-20 and C128 - the BASIC line being run.</td></tr>
+</table>
+<p>The step keys work while the CPU is stopped, wherever the focus is. There is no "run to cursor": a breakpoint <em>once</em> (below) does the same.</p>
+
+<h3 id="debug-panels">Disassembly and memory</h3>
+<p><strong>Disassembly</strong> shows 28 instructions around the PC while the CPU is stopped: address, bytes, label, instruction (addresses with a label get the label, <code>‹.copy›</code>) and the source line, which opens the Code view at that line. The line of the PC is highlighted. The dot at the left of a line sets a breakpoint at its address. With <span class="ui">Follow the PC</span> the listing follows every stop.</p>
+<p><strong>Memory</strong> shows 256 bytes from an address - <code>$0801</code>, <code>0x…</code>, a decimal number, <code>%binary</code>, a label of the build or <code>label+offset</code> - with the arrows a page back or on, and a bank of VICE (<code>cpu</code>, <code>ram</code>, <code>rom</code>, <code>io</code> …). It is read while VICE runs too. A double click on a byte writes new bytes: <code>a9 01</code> or <code>"text"</code>.</p>
+
+<h3 id="debug-side">Registers, breakpoints, watches</h3>
+<p>The side panel <span class="ui">Debugger</span> has these sections:</p>
+<ul>
+  <li><span class="ui">Registers</span>: PC, A, X, Y and SP, editable (hex, or a label); the flags N V B D I Z C - a click toggles one; further values of VICE (the 6510 port, the raster line, cycles); and the 16 bytes of the stack above SP.</li>
+  <li><span class="ui">Breakpoints and watchpoints</span>: the breakpoints of the sources (on/off, their line, a condition) and the ones made here, with their hits. The + opens:</li>
+</ul>
+<figure><a href="../img/debug-breakpoint-dialog.webp"><img src="../img/debug-breakpoint-dialog.webp" alt="New breakpoint or watchpoint" loading="lazy"></a>
+<figcaption>A breakpoint or watchpoint: when to stop, where, an optional range and condition, every time or once.</figcaption></figure>
+<ul>
+  <li><span class="ui">Stop when</span>: <span class="ui">the CPU executes it (breakpoint)</span>, <span class="ui">it is written (watchpoint)</span>, <span class="ui">it is read (watchpoint)</span> or <span class="ui">it is read or written</span>.</li>
+  <li><span class="ui">Address or label</span> and <span class="ui">To (optional)</span> for a range.</li>
+  <li><span class="ui">Condition (optional)</span> in the syntax of the VICE monitor, e.g. <code>A == $10 &amp;&amp; X &gt; 3</code>.</li>
+  <li><span class="ui">every time</span> or <span class="ui">once (temporary)</span>.</li>
+</ul>
+<figure><a href="../img/debug-watch-dialog.webp"><img src="../img/debug-watch-dialog.webp" alt="New watch" loading="lazy"></a>
+<figcaption>A watch: an address or a label, shown as a byte, a word, 8 bytes or text.</figcaption></figure>
+<ul>
+  <li><span class="ui">Watches</span>: values read whenever the CPU stops - as <span class="ui">byte</span> (hex, decimal, bits), <span class="ui">word (little endian)</span>, <span class="ui">8 bytes</span> or <span class="ui">text (16 chars)</span>. A watch takes an address or a <em>label</em> of the build; a constant (<code>BORDER = $d020</code>) is no label: give its address.</li>
+  <li><span class="ui">Screen</span>: the screen of the emulator when the CPU stops, with <span class="ui">Live while running (every second)</span>.</li>
+  <li><span class="ui">Log</span>: what VICE and the debugger said, with <span class="ui">Clear the log</span>.</li>
+</ul>
+
+<h3 id="debug-code">Breakpoints in the code</h3>
+<figure><a href="../img/debug-code-here.webp"><img src="../img/debug-code-here.webp" alt="The line the CPU stopped at in the code" loading="lazy"></a>
+<figcaption>When the CPU stops, the Code view marks the line of the PC (<code>084e</code>) - here one step after the breakpoint at <code>.frame</code>.</figcaption></figure>
+<p>A click on a line number of an assembler source sets a breakpoint at the first address the line makes (BASIC runs in the interpreter of the machine: no breakpoints). After every build the breakpoints move to the new addresses; a line that makes no code gets no breakpoint. The breakpoints of a project are kept for the session of the browser tab. When the CPU stops, the Code view opens the file of the PC and marks its line, and the Debugger reads the registers, the memory, the watches and the screen again.</p>
+
+<!-- ======================================================================================= -->
+<h2 id="disasm">The Disassembler</h2>
+<figure><a href="../img/disasm-view.webp"><img src="../img/disasm-view.webp" alt="The Disassembler with demo.prg" loading="lazy"></a>
+<figcaption>The build <code>demo.prg</code>: the BASIC line with its SYS, the code traced from it with the names of the C64 registers, the bytes at the right (8 a row), the analysis in the side panel.</figcaption></figure>
+
+<h3 id="disasm-files">Files and formats</h3>
+<p>The file select of the bar lists the programs of the project (<code>.prg .bin .raw .dat .a26 .xex .nes .sfc .smc .rom</code>), the files of the last build (<span class="ui">name (build)</span>) and files from outside: dropped on the view or opened with <span class="ui">Open a file from the disk</span> (up to 16 MB; kept while the tab is open, <span class="ui">Add the file to the project</span> keeps them for good). The Hex view opens its file here with <span class="ui">Disassemble the file</span>.</p>
+<ul>
+  <li><code>.prg</code>: the first two bytes are the load address; the machine follows from it ($0801 C64, $1c01 C128, $1001/$1201 VIC-20, $0401 PET) or from the project.</li>
+  <li><code>.nes</code>: the iNES header is skipped, the PRG ROM ends at $FFFF, the vectors NMI, RESET and IRQ are entry points.</li>
+  <li><code>.sfc</code> / <code>.smc</code>: LoROM, the first bank at $8000 (a copier header is skipped), 65816.</li>
+  <li><code>.a26</code>: at the end of $10000, the reset vector is the entry point.</li>
+  <li>Everything else: from address $0000, until you set a <span class="ui">Load address</span>.</li>
+</ul>
+<p>After every build an open build file is read again.</p>
+
+<h3 id="disasm-layout">Layout and bar</h3>
+<p>At the left the disassembly, a line per instruction or piece of data: address, bytes, label, instruction or directive, comment. At the right the same bytes as hex and characters, coloured by their type. A selection is made by dragging over the bytes or with <kbd>Shift</kbd> and the arrows.</p>
+<table>
+<tr><th>Control</th><th>What it does</th></tr>
+<tr><td><span class="ui">Auto</span></td><td>Traces the code from its entry points; the rest is data (see below).</td></tr>
+<tr><td>Undo / Redo</td><td>Marks and names, <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>.</td></tr>
+<tr><td><span class="ui">Mark the selection as code (C)</span></td><td>The selection is code.</td></tr>
+<tr><td>Type + <span class="ui">Mark the selection as data of this type</span></td><td>Bytes, Words, Text (ASCII), Text (PETSCII), Screen codes, Chars, Sprites, Bitmap, Tiles (NES, SNES), BASIC.</td></tr>
+<tr><td><span class="ui">Unmark the selection (U)</span></td><td>Auto mode decides again.</td></tr>
+<tr><td><span class="ui">Go to an address or label (Ctrl+G)</span></td><td><code>$c000</code>, <code>l_c000</code>, a name.</td></tr>
+<tr><td><span class="ui">Rename the label of the line (F2)</span></td><td>Also a double click on the label.</td></tr>
+<tr><td><span class="ui">Copy as ACME source (Ctrl+Shift+C)</span></td><td>The whole disassembly to the clipboard.</td></tr>
+<tr><td><span class="ui">Save as ACME source in the project</span></td><td>See <a href="#disasm-out">Saving as source</a>.</td></tr>
+<tr><td>Machine · CPU</td><td>What the file is disassembled for.</td></tr>
+<tr><td>Text, row</td><td>The characters of the byte column (ASCII, PETSCII, screen codes, ATASCII) and <span class="ui">8 bytes</span> or <span class="ui">16 bytes</span> a row. With 8 bytes the disassembly has more room.</td></tr>
+</table>
+
+<h3 id="disasm-auto">Code and data</h3>
+<p>With <span class="ui">Auto</span> NerdSuite follows the code from its entry points: the <code>SYS</code> of a BASIC line, the load address (when there is no BASIC), the vectors of a cartridge, the <span class="ui">More entry points</span> of the side panel and every range marked as code. Jumps, branches and calls are followed. What is reached is code; runs of six and more printable bytes are text; the rest are bytes. Without <span class="ui">Auto</span> every byte that is not marked is code.</p>
+<p>A BASIC program at the start is listed as such (on the Commodores at any address); its <code>SYS</code> numbers are entry points. <kbd>Enter</kbd> or a double click on such a line goes to the code.</p>
+<p>Ranges are marked with the bar, the buttons of the side panel or keys: <kbd>C</kbd> code, <kbd>D</kbd> bytes, <kbd>W</kbd> words, <kbd>T</kbd> text, <kbd>P</kbd> PETSCII, <kbd>S</kbd> screen codes, <kbd>H</kbd> chars, <kbd>R</kbd> sprites, <kbd>M</kbd> bitmap, <kbd>I</kbd> tiles, <kbd>U</kbd> unmark. Marks, names, the load address and the entry points are stored in the project (<code>nerdsuite.json</code>).</p>
+
+<h3 id="disasm-labels">Labels and names</h3>
+<p>Addresses in the file get labels <code>l_xxxx</code> (code) and <code>d_xxxx</code> (data); an address within a line is <code>label+offset</code>. <kbd>F2</kbd> or a double click gives a label a name of its own (an empty name gives it back its address name); <kbd>Ctrl+Z</kbd> undoes it. Addresses of the machine get the names of its memory map - <code>sta VIC_BORDER</code> - for the C64, C128, VIC-20, Plus/4, C16, PET, MEGA65, Atari 8-bit and VCS, NES, SNES, CPC, ZX81, TRS-80 and BBC Micro.</p>
+<p>The comments are made by NerdSuite: the description of a register or ROM routine, what a value written means (<code>$1b: y scroll 3 · rows 25 · screen on</code>), the text of a BASIC line, <code>char n</code>, <code>sprite n</code> and the like. Comments of your own are not possible.</p>
+<p><kbd>Enter</kbd> or a double click on a line follows its jump; <kbd>Backspace</kbd> comes back. The search of the header (<span class="ui">Find in the disassembly</span>) finds labels, instructions and addresses.</p>
+
+<h3 id="disasm-panel">The side panel</h3>
+<figure><a href="../img/disasm-preview.webp"><img src="../img/disasm-preview.webp" alt="The preview of the charset at $3000" loading="lazy"></a>
+<figcaption>The preview of the bytes at $3000 as characters: the charset of the demo.</figcaption></figure>
+<ul>
+  <li><span class="ui">Selection</span>: range, size and type of the selection, and a button for every type.</li>
+  <li><span class="ui">Register</span>: when the line names a register - its description, the value written and its bits.</li>
+  <li><span class="ui">Analysis</span>: <span class="ui">Auto</span>, the <span class="ui">Machine</span>, the <span class="ui">Load address</span> (not for <code>.prg</code> and cartridges), <span class="ui">More entry points</span>, and what was found: BASIC lines, entries, code, data, labels.</li>
+  <li><span class="ui">Marks</span>: the marked ranges; a click selects one, × removes it.</li>
+  <li><span class="ui">Preview</span>: the selection or the bytes from the cursor as <span class="ui">Chars</span>, <span class="ui">Sprites</span>, <span class="ui">Bitmap</span>, NES or SNES tiles, with multicolor, zoom, groups (e.g. 2×2 characters) and the colours. <span class="ui">Draw the graphics in the disassembly too</span> shows the pixels in the lines. <span class="ui">Mark as …</span> marks the range previewed.</li>
+  <li><span class="ui">Keys</span>: the keys of the view.</li>
+</ul>
+
+<h3 id="disasm-out">Saving as source</h3>
+<p><span class="ui">Save as ACME source in the project</span> writes the disassembly as <code>src/name_dis.asm</code> (or a path of your own) and opens it in the Code view: the names of the machine addresses it uses as constants, <code>!cpu</code>, <code>!to</code>, the start address, the code with its labels and the data as <code>!byte</code>, <code>!text</code> and so on. A file with a header (NES, SNES) is written with <code>!pseudopc</code>. The source assembles to the same bytes. Renaming a label later also renames it in that source while it is open.</p>
+
+<!-- ======================================================================================= -->
+<h2 id="hex">The Hex view</h2>
+<figure><a href="../img/hex-view.webp"><img src="../img/hex-view.webp" alt="The Hex view with demo.prg" loading="lazy"></a>
+<figcaption><code>demo.prg</code> in the Hex view: addresses from its load address, the bytes, PETSCII, and at the right the byte at the cursor, the code from there and the file.</figcaption></figure>
+
+<h3 id="hex-files">Files</h3>
+<p>The file select lists every file of the project, the files of the last build (<span class="ui">name (build)</span>) and files from outside (<span class="ui">name (dropped)</span>, by dropping or with <span class="ui">Open a file from the disk</span>, up to 16 MB). Files without an editor of their own open here from the file list too.</p>
+<p>Only the binary files of the project can be changed (<code>.chr .bin .raw .kla .koa .art .sng .scr .gfx .spr .til .prg .sid .dat .map .col .nes .sfc .smc .a26 .xex .rom</code>). Sources, build files and dropped files are <span class="ui">read only</span>; a dropped file can be added to the project with <span class="ui">Add the file to the project</span>.</p>
+
+<h3 id="hex-bar">Bar and layout</h3>
+<table>
+<tr><th>Control</th><th>What it does</th></tr>
+<tr><td><span class="ui">New binary file</span></td><td>A new file: path (<code>.bin .raw .dat .prg .map .col</code>), size (1-65536) and the byte it is filled with.</td></tr>
+<tr><td><span class="ui">Open a file from the disk</span></td><td>A file from outside (or drop it on the view).</td></tr>
+<tr><td>Undo / Redo</td><td><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>, 200 steps.</td></tr>
+<tr><td><span class="ui">Go to an offset or address (Ctrl+G)</span></td><td>See <a href="#hex-find">Find and go to</a>.</td></tr>
+<tr><td><span class="ui">Insert a byte at the cursor (Ins)</span>, <span class="ui">Delete the selected bytes (Del)</span></td><td>Inserts <code>$00</code>, deletes.</td></tr>
+<tr><td><span class="ui">Fill the selection</span></td><td>With bytes repeated (<code>00</code> or <code>a9 01</code>).</td></tr>
+<tr><td><span class="ui">Copy as hex (Ctrl+C)</span></td><td><code>a9 00 8d …</code></td></tr>
+<tr><td><span class="ui">Copy as ACME source (Ctrl+Shift+C)</span></td><td>A label and <code>!byte</code> lines of 16 bytes.</td></tr>
+<tr><td><span class="ui">Disassemble the file</span></td><td>Opens it in the Disassembler.</td></tr>
+<tr><td>Text, row</td><td>ASCII, PETSCII (in the C64 font), screen codes or ATASCII; 8, 16 or 32 bytes a row.</td></tr>
+</table>
+<p>Each row has the offset (or, with a base address, the address), the bytes with a gap after eight, and the text. A <code>.prg</code> starts its addresses at its load address. The status shows the column of the cursor (<code>HEX</code> or <code>TEXT</code>), changes, the size and <code>read only</code>.</p>
+
+<h3 id="hex-edit">Editing</h3>
+<ul>
+  <li>In the hex column hex digits type over the byte, high nibble first; then the cursor moves on.</li>
+  <li>In the text column a character is written in the encoding chosen (PETSCII: a small letter as a capital, a capital shifted).</li>
+  <li><kbd>Tab</kbd> switches between the columns. At the end of a file the empty <code>__</code> takes new bytes.</li>
+  <li><kbd>Ins</kbd> inserts a <code>$00</code>, <kbd>Del</kbd> or <kbd>Backspace</kbd> delete the selection or the byte at the cursor.</li>
+  <li><kbd>Ctrl+V</kbd> pastes hex bytes at the cursor (they replace what is there and may make the file longer).</li>
+  <li>A click moves the cursor, <kbd>Shift</kbd>+click or <kbd>Shift</kbd>+arrows select, <kbd>Home</kbd> / <kbd>End</kbd> go to the start / end of the row, <kbd>Ctrl+Home</kbd> / <kbd>Ctrl+End</kbd> of the file, <kbd>Ctrl+A</kbd> selects all.</li>
+</ul>
+<p><span class="ui">Save the file</span> in the side panel or <kbd>Ctrl+S</kbd> saves; another file with unsaved changes asks first.</p>
+
+<h3 id="hex-find">Find and go to</h3>
+<p>The find field above the bytes (and the search of the header) take hex bytes (<code>a9 00</code> or <code>a900</code>) or <code>"text"</code> in quotes, encoded in the text chosen; other text is searched as ASCII. <kbd>Enter</kbd> finds the next, <kbd>Shift+Enter</kbd> the previous match. <kbd>Ctrl+G</kbd> goes to an address (<code>$c000</code>) or offset (<code>+12</code>, <code>$10</code>, <code>16</code>).</p>
+
+<h3 id="hex-panel">The side panel</h3>
+<ul>
+  <li><span class="ui">Cursor</span>: offset, address, the name of the machine at that address (e.g. <code>SPRITE_PTRS+7</code>), the selection, the byte (hex, unsigned, signed), its bits and the word in both byte orders.</li>
+  <li><span class="ui">Code</span>: six instructions disassembled from the cursor, for the CPU of the project.</li>
+  <li><span class="ui">File</span>: size, load address, <span class="ui">Address of the first byte</span> (a base address for the offsets) and <span class="ui">Save the file</span>.</li>
+  <li><span class="ui">Keys</span>: the keys of the view.</li>
+</ul>
+
+<!-- ======================================================================================= -->
+<h2 id="settings">Menu and settings</h2>
+
+<h3 id="menu">The menu</h3>
+<figure><a href="../img/menu.webp"><img src="../img/menu.webp" alt="The menu with the languages and their handbooks" loading="lazy"></a>
+<figcaption>The menu (☰ at the top left): the settings, the theme, the languages - each with its handbook - and the keyboard shortcuts.</figcaption></figure>
+<ul>
+  <li><span class="ui">Settings…</span> (<kbd>Ctrl+,</kbd>) opens the settings.</li>
+  <li><span class="ui">Dark theme</span> / <span class="ui">Light theme</span> switch the theme. Without a choice NerdSuite follows the system.</li>
+  <li><span class="ui">Language</span>: <span class="ui">English</span> or <span class="ui">Deutsch</span>. The book at the right of a language opens this handbook in it.</li>
+  <li><span class="ui">Keyboard shortcuts</span> lists the main keys, <span class="ui">About NerdSuite</span> the version.</li>
+</ul>
+<h4>The settings dialog</h4>
+<figure><a href="../img/settings-search.webp"><img src="../img/settings-search.webp" alt="The search of the settings" loading="lazy"></a>
+<figcaption>The search field finds a setting in every section: here <code>basic</code>.</figcaption></figure>
+<p>The settings have four sections: <span class="ui">Editor</span>, <span class="ui">Colours</span>, <span class="ui">Toolchains</span> and <span class="ui">Assemblers and emulators</span>. <span class="ui">Search the settings</span> finds a setting by its name, its group or its hint in all of them. The settings of the editor and the colours are kept in this browser and work at once; toolchains, paths, emulators and the Ultimate are kept on the server (<code>~/.nerdsuite/settings.json</code>, or the file of <code>NERDSUITE_SETTINGS</code>) and are saved when a field is left.</p>
+
+<h3 id="set-editor">Editor</h3>
+<figure><a href="../img/settings-editor.webp"><img src="../img/settings-editor.webp" alt="The settings of the editor" loading="lazy"></a>
+<figcaption>Font, size, line spacing, tab width, PETSCII glyphs - with a sample of the code.</figcaption></figure>
+<table>
+<tr><th>Setting</th><th>Meaning</th></tr>
+<tr><td><span class="ui">Font of the code</span></td><td>Geist Mono, C64 Pro Mono, Cascadia Mono, Consolas, JetBrains Mono, Fira Code, Source Code Pro, Courier New, the system's monospace font, or <span class="ui">Another font …</span> by its CSS name.</td></tr>
+<tr><td><span class="ui">Font size</span></td><td>8-28 pixels at 100 % zoom.</td></tr>
+<tr><td><span class="ui">Line spacing</span></td><td>1-2.2 times the font size.</td></tr>
+<tr><td><span class="ui">Tab width</span></td><td>2, 4 or 8 columns.</td></tr>
+<tr><td><span class="ui">PETSCII glyphs in BASIC strings</span></td><td>Their size in a column, 0.8-1.5.</td></tr>
+</table>
+<figure><a href="../img/settings-platforms.webp"><img src="../img/settings-platforms.webp" alt="BASIC and assembler per platform" loading="lazy"></a>
+<figcaption>Per platform: the longest BASIC line.</figcaption></figure>
+<p><span class="ui">BASIC and assembler per platform</span> has a row for every machine with a BASIC: <span class="ui">Max. BASIC line length</span>, empty for the machine's own (C64 80, C128 160, VIC-20 / Plus/4 / C16 88, PET 80, MEGA65 160, Atari 120, CPC 255, TRS-80 240, BBC 238, ZX81 no limit), <code>0</code> for no limit. The hint below the field says how the platform counts: keys with abbreviated keywords, or characters as written (see <a href="#code-basic">The longest line</a>). <span class="ui">The editor as it was</span> resets the editor and these values, not the colours.</p>
+
+<h3 id="set-colours">Colours</h3>
+<figure><a href="../img/settings-colours.webp"><img src="../img/settings-colours.webp" alt="The colours of the tokens" loading="lazy"></a>
+<figcaption>Colour, bold and italic for each kind of token.</figcaption></figure>
+<p>Each kind of token - directives and pseudo ops, mnemonics and keywords, labels, macro calls, numbers, strings, comments, symbols, brackets and operators, BASIC line numbers - has a colour, <span class="ui">B</span>old and <span class="ui">I</span>talic. Plain text, background and caret have a colour. The undo button of a row gives it back the colour of the theme; <span class="ui">All colours as the theme has them</span> resets all.</p>
+
+<h3 id="set-chains">Toolchains</h3>
+<figure><a href="../img/settings-toolchains.webp"><img src="../img/settings-toolchains.webp" alt="A toolchain ACME › Exomizer › VICE" loading="lazy"></a>
+<figcaption>A toolchain: ACME compiles, Exomizer packs, the emulator of the machine runs it.</figcaption></figure>
+<p>A toolchain says what Build and Run do with a program: compile, pack, start. <span class="ui">Add a toolchain</span> starts from a preset (<span class="ui">ACME › Exomizer › VICE (C64)</span>, <span class="ui">KickAssembler › Exomizer › VICE (C64)</span>, <span class="ui">64tass › VICE (C64)</span>, <span class="ui">cc65 (C) › VICE (C64)</span>, <span class="ui">oscar64 (C) › Exomizer › VICE (C64)</span>, or an empty one). Each has a name, a machine (or every machine) and three steps:</p>
+<ul>
+  <li><span class="ui">Compiler</span>: <span class="ui">As the project sets it</span>, <span class="ui">ACME</span>, <span class="ui">KickAssembler</span> or <span class="ui">A command…</span> - with <code>{main}</code> (the source), <code>{out}</code> (the program), <code>{dir}</code>, <code>{name}</code>, <code>{platform}</code>.</li>
+  <li><span class="ui">Packer</span>: <span class="ui">None</span>, <span class="ui">Exomizer</span>, <span class="ui">pucrunch</span>, <span class="ui">Dali</span> or a command with <code>{in}</code>, <code>{out}</code>, <code>{exec}</code> (where it starts); options of their own.</li>
+  <li><span class="ui">Emulator</span>: <span class="ui">The one of the machine</span>, an emulator, <span class="ui">Ultimate 64 (a real C64)</span> or a command with <code>{file}</code>.</li>
+</ul>
+<p>A project chooses its toolchain in <span class="ui">File › Project settings… › Toolchain</span>. The commands run on the server.</p>
+
+<h3 id="set-tools">Assemblers and emulators</h3>
+<figure><a href="../img/settings-tools.webp"><img src="../img/settings-tools.webp" alt="The paths of the tools" loading="lazy"></a>
+<figcaption>The tools of the server: a path for each, and what was found.</figcaption></figure>
+<p>For each tool a <span class="ui">Path</span> - the program or its folder. A path set here comes before the environment variable of the tool; an empty field uses the variable or the default. Below the field NerdSuite shows what it found, <span class="ui">not found</span>, or that another path is used.</p>
+<table>
+<tr><th>Group</th><th>Tools (environment variable)</th></tr>
+<tr><td>Emulators</td><td>VICE (<code>VICE</code>, the folder of x64sc), Altirra, Atari800, WinAPE, Caprice, Stella, Mesen, FCEUX, Nestopia, bsnes, Snes9x, EightyOne, ZEsarUX, trs80gp, BeebEm, b2, Xemu, MAME</td></tr>
+<tr><td>Assemblers</td><td>KickAssembler (<code>KICKASS</code>, KickAss.jar or its folder), Java (<code>JAVA</code>)</td></tr>
+<tr><td>Packers</td><td>Exomizer (<code>EXOMIZER</code>), pucrunch (<code>PUCRUNCH</code>), Dali (<code>DALI</code>)</td></tr>
+</table>
+<p><span class="ui">Ultimate 64</span>: the <span class="ui">Address</span> (name or IP) of an Ultimate 64 or Ultimate-II+ on the network, for <kbd>Shift+F5</kbd> (REST API, firmware 3.11 or newer), and its <span class="ui">Password</span>, if it has one; the status shows whether the device answers. <span class="ui">Emulator per platform</span> chooses the emulator Run starts for each platform; without a choice the first one found.</p>
+
+<!-- ======================================================================================= -->
+<h2 id="keys">Keyboard shortcuts</h2>
+<table>
+<tr><th>Key</th><th>Action</th><th>Where</th></tr>
+<tr><td><kbd>Ctrl+S</kbd></td><td>Save every editor</td><td>everywhere</td></tr>
+<tr><td><kbd>Ctrl+B</kbd></td><td>Build</td><td>everywhere</td></tr>
+<tr><td><kbd>F5</kbd></td><td>Build and run (continue while stopped)</td><td>everywhere</td></tr>
+<tr><td><kbd>Shift+F5</kbd></td><td>Build and run on the Ultimate 64</td><td>everywhere</td></tr>
+<tr><td><kbd>F6</kbd></td><td>Build and debug in VICE</td><td>everywhere</td></tr>
+<tr><td><kbd>F8</kbd></td><td>Pause / continue</td><td>debugger</td></tr>
+<tr><td><kbd>F10</kbd> / <kbd>F11</kbd> / <kbd>Shift+F11</kbd></td><td>Step over / into / out</td><td>debugger</td></tr>
+<tr><td><kbd>Ctrl+F</kbd></td><td>Search; <kbd>Enter</kbd> next, <kbd>Shift+Enter</kbd> previous, <kbd>Esc</kbd> clear</td><td>Code, Disassembler, Hex</td></tr>
+<tr><td><kbd>Ctrl+Space</kbd></td><td>Suggestions at the caret</td><td>Code</td></tr>
+<tr><td><kbd>Shift</kbd> (held)</td><td>Documentation of the word under the mouse</td><td>Code</td></tr>
+<tr><td><kbd>Ctrl+click</kbd></td><td>Go to the definition</td><td>Code (assembler)</td></tr>
+<tr><td><kbd>F2</kbd></td><td>Rename the label</td><td>Code, Disassembler</td></tr>
+<tr><td><kbd>Ctrl+/</kbd></td><td>Comment the lines in or out</td><td>Code</td></tr>
+<tr><td><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd></td><td>Indent the lines in or out</td><td>Code</td></tr>
+<tr><td><kbd>Ctrl</kbd>+wheel / <kbd>Ctrl+0</kbd></td><td>Zoom the code / its own size</td><td>Code</td></tr>
+<tr><td><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd></td><td>Undo / redo</td><td>Code, Disassembler, Hex</td></tr>
+<tr><td><kbd>Ctrl+G</kbd></td><td>Go to an address</td><td>Disassembler, Hex</td></tr>
+<tr><td><kbd>Ctrl+Shift+C</kbd></td><td>Copy as ACME source</td><td>Disassembler, Hex</td></tr>
+<tr><td><kbd>C</kbd> <kbd>D</kbd> <kbd>W</kbd> <kbd>T</kbd> <kbd>P</kbd> <kbd>S</kbd> <kbd>H</kbd> <kbd>R</kbd> <kbd>M</kbd> <kbd>I</kbd> <kbd>U</kbd></td><td>Mark as code, bytes, words, text, PETSCII, screen codes, chars, sprites, bitmap, tiles; unmark</td><td>Disassembler</td></tr>
+<tr><td><kbd>Enter</kbd> / <kbd>Backspace</kbd></td><td>Follow a jump / come back</td><td>Disassembler</td></tr>
+<tr><td><kbd>Ins</kbd> / <kbd>Del</kbd></td><td>Insert / delete bytes</td><td>Hex</td></tr>
+<tr><td><kbd>Ctrl+,</kbd></td><td>Settings</td><td>everywhere</td></tr>
+</table>
+</main>
+</div>
+</body>
+</html>

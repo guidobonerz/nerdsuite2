@@ -59,7 +59,7 @@ async function stageWebui() {
 
   // the page and what it loads besides the front end, and the example project
   copy('public/index.html', 'public/index.html');
-  for (const dir of ['css', 'fonts', 'images', 'vendor']) copy(`public/${dir}`, `public/${dir}`);
+  for (const dir of ['css', 'fonts', 'images', 'vendor', 'handbook']) copy(`public/${dir}`, `public/${dir}`);
   copy('examples/demo', 'examples/demo');
 
   if (PLAIN) {

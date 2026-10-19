@@ -1,8 +1,8 @@
-// i18n.js - the languages of the editor's UI: English, German and Klingon. The game is not
+// i18n.js - the languages of the editor's UI: English and German. The game is not
 // translated - its texts, names and the script stay as they are.
 //
-// The sources name the texts by numbered labels, '§0123', whose texts are in lang/en/, lang/de/
-// and lang/tlh/: '§0123': 'Save'. A text with values is a pattern - '§0456': 'Moved {0} to {1}' -
+// The sources name the texts by numbered labels, '§0123', whose texts are in lang/en/ and
+// lang/de/: '§0123': 'Save'. A text with values is a pattern - '§0456': 'Moved {0} to {1}' -
 // that the code hands its values: t('§0456', name, place). '{1?a:b}' is a when value 1 is empty,
 // else b - the plural a language makes with a value: '{0} Objekt{1?:e}'. Values that are texts
 // (labels too) are translated as well, those in quotes (“{0}”, a title of the game) not.
@@ -14,7 +14,7 @@
 //
 // The older form is still read: a text of the sources that is English (the texts that are data
 // as well - messages of the compiler, texts compared or written into the game) is looked up by
-// that English text in the dictionaries of de and tlh, with patterns of {} for its parts:
+// that English text in the dictionary of de, with patterns of {} for its parts:
 //   'Moved {} to {}': '{0} nach {1} verschoben'
 // A text that is not in the dictionary stays English. The language is a signal, but t() does
 // not subscribe to it: a component that reads a signal is rendered again only when a signal or
@@ -25,10 +25,9 @@
 import { signal } from '../vendor/signals.js';
 import en from './lang/en/index.js';
 import de from './lang/de/index.js';
-import tlh from './lang/tlh/index.js';
 
-export const LANGUAGES = [{ value: 'en', label: 'English' }, { value: 'de', label: 'Deutsch' }, { value: 'tlh', label: 'tlhIngan Hol (Klingon)' }];
-const DICTS = { de, tlh };
+export const LANGUAGES = [{ value: 'en', label: 'English' }, { value: 'de', label: 'Deutsch' }];
+const DICTS = { de };
 export const TEXT_ATTRS = ['data-tip', 'placeholder', 'aria-label', 'title'];
 
 // the language of the system - the language the browser prefers first, which follows the system:
