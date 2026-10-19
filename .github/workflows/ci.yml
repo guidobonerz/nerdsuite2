@@ -133,7 +133,10 @@ jobs:
         run: |
           node tools/smoke.mjs dist/nerdsuite-*-${{ matrix.system }} --version "$VERSION"
 
-  # the release of a version - a pushed tag v* only: the binaries of the three systems
+  # the release of a version - a pushed tag v* only: the binaries of the three systems. The artifacts and
+  # a download lose the executable bit, so macOS and Linux are also packed in a .tar.gz, which keeps it; the
+  # quarantine of macOS (no Developer ID, no notarization) and SmartScreen of Windows (not signed) only the
+  # user can pass - the notes say how
   release:
     name: Release
     needs: smoke
@@ -149,5 +152,37 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           find dist -type f
+          for f in $(find dist -type f -name 'nerdsuite-*' ! -name '*.exe'); do
+            chmod +x "$f"
+            tar -czf "dist/$(basename "$f").tar.gz" -C "$(dirname "$f")" "$(basename "$f")"
+          done
+          mac=$(basename "$(find dist -type f -name 'nerdsuite-*-macos')")
+          linux=nerdsuite-${{ github.ref_name }}-linux-amd64
+          win=nerdsuite-${{ github.ref_name }}-windows-amd64.exe
+          cat > notes.md <<EOF
+          ## Start
+
+          **macOS** - the app is not notarized, so macOS blocks the download until its quarantine is removed:
+          \`\`\`sh
+          chmod +x $mac
+          xattr -d com.apple.quarantine $mac
+          ./$mac
+          \`\`\`
+          From \`$mac.tar.gz\` (unpacked, it is executable already): \`tar -xzf $mac.tar.gz && xattr -d com.apple.quarantine $mac && ./$mac\`
+
+          **Linux** (amd64; arm64 the same) - a download loses the executable bit:
+          \`\`\`sh
+          chmod +x $linux
+          ./$linux
+          \`\`\`
+          From \`$linux.tar.gz\` (unpacked, it is executable already): \`tar -xzf $linux.tar.gz && ./$linux\`. In a file manager: Properties, Permissions, *Allow executing file as program*.
+
+          **Windows** - the program is not signed, so SmartScreen stops its first start with *Windows protected your PC*: click **More info**, then **Run anyway**. Or unblock the download once, in its Properties (**Unblock**) or in PowerShell:
+          \`\`\`powershell
+          Unblock-File .\\$win
+          .\\$win
+          \`\`\`
+
+          EOF
           gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "NerdSuite ${{ github.ref_name }}" --generate-notes \
-            $(find dist -type f -name 'nerdsuite-*')
+            --notes-file notes.md $(find dist -type f -name 'nerdsuite-*')

@@ -966,6 +966,7 @@ export function createScreenEditor(el, store, actions, bar) {
     const p = patch(), pr = p && patchRect(p);
     if (op === 'clear' && !(await confirmRemove({ kind: 'clear:screen', verb: 'clear',
       what: st.sel ? tr('§1448', st.sel.w, st.sel.h) : p ? tr('§1449', p.name) : tr('§1450', place().name) }))) return;
+    if (tiling()) return applyTileRange(op);
     const area = st.sel ?? (p ? { x: pr.col, y: pr.row, w: pr.w, h: pr.h } : { x: 0, y: 0, w: info.width, h: rowsOf() });
     const grid = Array.from({ length: rowsOf() }, (_, r) => Array.from({ length: info.width }, (_, c) => cellValue(c, r)));
     const res = regionOp(grid, op, area, { blank: { code: 32, color: info.textcolor }, resize: !!st.sel });
@@ -978,6 +979,38 @@ export function createScreenEditor(el, store, actions, bar) {
     stroke++;
     paint(cells, 'range:' + stroke, false);
     draw();
+  }
+
+  // the range tools on a screen of tiles: they move the tiles of its map, a whole tile at a time (a cell
+  // of chars would leave the map behind) - the range is the tiles it touches; clear puts tile 0
+  function applyTileRange(op) {
+    const ts = placeTileset(), rm = place();
+    if (!ts) return snackbar('§1415', { error: true });
+    const width = placeWidth(rm, consts()), rows = rowsOf(), n = ts.size;
+    const cur = rm.members.find(m => m.kind === 'background')?.tiles;
+    const map = cur && cur.size === n ? fitTilemap(cur, width, rows) : newTilemap(n, width, rows);
+    const tileOf = c => (c === NO_TILE || c >= ts.tiles.length ? 0 : c);
+    const grid = Array.from({ length: map.h }, (_, y) => Array.from({ length: map.w }, (_, x) => tileOf(map.cells[y * map.w + x])));
+    const s = st.sel;
+    const area = s ? { x: Math.floor(s.x / n), y: Math.floor(s.y / n), w: Math.ceil((s.x + s.w) / n) - Math.floor(s.x / n), h: Math.ceil((s.y + s.h) / n) - Math.floor(s.y / n) }
+      : { x: 0, y: 0, w: map.w, h: map.h };
+    const res = regionOp(grid, op, area, { blank: 0, resize: !!s });
+    if (!res) return snackbar('§0742', { error: true });
+    const changed = [];
+    res.grid.forEach((row, y) => row.forEach((t, x) => { if (t !== grid[y][x]) changed.push([x, y, t]); }));
+    if (s) st.sel = { x: res.rect.x * n, y: res.rect.y * n, w: res.rect.w * n, h: res.rect.h * n };
+    if (!changed.length) { draw(); return; }
+    stroke++;
+    const out = [];
+    store.mutate(() => {
+      const bg = tileBackground(rm, ts, width, rows);
+      for (const [x, y, t] of changed) {
+        bg.tiles.cells[y * bg.tiles.w + x] = t;
+        out.push(...tileCells(ts, t, x * n, y * n, width, rows));
+      }
+      for (const x of out) put(bg, x.c, x.r, x.code, x.color);
+    }, { key: 'range:' + stroke, source: 'screen' });
+    if (paintCells(out)) drawSoon(); else rebuildSoon();
   }
 
   // --- state changes ---------------------------------------------------------------
