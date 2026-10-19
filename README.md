@@ -27,7 +27,10 @@ npm run dist                  # the binaries of every system into build/dist (to
 npm test                      # the tests of the IDE: the assembler, the BASIC tokenizer, the languages (Node)
 npm run test:go               # the tests of the server (Go): VICE, the emulators, KickAssembler, the toolchains
 VICE_TEST=1 go test ./backend/vice/   # also the test that starts VICE for real
+node tools/handbook-shots.mjs # the screenshots of the handbook (a headless Chrome and a server, see the file)
 ```
+
+The handbook - the Code view, the debugger, the disassembler, the hex view and the settings - is in `public/handbook/en/` and `public/handbook/de/`; the menu opens it (the book next to each language).
 
 macOS: the binary of a release is not notarized (no Developer ID), so a downloaded one has to be made executable and freed from the quarantine once (the `.tar.gz` of the release keeps the executable bit):
 

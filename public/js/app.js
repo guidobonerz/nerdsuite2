@@ -928,11 +928,19 @@ $('#btn-menu').onclick = e => openMenu(e.currentTarget, [
     ? { label: 'Light theme', icon: 'light_mode', onclick: toggleTheme }
     : { label: 'Dark theme', icon: 'dark_mode', onclick: toggleTheme },
   { header: 'Language' },
-  ...LANGUAGES.map(l => ({ label: l.label, icon: 'language', checked: lang.value === l.value, onclick: () => setLang(l.value) })),
+  // each language with its handbook (public/handbook/LANG/): the button at the right of the item
+  ...LANGUAGES.map(l => ({ label: l.label, icon: 'language', checked: lang.value === l.value, onclick: () => setLang(l.value),
+    trailing: { icon: 'menu_book', tip: l.value === 'de' ? 'Handbuch (Deutsch)' : 'Handbook (English)', onclick: () => openHandbook(l.value) } })),
   { divider: true },
   { label: 'Keyboard shortcuts', icon: 'keyboard', onclick: showKeys },
   { label: 'About NerdSuite', icon: 'info', onclick: showAbout },
 ]);
+
+// the handbook of a language in a window of its own (public/handbook/LANG/index.html): the code, the
+// disassembler, the debugger, the hex view and the settings
+function openHandbook(code) {
+  window.open(`handbook/${code === 'de' ? 'de' : 'en'}/index.html`, '_blank', 'noopener');
+}
 
 function showKeys() {
   const rows = [
