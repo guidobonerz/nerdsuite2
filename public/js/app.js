@@ -124,7 +124,7 @@ let view = 'code';
 let booting = true;
 let explorer = null;                  // the files of the project (explorer.js), made below
 
-// Build, Run, Debug and the Ultimate: in the bar of the code editor too (their state: runState, updateChrome)
+// Build, Run, Debug and the Ultimate: in the bar of the code editor (their state: runState, updateChrome), and the keys
 const runState = signal({});
 const codeView = createCodeView($('#view-code'), toolbarFor('code'), {
   onDirty: () => updateDots(), onRoute: () => { syncRoute(); updateChrome(); }, onMain: () => updateChrome(), isShown: () => view === 'code',
@@ -436,10 +436,6 @@ async function runMain({ debug = false, onUltimate = false } = {}) {
   }
 }
 
-$('#btn-build').onclick = () => build();
-$('#btn-run').onclick = () => runMain();
-$('#btn-debug').onclick = () => runMain({ debug: true });
-$('#btn-ultimate').onclick = () => runMain({ onUltimate: true });
 
 // --- problems: the console below the code editor, the debugger, the disassembler and the hex view ---
 
@@ -803,28 +799,22 @@ function updateChrome() {
   const main = isOpen() ? buildTarget() : null;
   $('#file-name').textContent = !isOpen() ? t('no project') : `${projectName()} · ${machineOf(readSettings().machine).name}`;
   $('#btn-save').disabled = !isOpen();
-  for (const b of ['#btn-build', '#btn-run', '#btn-debug']) $(b).disabled = !isOpen() || !main || building;
-  const platform = machineOf(readSettings().machine);
-  if (platform.emulator.kind !== 'vice') $('#btn-debug').disabled = true;
-  $('#btn-debug').dataset.tip = platform.emulator.kind === 'vice' ? 'Build and debug in VICE (F6)' : `The debugger works with VICE: ${platform.name} programs run with F5`;
   $('#search-box').hidden = !isOpen() || !SEARCH[view];
-  $('#btn-build').dataset.tip = main ? `Build ${main} (Ctrl+B)` : 'Build: create a source first';
-  // the steps of the toolchain of the project
-  const chain = isOpen() ? chainLabel(projectToolchain(), platform, main) : '';
-  $('#btn-run').dataset.tip = chain ? `Build and run: ${chain} (F5)` : 'Build and run (F5)';
-  // the Ultimate 64: set up in the Settings, a C64 project
-  $('#btn-ultimate').hidden = !ultimate.value.host || !ultimateRuns(platform);
-  $('#btn-ultimate').disabled = !isOpen() || !main || building;
-  $('#btn-ultimate').dataset.tip = `Build and run on the Ultimate 64 at ${ultimate.value.host} (Shift+F5)`;
-  if (chain) $('#btn-build').dataset.tip += ` · ${chain}`;
+  // Build, Run, Debug and the Ultimate as the bar of the code editor shows them (codeview.js)
+  const platform = machineOf(readSettings().machine);
+  const off = !isOpen() || !main || building, vice = platform.emulator.kind === 'vice';
+  const chain = isOpen() ? chainLabel(projectToolchain(), platform, main) : '';   // the steps of the toolchain of the project
+  runState.value = {
+    build: { disabled: off, tip: (main ? `Build ${main} (Ctrl+B)` : 'Build: create a source first') + (chain ? ` · ${chain}` : '') },
+    run: { disabled: off, tip: chain ? `Build and run: ${chain} (F5)` : 'Build and run (F5)' },
+    debug: { disabled: off || !vice, tip: vice ? 'Build and debug in VICE (F6)' : `The debugger works with VICE: ${platform.name} programs run with F5` },
+    // the Ultimate 64: set up in the Settings, a C64 project
+    ultimate: { disabled: off, hidden: !ultimate.value.host || !ultimateRuns(platform), tip: `Build and run on the Ultimate 64 at ${ultimate.value.host} (Shift+F5)` },
+  };
   $('#btn-export').disabled = !isOpen();
   $('#btn-import').disabled = !isOpen() || !importFormats().length;
   updateDots();
   document.title = `${unsavedEdits() ? '• ' : ''}${isOpen() ? projectName() + ' – ' : ''}NerdSuite`;
-  // the buttons of the app bar as the bar of the code editor shows them; there they are, not in the app bar
-  const btn = id => { const b = $(`#btn-${id}`); return { disabled: b.disabled, hidden: b.hidden, tip: b.dataset.tip }; };
-  runState.value = { build: btn('build'), run: btn('run'), debug: btn('debug'), ultimate: btn('ultimate') };
-  document.body.classList.toggle('run-in-code', view === 'code' && isOpen());
 }
 
 store.on(() => updateChrome());

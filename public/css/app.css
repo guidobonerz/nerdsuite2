@@ -1616,5 +1616,3 @@ button.dbg-log__entry:hover { background: var(--md-sys-color-surface-container-h
 .seq-args__swatch { width: 22px; height: 22px; border: 1px solid var(--md-sys-color-outline); border-radius: var(--md-shape-xs); cursor: pointer; padding: 0; }
 .seq-args__swatch--on { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
 
-/* Build, Run, Debug and the Ultimate: in the bar of the code editor while it is shown (codeview.js), not in the app bar */
-body.run-in-code #run-sep, body.run-in-code #btn-build, body.run-in-code #btn-run, body.run-in-code #btn-debug, body.run-in-code #btn-ultimate { display: none; }

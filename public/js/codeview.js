@@ -426,7 +426,7 @@ export function createCodeView(el, bar, hooks = {}) {
     version.value; vice.bpVersion.value;    // eslint-disable-line no-unused-expressions
     if (!isOpen()) return null;
     const path = st.current, s = settings();
-    // Build, Run, Debug, the Ultimate: as the app bar has them (app.js runState), here while the code is shown
+    // Build, Run, Debug, the Ultimate: their state from app.js (runState)
     const run = hooks.runState?.value ?? {};
     const runButton = (key, ic, fn) => run[key] && !run[key].hidden
       && iconButton(ic, run[key].tip ?? key, fn, '', { disabled: !!run[key].disabled });
