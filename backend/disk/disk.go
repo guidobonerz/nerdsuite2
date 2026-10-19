@@ -309,7 +309,7 @@ func folder(p string) (string, error) {
 }
 
 // inside: the file of a project path in the folder of the project - a relative path with '/', without
-// '..', that stays in it
+// '..' or ':', that stays in it
 func inside(dir, rel string) (string, error) {
 	dir, err := folder(dir)
 	if err != nil {
@@ -319,7 +319,8 @@ func inside(dir, rel string) (string, error) {
 		return "", core.Errorf(400, "%q is no path of the project", rel)
 	}
 	for _, s := range strings.Split(rel, "/") {
-		if s == "" || s == "." || s == ".." {
+		// ':' names a drive on Windows ("C:/x") and is no file name there - not on any system then
+		if s == "" || s == "." || s == ".." || strings.Contains(s, ":") {
 			return "", core.Errorf(400, "%q is no path of the project", rel)
 		}
 	}
