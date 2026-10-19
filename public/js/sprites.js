@@ -1638,10 +1638,6 @@ export function createSpriteEditor(el, store, actions, bar) {
     return h('div', { class: 'screen-bar' },
       h('span', { class: 'md-title-medium' }, 'Sprites'),
       h('span', { class: 'screen-bar__sep' }),
-      select({ label: 'Sprite', hideLabel: true, value: st.target, dense: true, cls: 'screen-bar__sprite',
-        // nerdsuite: the sprites of the project; the built-in one only while there is none
-        options: S().costumes.length ? S().costumes.map(x => ({ value: x.id, label: x.name })) : [{ value: 'default', label: 'no sprite yet: + makes one' }],
-        onchange: v => { st.target = v; st.frame = 'stand'; st.layer = ''; st.anim = null; st.hidden.clear(); normalize(); render(); ui?.wrap.focus({ preventScroll: true }); } }),
       iconButton('add', '§0942', addCostume),
       c && iconButton('delete', tr('§0930', c.name), () => actions.remove(c.id)),   // a sprite of the game; not the cursor or the default one
       h('span', { class: 'screen-bar__sep' }),

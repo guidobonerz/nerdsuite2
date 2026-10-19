@@ -3,12 +3,12 @@
 // Run and Debug, the routes and the keyboard.
 //
 // The graphics editors of yopaca work on a model of the adventure language: in nerdsuite that model
-// is a file of the project only the IDE writes, assets.adv - the screens with their charsets,
+// is a file of the project only the IDE writes, assets.json - the screens with their charsets,
 // colors and layers, the sprites with their frames and animations. The art itself is in the files
 // of gfx/ (.scr, .spr, .chr, .til, .kla), which the sources include with !binary.
 
-import { parse } from './adv.js';
-import { gfxRefs, gfxDir, isScreenFile, isDirartFile } from './gfxfile.js';
+import { gfxDir, isScreenFile, isDirartFile } from './gfxfile.js';
+import { assetRefs, NEW_ASSETS } from './assets.js';
 import { setScriptPath, onCharsetChange, dirtyCharsets, saveCharset } from './chr.js';
 import { onPictureChange } from './picture.js';
 import { searchPanel } from './panelsearch.js';
@@ -26,6 +26,7 @@ import { createCodeView } from './codeview.js';
 import { createDebugView } from './debugview.js';
 import { createHexView } from './hexview.js';
 import { createDisasmView } from './disasmview.js';
+import { createExplorer } from './explorer.js';
 import { projectWizard } from './nswizard.js';
 import { stopPreview } from './songpreview.js';
 import { openSettings } from './settings.js';
@@ -49,11 +50,7 @@ import * as vice from './vice.js';
 const $ = sel => document.querySelector(sel);
 
 // the hidden model of the graphics
-export const ASSETS = 'assets.adv';
-const ASSETS_TEXT = `// assets.adv - the graphics of this nerdsuite project, kept by the IDE: the screens with their
-// charsets, colors and layers, the sprites with their frames and animations. The art is in gfx/.
-charset upper
-`;
+export const ASSETS = 'assets.json';
 
 // --- theme ---------------------------------------------------------------------------------------
 
@@ -75,12 +72,12 @@ async function api(method, url, data) {
   return json;
 }
 
-// --- the graphics model (assets.adv) --------------------------------------------------------------
+// --- the graphics model (assets.json, assets.js) ----------------------------------------------------------
 
 // the graphics files the model names, and the canvases and the directory art of the screen folder
 function loadGfx(text) {
   const files = new Map();
-  for (const rel of gfxRefs(text)) if (hasFile(projectPath(ASSETS, rel))) files.set(rel, readBinary(projectPath(ASSETS, rel)));
+  for (const rel of assetRefs(text)) if (hasFile(projectPath(ASSETS, rel))) files.set(rel, readBinary(projectPath(ASSETS, rel)));
   const dir = gfxDir(ASSETS);
   for (const key of allFiles()) {
     if (key.startsWith(dir + '/') && (isScreenFile(key, dir) || isDirartFile(key, dir)) && !files.has(key)) files.set(key, readBinary(key));
@@ -89,14 +86,14 @@ function loadGfx(text) {
 }
 
 function loadAssets() {
-  const text = hasFile(ASSETS) ? readText(ASSETS) : ASSETS_TEXT;
+  const text = hasFile(ASSETS) ? readText(ASSETS) : NEW_ASSETS;
   setScriptPath(ASSETS);
   try {
-    store.load(ASSETS, text, loadGfx(text), new Map());
+    store.load(ASSETS, text, loadGfx(text));
   } catch (e) {
-    // a model that does not parse (written by hand): the graphics editors start empty, the file stays
-    snackbar(`${ASSETS}: ${e.message} - the screens and sprites start empty`, { error: true, timeout: 10000 });
-    store.load(ASSETS, ASSETS_TEXT, new Map(), new Map());
+    // a model that does not read (written by hand): the screens of their files, no sprites - the file stays
+    snackbar(`${ASSETS}: ${e.message} - the sprites start empty`, { error: true, timeout: 10000 });
+    store.load(ASSETS, NEW_ASSETS, loadGfx(NEW_ASSETS));
   }
 }
 
@@ -108,7 +105,7 @@ function saveAssets() {
     for (const [rel, data] of store.changedGfx(files)) writeBinary(projectPath(ASSETS, rel), data);
     for (const rel of store.goneCanvases(files)) removeFile(projectPath(ASSETS, rel));
     writeText(ASSETS, text);
-    store.markSaved(text, files, new Map());
+    store.markSaved(text, files);
     return true;
   } catch (e) {
     snackbar(`Saving the graphics failed: ${e.message}`, { error: true });
@@ -125,6 +122,7 @@ const toolbarFor = name => document.querySelector(`.toolbar__view[data-for="${na
 const VIEWS = ['code', 'screen', 'sprites', 'chars', 'tiles', 'bitmap', 'sound', 'hex', 'disasm', 'debug'];
 let view = 'code';
 let booting = true;
+let explorer = null;                  // the files of the project (explorer.js), made below
 
 // Build, Run, Debug and the Ultimate: in the bar of the code editor too (their state: runState, updateChrome)
 const runState = signal({});
@@ -161,6 +159,50 @@ actions.openScreen = placeId => {
   if (canvas) screenEditor.open(placeId);
 };
 actions.showInStory = () => setView('screen');
+
+// --- explorer: the files of the project, a click opens one in the editor of its kind -------------
+
+const FILE_VIEWS = [
+  [/\.(asm|a|s|inc|bas|c|h|txt|cfg|adv|json)$/i, 'code'], [/\.sng$/i, 'sound'], [/\.(kla|koa|art)$/i, 'bitmap'],
+  [/\.chr$/i, 'chars'], [/\.til$/i, 'tiles'], [/\.spr$/i, 'sprites'], [/\.scr$/i, 'screen'],
+];
+async function openFile(path, { hex = false } = {}) {
+  let name = hex ? 'hex' : FILE_VIEWS.find(([re]) => re.test(path))?.[1] ?? 'hex';
+  // an editor the machine has not (video.js), a reference image: its bytes
+  if (name !== 'code' && name !== 'hex' && !hasEditor(readSettings().machine, name)) name = 'hex';
+  if (path.startsWith('reference/') && name !== 'code') name = 'hex';
+  switch (name) {
+    case 'code': setView('code'); codeView.open(path); break;
+    case 'sound': actions.openSound(path); break;
+    case 'bitmap': setView('bitmap'); await bitmapEditor.select(path); break;
+    case 'chars': charEditor.selectKey(path); setView('chars'); break;
+    case 'tiles': tileEditor.selectKey(path); setView('tiles'); break;
+    case 'sprites': {
+      // the sprite named as its file
+      const { symbols } = await import('./adv.js');
+      const id = store.game && symbols(store.game).costumes.find(c => c.name === stemOf(path))?.id;
+      if (id) actions.openSprites(id, 'stand'); else setView('sprites');
+      break;
+    }
+    case 'screen': {
+      // a screen of the screen folder: its canvas, named as its file
+      const id = store.game?.canvases?.find(c => c.name === stemOf(path))?.id;
+      if (id) actions.openScreen(id); else setView('screen');
+      break;
+    }
+    default: setView('hex'); await hexView.open(path);
+  }
+  syncRoute();
+}
+const stemOf = path => path.split('/').at(-1).replace(/\.[^.]*$/, '');
+// the file of the open view: screens and sprites are routed by their names, their files named as them
+function currentFile() {
+  const { name, params } = stateRoute();
+  const named = { screen: [params.place, '.scr'], sprites: [params.sprite, '.spr'] }[name];
+  if (!named) return params.file ?? null;
+  return named[0] ? allFiles().find(f => f.endsWith(named[1]) && stemOf(f) === named[0]) ?? null : null;
+}
+explorer = createExplorer($('#explorer'), { open: openFile, current: currentFile });
 actions.dirtyChanged = () => updateDots();
 
 // --- routes ------------------------------------------------------------------------------------
@@ -202,6 +244,7 @@ function stateRoute() {
 
 let applying = false;
 function syncRoute() {
+  explorer?.refresh();
   if (booting || applying) return;
   const to = stateRoute(), from = router.current;
   const filling = from && from.name === to.name && Object.entries(from.params).every(([k, v]) => k === 'frame' || v == null || v === to.params[k]);
@@ -268,6 +311,7 @@ function setView(name, { route = true, place = null } = {}) {
   if (name === 'debug') debugView.open(); else debugView.close();
   renderProblems();
   if (route) syncRoute();
+  explorer?.refresh();
   updateChrome();
 }
 document.querySelectorAll('.md-nav-rail__item').forEach(b => { b.onclick = () => setView(b.dataset.view); });

@@ -1,10 +1,10 @@
 // store.js - editor state: the game model, selection, undo/redo and problems
 
-import { parse, walk, symbols, objectStartPlace } from './adv.js';
-import { validate, serialize, flattenPlaces } from './advgen.js';
-import { resolveGfx, gfxDir, canvasesFrom, canvasFiles, placeToScreen } from './gfxfile.js';
+import { walk, symbols, objectStartPlace } from './adv.js';
+import { validate, serialize } from './advgen.js';
+import { readAssets, writeAssets } from './assets.js';
+import { resolveGfx, gfxDir, canvasesFrom, canvasFiles } from './gfxfile.js';
 import { readTag } from './filetag.js';
-import { resolveImports } from './imports.js';
 
 export const HANDLER_KINDS = new Set(['start', 'default', 'sub', 'enter', 'exit', 'handler', 'global']);
 const UNDO_LIMIT = 300;
@@ -31,7 +31,6 @@ export function createStore() {
     savedText: '',
     gfx: new Map(),           // the graphics files as saved: path relative to the script -> bytes (gfxfile.js)
     canvasPaths: new Set(),   // the files of the canvases as saved (gfxfile.js: canvasFiles)
-    sources: new Map(),       // the imported scripts as saved: path relative to the script -> text (imports.js)
     dirty: false,
     selection: null,          // node id or 'group:*'
     focusStmt: null,          // statement id highlighted in the inspector
@@ -85,21 +84,19 @@ export function createStore() {
       s.problems = [{ id: s.game.id, msg: 'validator failed: ' + e.message, severity: 'error' }];
     }
   };
-  // the script and its graphics files as they would be saved (inline: the art in the script, for the compiler)
-  s.serialize = (opts = {}) => {
-    const out = serialize(s.game, { dir: gfxDir(s.path), ...opts });
-    if (!opts.inline) for (const [path, data] of canvasFiles(s.game, gfxDir(s.path))) out.files.set(path, data);   // the canvases are saved, not built
+  // the model (assets.json) and its graphics files as they would be saved
+  s.serialize = () => {
+    const out = serialize(s.game, { dir: gfxDir(s.path) });
+    for (const [path, data] of canvasFiles(s.game, gfxDir(s.path))) out.files.set(path, data);   // the canvases are saved, not built
     return out;
   };
   // the files of the canvases saved last that the game has no more (a canvas deleted): app.js removes them
   s.goneCanvases = files => [...s.canvasPaths].filter(path => !files.has(path));
   // the graphics files that differ from the saved ones
   s.changedGfx = files => [...files].filter(([path, data]) => !sameBytes(s.gfx.get(path), data));
-  // the imported scripts that differ from the saved ones
-  s.changedSources = sources => [...sources].filter(([path, text]) => s.sources.get(path) !== text);
   const checkDirty = () => {
     const out = s.serialize();
-    s.dirty = out.text !== s.savedText || s.changedGfx(out.files).length > 0 || s.changedSources(out.sources).length > 0;
+    s.dirty = out.text !== s.savedText || s.changedGfx(out.files).length > 0;
   };
   const checkLater = () => {
     clearTimeout(checkTimer);
@@ -139,35 +136,18 @@ export function createStore() {
     s.emit('scope');
   };
 
-  // files: the graphics files the script names (Map path -> bytes); a script with its art inline
-  // is written with files the next time it is saved
-  // sources: the texts of the files the script imports (Map path -> text)
-  s.load = (path, text, files = new Map(), sources = new Map()) => {
-    const game = resolveGfx(resolveImports(parse(text), sources), files);
-    // a script of the older form - places inside places, 'chapter NAME' in a place - is turned into
-    // the new one (advgen.js: flattenPlaces); the file changes with the next save
-    s.migrated = flattenPlaces(game);
+  // text: assets.json (assets.js); files: the graphics files it names and those of the screens
+  // (Map path -> bytes). A text that is no model throws (AdvError)
+  s.load = (path, text, files = new Map()) => {
+    const game = resolveGfx(readAssets(text), files);
     game.canvases = canvasesFrom(game, files, gfxDir(path));
-    // nerdsuite has screens, no places: the places of a project of before become screens (gfxfile.js
-    // placeToScreen) - their files and assets.adv change with the next save
-    const places = game.items.filter(x => x.kind === 'place');
-    for (const p of places) {
-      const c = placeToScreen(p, game);
-      for (let k = 2, base = c.name; game.canvases.some(x => x.name === c.name); k++) c.name = base + k;
-      game.canvases.push(c);
-      s.migrated.push(`place ${p.name}: the screen ${c.name}`);
-    }
-    if (places.length) {
-      game.items = game.items.filter(x => x.kind !== 'place');
-      game.canvases.sort((a, b) => a.name.localeCompare(b.name));
-    }
     s.game = game;
     s.path = path;
-    s.savedText = text.replace(/\r\n?/g, '\n');
+    // as it is written: a file formatted by hand is no change
+    s.savedText = writeAssets(game, gfxDir(path));
     s.gfx = new Map(files);
     s.canvasPaths = new Set(canvasFiles(game, gfxDir(path)).keys());
-    s.sources = new Map([...sources].map(([p, t]) => [p, t.replace(/\r\n?/g, '\n')]));
-    s.dirty = s.migrated.length > 0;
+    s.dirty = false;
     s.selection = null;
     s.focusStmt = null;
     s.undoStack = [];
@@ -175,7 +155,7 @@ export function createStore() {
     s.compileProblems = [];
     s.collapsed = new Set(lsGet('adv-collapsed:' + path, ['grp:defaults']));
     s.reindex();
-    if (!s.dirty) checkDirty();
+    checkDirty();
     const scopeName = lsGet('adv-scope:' + path, null);
     s.scope = symbols(game).allPlaces.find(p => p.name === scopeName)?.id ?? null;
     s.emit('load');
@@ -259,11 +239,10 @@ export function createStore() {
   s.setSearch = text => { s.search = text; s.emit('search'); };
   s.setShowLinks = on => { s.showLinks = on; lsSet('adv-links', on); s.emit('layout'); };
 
-  s.markSaved = (text, files = s.gfx, sources = s.sources) => {
+  s.markSaved = (text, files = s.gfx) => {
     s.savedText = text;
     s.gfx = new Map(files);
     s.canvasPaths = new Set(s.game ? canvasFiles(s.game, gfxDir(s.path)).keys() : []);
-    s.sources = new Map(sources);
     s.dirty = false;
     s.emit('saved');
   };

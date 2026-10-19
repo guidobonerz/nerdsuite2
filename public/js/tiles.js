@@ -18,7 +18,7 @@ import { PALETTE, placeInfo, drawCell } from './c64.js';
 import { scriptDirectory, charsetByKey, charsetKey, onCharsetChange } from './chr.js';
 import {
   TILE_SIZES, MAX_TILES, NO_TILE, blankTile, starterTileset, encodeTileset, decodeTileset, tilesetByKey, tilesetKey, tilesetState, tilesetError,
-  setTileset, isTilesetDirty, dirtyTilesets, saveTileset, onTilesetChange, syncTiles, tilePlaces, tilesetCharset, charsetOfTileset,
+  setTileset, dirtyTilesets, saveTileset, onTilesetChange, syncTiles, tilePlaces, tilesetCharset, charsetOfTileset,
 } from './tileset.js';
 import {
   h, dh, dom, mount, signal, icon, iconButton, button, select, promptDialog, snackbar, section as uiSection, sidePanel, storeVersion,
@@ -467,13 +467,9 @@ export function createTileEditor(el, store, actions, bar) {
 
   function barView() {
     if (!store.game) return null;
-    const keys = knownKeys();
     return h('div', { class: 'screen-bar' },
       h('span', { class: 'md-title-medium' }, '§1402'),
       h('span', { class: 'screen-bar__sep' }),
-      select({ label: '§1373', hideLabel: true, value: st.key ?? '', dense: true, cls: 'screen-bar__sprite',
-        options: keys.length ? keys.map(k => ({ value: k, label: k + (isTilesetDirty(k) ? ' •' : '') })) : [{ value: '', label: '§1403' }],
-        onchange: v => { st.key = v || null; st.tile = 0; lookKey = null; render(); } }),
       iconButton('add', '§1384', () => newTileset()),
       ts() ? [h('span', { class: 'screen-bar__sep' }), defaultTools({
         undo: () => travel(undo, redo), redo: () => travel(redo, undo), zoom,

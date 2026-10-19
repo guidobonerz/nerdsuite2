@@ -9,7 +9,8 @@ import { FAMILIES, PLATFORMS, platformOf, canDebug, starterAsm, starterBasic, st
 import { includeSource, hasMemoryMap } from './memmap.js';
 import { DIALECTS } from './basic/dialects.js';
 import { CHARGEN } from './chargen.js';
-import { encodeScreen } from './gfxfile.js';
+import { encodeScreen, costumeToFile, sprPath } from './gfxfile.js';
+import { assetsText } from './assets.js';
 import { videoOf, startColors, ATARI_REGS } from './video.js';
 import { atariFont } from './atarifont.js';
 import { encodeAtariPicture } from './ataribitmap.js';
@@ -38,10 +39,8 @@ const assetMade = (p, asset) => (!!p.commodore || (p.id === 'atari8' && ['charse
 
 // the graphics model and the files of the assets chosen (Commodore machines: the editors make VIC-II data)
 function assetFiles(plan, files) {
-  let model = `// assets.adv - the graphics of this nerdsuite project, kept by the IDE: the screens with their
-// charsets, colors and layers, the sprites with their frames and animations. The art is in gfx/.
-charset upper
-`;
+  // assets.json (assets.js): the charset and the sprites, their art in gfx/sprite
+  const items = [{ kind: 'charset', value: 'upper' }];
   const v = videoOf(plan.platform), atari = v.cells === 'atari';
   // the charset: a copy of the ROM font - the Atari's in the order of its codes (atarifont.js), 1024 bytes
   const fontFile = atari ? 'gfx/charset/font.fnt' : 'gfx/charset/font.chr';
@@ -60,13 +59,9 @@ charset upper
     files.set('gfx/screen/title.scr', encodeScreen({ screen: { w, h: hgt, chars, colors }, patches: new Map(), look }));
   }
   if (plan.assets.sprite) {
-    model += `
-costume hero {
-    stand """
-${HERO.join('\n')}
-"""
-}
-`;
+    const hero = { kind: 'costume', name: 'hero', file: sprPath('hero'), anims: [] };
+    files.set(hero.file, costumeToFile({ ...hero, frames: [{ name: 'stand', default: true, lines: HERO }], layers: [] }, {}));
+    items.push(hero);
   }
   if (plan.assets.song) files.set('audio/music/song.sng', encodeSong(newSong()));
   if (plan.assets.bitmap && v.bitmap === 'atari') {
@@ -80,7 +75,7 @@ ${HERO.join('\n')}
     kla[0] = 0x00; kla[1] = 0x60;                          // the load address of a Koala picture: $6000
     files.set('gfx/bitmap/picture.kla', kla);
   }
-  files.set('assets.adv', enc(model));
+  files.set('assets.json', enc(assetsText(items)));
 }
 
 // the files of the project the plan makes
@@ -184,7 +179,7 @@ export function projectWizard() {
       const x = p();
       return [
         h('div', { class: 'md-body-medium' }, `The project ${plan.value.name} for the ${x.name}:`),
-        h('ul', { class: 'ns-wiz-files', 'data-i18n': 'off' }, [...files.keys()].sort().map(f => h('li', {}, h('code', {}, f), f === main ? ' · the main program' : f === 'assets.adv' ? ' · the graphics model of the editors' : f === 'nerdsuite.json' ? ' · the settings' : ''))),
+        h('ul', { class: 'ns-wiz-files', 'data-i18n': 'off' }, [...files.keys()].sort().map(f => h('li', {}, h('code', {}, f), f === main ? ' · the main program' : f === 'assets.json' ? ' · the graphics model of the editors' : f === 'nerdsuite.json' ? ' · the settings' : ''))),
         h('div', { class: 'section__hint' }, 'Export (the download icon) saves the project as a .nsp package; until then it lives in this browser tab.'),
       ];
     },

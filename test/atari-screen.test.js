@@ -8,10 +8,10 @@ import { placeInfo, cellColors } from '../public/js/c64.js';
 import { atariFont, FONT_SIZE } from '../public/js/atarifont.js';
 import { CHARGEN } from '../public/js/chargen.js';
 import { newCanvas, lookAttrs, screenLook, encodeScreen, decodeScreen } from '../public/js/gfxfile.js';
-import { parse } from '../public/js/adv.js';
+import { readAssets, NEW_ASSETS } from '../public/js/assets.js';
 
 const on = (id, f) => { setVideoMachine(id); try { return f(); } finally { setVideoMachine('c64'); } };
-const game = parse('charset upper\n');
+const game = readAssets(NEW_ASSETS);
 // a screen of 2 chars, its look
 const screen = look => {
   const c = newCanvas('s', 2, 1, 'upper');

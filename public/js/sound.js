@@ -947,10 +947,6 @@ export function createSoundEditor(el, bar, { onRoute, onDirty } = {}) {
     return h('div', { class: 'screen-bar' },
       h('span', { class: 'md-title-medium' }, 'Composer'),
       h('span', { class: 'screen-bar__sep' }),
-      select({ label: '§1098', hideLabel: true, value: st.file ?? '', dense: true, cls: 'screen-bar__sprite',
-        // the open song is the first option and carries its own path, so the select shows its name
-        options: [{ value: st.file ?? '', label: st.file ?? '§1088' }, ...st.files.filter(f => f !== st.file).map(f => ({ value: f, label: f }))],
-        onchange: v => { if (v) openFile(v); } }),
       iconButton('add', '§0390', newFile),
       h('span', { class: 'screen-bar__sep' }),
       iconButton('undo', 'Undo (Ctrl+Z)', () => restore(st.undo, st.redo)),

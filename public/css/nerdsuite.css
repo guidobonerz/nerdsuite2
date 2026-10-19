@@ -26,13 +26,12 @@
 .ns-tab--active:hover { background: var(--code-tab-active); }
 .ns-tab--active .ns-tab__main .msr { color: inherit; }
 .ns-tab--active .ns-tab__dot { background: currentColor; }
-.ns-tab--active .ns-tab__close:hover { background: rgba(255, 255, 255, .18); }
 .ns-tab .msr { font-size: 15px; }
 .ns-tab__name { font-family: var(--md-font-mono); font-size: 12.5px; }
 .ns-tab__main .msr { font-size: 12px; color: var(--md-sys-color-primary); }
 .ns-tab__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--md-sys-color-primary); }
 .ns-tab__close { display: inline-grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: var(--md-shape-xs); background: transparent; color: inherit; cursor: pointer; opacity: .55; }
-.ns-tab__close:hover { opacity: 1; background: var(--md-sys-color-surface-container-high); }
+.ns-tab__close:hover { opacity: 1; color: #fff; }   /* the icon lights up, no background */
 .ns-tab__close .msr { font-size: 13px; }
 .ns-tab--add { padding: 0 10px; }
 

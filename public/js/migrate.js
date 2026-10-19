@@ -27,11 +27,10 @@
 
 import { readTag, withTag } from './filetag.js';
 import { relayout } from './layout.js';
-import { bracketLists } from './adv.js';
 
 // 1: the manifest; 2: the layout of layout.js - every script at the top level, gfx/screen,
 // gfx/sprite, gfx/charset, gfx/tiles, gfx/bitmap, audio/music, audio/effects; 3: the lists of the
-// scripts in brackets - frames [A, B], layers [A, B], strength [A], needs [A] (adv.js, bracketLists);
+// scripts in brackets - frames [A, B], layers [A, B], strength [A], needs [A] (the text scripts are no more read);
 // 4: the letter writer pauses with {hold N} as the scroller, not {wait N} (holdTags); 5: the intro
 // pauses with {pause N} when the letter after it has reached the left side - no {pauseleft N} (pauseTags)
 export const PROJECT_FORMAT = 5;
@@ -59,17 +58,9 @@ export const PROJECT_MIGRATIONS = [
     const r = relayout(files);
     return { files: r.files, values: [r.moved.length] };
   } },
-  // format 2: lists without brackets (frames A, B) - the scripts take only frames [A, B] now
-  { from: 2, to: 3, note: '§1582', run: files => {
-    const out = new Map(files);
-    let changed = 0;
-    for (const [path, bytes] of files) {
-      if (!/\.adv$/i.test(path)) continue;
-      const text = new TextDecoder().decode(bytes), done = bracketLists(text);
-      if (done !== text) { out.set(path, new TextEncoder().encode(done)); changed++; }
-    }
-    return { files: out, values: [changed] };
-  } },
+  // format 2: lists without brackets (frames A, B) in the text scripts - the graphics model is JSON
+  // now (assets.js) and no text script is read: the files stay as they are
+  { from: 2, to: 3, note: '§1582', run: files => ({ files, values: [0] }) },
   // format 3: the letter writer paused with {wait 2} - it takes {hold 2} now, as the scroller
   { from: 3, to: 4, note: '§1673', run: files => {
     const out = new Map(files);

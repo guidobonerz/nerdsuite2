@@ -30,7 +30,7 @@ import { LAYOUT } from './layout.js';
 import { PALETTE } from './c64.js';
 import { tools, RANGE, rotation, rangeForKey, DRAG_TOOLS, BRUSH_TOOLS, defaultBrush, brushCells, brushMax, brushTools, radiusMax, radiusTools, defaultTools, paintArea, toolForKey, lineCells, dragCells as dragXY, dragMods, dragTo, curveWaits, followCurve, DRAW_POLY, WAIT_TOOLS, waits, strokeDown, closePolygon, wheelZoom, outlineCells } from './drawtools.js';
 import { regionOp, rectBetween, clipRect } from './gridops.js';
-import { h, mount, dom, signal, iconButton, select, snackbar, promptDialog, section, sidePanel, confirmRemove } from './pui.js';
+import { h, mount, dom, signal, iconButton, snackbar, promptDialog, section, sidePanel, confirmRemove } from './pui.js';
 import { colorChooser } from './colorchooser.js';
 import { reloadPicture } from './picture.js';
 import { listBinaries, readBinary, writeBinary, isOpen } from './project.js';
@@ -989,10 +989,6 @@ export function createBitmapEditor(el, store, actions, bar) {
   const barView = () => !isOpen() ? null : h('div', { class: 'screen-bar' },
     h('span', { class: 'md-title-medium' }, 'Bitmap'),
     h('span', { class: 'screen-bar__sep' }),
-    select({ label: '§0641', hideLabel: true, value: st.file ?? '', dense: true, cls: 'screen-bar__sprite',
-      // the open picture is the first option and carries its own path, so the select shows its name
-      options: [{ value: st.file ?? '', label: st.file ?? (st.suggest ? tr('§1004', st.suggest) : '§0642') }, ...st.files.filter(f => f !== st.file).map(f => ({ value: f, label: f }))],
-      onchange: v => { if (v) openFile(v); } }),
     iconButton('add', '§0633', newPicture),
     h('span', { class: 'screen-bar__sep' }),
     defaults(),

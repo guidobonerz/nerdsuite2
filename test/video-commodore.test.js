@@ -8,7 +8,8 @@ import { PALETTE } from '../public/js/c64.js';
 import { colorDigit, digitColor, resolveCell } from '../public/js/petscii.js';
 import { encodeScreen, decodeScreen, screenLook, lookAttrs, mapToLines, linesToMap, canvasesFrom } from '../public/js/gfxfile.js';
 import { encodeTbm, decodeTbm, tedPrg, lumByte, hueByte, TBM_SIZE } from '../public/js/tedbitmap.js';
-import { COLOR_NAMES, parse } from '../public/js/adv.js';
+import { COLOR_NAMES } from '../public/js/adv.js';
+import { readAssets, NEW_ASSETS } from '../public/js/assets.js';
 
 const machine = (id, f) => { setVideoMachine(id); try { f(); } finally { setVideoMachine('c64'); } };
 
@@ -87,7 +88,7 @@ test('a canvas of a version 3 file: its lines, its colours and its look', () => 
   const chars = new Uint8Array(22 * 23).fill(32);
   chars[11 * 22 + 6] = 13;
   const file = encodeScreen({ screen: { w: 22, h: 23, chars, colors: new Uint8Array(22 * 23).fill(6) }, patches: new Map(), look });
-  const [c] = canvasesFrom(parse('charset upper\n'), new Map([['gfx/screen/title.scr', file]]));
+  const [c] = canvasesFrom(readAssets(NEW_ASSETS), new Map([['gfx/screen/title.scr', file]]));
   const bg = c.members.find(m => m.kind === 'background');
   assert.equal(bg.lines.length, 23);
   assert.equal(bg.lines[11].charCodeAt(6), 0xee00 + 13);
