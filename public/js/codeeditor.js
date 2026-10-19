@@ -223,6 +223,8 @@ function replaceRange(el, text, a, b, select = 'end') {
 //   marks        Map line -> 'bp' | 'bp-off' | 'here' | 'bp here' (the gutter)
 //   errors       Map line -> message: the line marked, the message as the tip of its number
 //   onGutter     (line) a click on a line number: a breakpoint on or off
+//   gutterText   Map line -> text shown instead of the line numbers (the addresses of a build); a line not in it: blank
+//   gutterStale  a message when that text is out of date (the gutter dimmed, the message its tip)
 //   inputRef     a ref that is given the textarea
 //   onCaret      (line, col) after a click or a key that moves the caret
 //   onkeydown    (event, textarea) before the area's own keys - true when it is handled
@@ -351,7 +353,8 @@ export function CodeEditor(o) {
     const err = o.errors?.get(i);
     const cls = ['code-gutter__line', err && 'code-gutter__err', ...(o.marks?.get(i)?.split(' ') ?? []).map(m => `code-gutter__${m}`),
       o.onGutter && 'code-gutter__stop'].filter(Boolean).join(' ');
-    numbers.push(h('span', { class: cls, 'data-line': i, title: err || undefined }, String(i)), '\n');
+    const label = o.gutterText ? (o.gutterText.get(i) ?? '') : String(i);
+    numbers.push(h('span', { class: cls, 'data-line': i, title: err || (o.gutterText ? [`line ${i}`, o.gutterStale].filter(Boolean).join(' · ') : undefined) }, label), '\n');
   }
 
   // Tab and Shift+Tab: the selected lines in or out; without a selection Tab writes spaces
@@ -403,7 +406,7 @@ export function CodeEditor(o) {
       close();
       setZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1), ta.current);
     } },
-    h('pre', { class: 'code-gutter', ref: gutter, 'data-i18n': 'off', 'aria-hidden': 'true',
+    h('pre', { class: `code-gutter ${o.gutterText ? 'code-gutter--addr' : ''} ${o.gutterStale ? 'code-gutter--stale' : ''}`, ref: gutter, 'data-i18n': 'off', 'aria-hidden': 'true',
       onclick: o.onGutter ? e => { const line = Number(e.target.dataset?.line); if (line) o.onGutter(line); } : undefined }, numbers),
     h('div', { class: 'code-view__body' },
       h('pre', { class: 'code-highlight', ref: pre, 'data-i18n': 'off', 'aria-hidden': 'true' }, o.lang?.highlight ? o.lang.highlight(text, o) : text, '\n'),

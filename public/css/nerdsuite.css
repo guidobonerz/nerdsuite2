@@ -44,6 +44,10 @@
 .ns-code .code-gutter, .ns-code .code-highlight, .ns-code .code-view__input { font-size: calc(var(--code-size, 12.5px) * var(--code-zoom, 1)); }
 .ns-code .code-gutter { cursor: pointer; min-width: 52px; }
 .ns-code .code-gutter__line { display: inline-block; position: relative; width: 100%; }
+.ns-bar__switch { margin: 0 8px; }
+/* the addresses of the last build instead of the line numbers; dimmed once the file changed since */
+.ns-code .code-gutter--addr .code-gutter__line { min-height: 1lh; vertical-align: top; }
+.ns-code .code-gutter--stale .code-gutter__line:not(.code-gutter__err):not(.code-gutter__here) { opacity: .45; }
 .code-gutter__bp-off::before { content: ''; position: absolute; left: -9px; top: 50%; width: 8px; height: 8px; margin-top: -4px;
   border-radius: 50%; border: 1.5px solid var(--md-sys-color-error); box-sizing: border-box; }
 .code-gutter__here { box-shadow: 0 0 0 9999px transparent; }

@@ -14,7 +14,7 @@
 import { h, mount, signal, icon, iconButton, button, select, field, promptDialog, snackbar, sidePanel, section, checkbox } from './pui.js';
 import * as vice from './vice.js';
 import { hasFile, readText } from './project.js';
-import { disassemble, parseAddress, hex2, hex4, MACHINES, machineOf, readSettings, writeSettings } from './nsbuild.js';
+import { disassemble, parseAddress, hex2, hex4, MACHINES, machineOf, readSettings, writeSettings, isCodeLine } from './nsbuild.js';
 
 const REGS = ['pc', 'a', 'x', 'y', 'sp'];
 const FLAGS = [['N', 0x80], ['V', 0x40], ['-', 0x20], ['B', 0x10], ['D', 0x08], ['I', 0x04], ['Z', 0x02], ['C', 0x01]];
@@ -110,10 +110,7 @@ export function createDebugView(el, bar, hooks = {}) {
   const sourceLines = new Map();
   function isCode(l) {
     if (!sourceLines.has(l.file)) sourceLines.set(l.file, hasFile(l.file) ? readText(l.file).split('\n') : []);
-    const text = (sourceLines.get(l.file)[l.line - 1] ?? '').replace(/;.*$|\/\/.*$/, '');
-    // ACME: !byte ...; KickAssembler: .byte, .text, .fill, .import ... (data); both: *= and NAME =
-    if (/^\s*([A-Za-z_]\w*:|![\w]*:)?\s*\.(byte|by|word|wo|dword|dw|text|te|fill|fillword|lohifill|import|align|encoding|pc)\b/.test(text)) return false;
-    return !/^\s*([.@]?[A-Za-z_]\w*:?\s+|[+-]+\s+)?(!|\*\s*=|[.@]?[A-Za-z_]\w*\s*=)/.test(text);
+    return isCodeLine(sourceLines.get(l.file)[l.line - 1]);
   }
   vice.onEvent(type => { if (type === 'stopped') sourceLines.clear(); });
 

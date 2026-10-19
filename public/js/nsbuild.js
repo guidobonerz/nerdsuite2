@@ -173,6 +173,28 @@ async function kickassBuild(main, name, platform, over) {
 
 // --- the debug info of a build: addresses <-> source lines --------------------------------------
 
+// whether an assembler source line holds an instruction - not data (!byte, .text ...), not *= or NAME =
+export function isCodeLine(text) {
+  const t = (text ?? '').replace(/;.*$|\/\/.*$/, '');
+  // ACME: !byte ...; KickAssembler: .byte, .text, .fill, .import ... (data); both: *= and NAME =
+  if (/^\s*([A-Za-z_]\w*:|![\w]*:)?\s*\.(byte|by|word|wo|dword|dw|text|te|fill|fillword|lohifill|import|align|encoding|pc)\b/.test(t)) return false;
+  return !/^\s*([.@]?[A-Za-z_]\w*:?\s+|[+-]+\s+)?(!|\*\s*=|[.@]?[A-Za-z_]\w*\s*=)/.test(t);
+}
+
+// the address of each line of a build that makes bytes (instructions and data: !byte, !text, !binary ...)
+// and of each label: file -> Map line -> address (lines of macro expansions are not their own)
+export function codeAddresses(build) {
+  const out = new Map();
+  const set = (file, line, addr) => {
+    if (!out.has(file)) out.set(file, new Map());
+    if (!out.get(file).has(line)) out.get(file).set(line, addr);
+  };
+  for (const l of build?.lines ?? []) if (!l.macro && l.file && l.line) set(l.file, l.line, l.addr);
+  // the labels: where they are, also alone on their line or before data (text: !scr ...)
+  for (const s of build?.symbols ?? []) if (s.kind === 'label' && s.file && s.line) set(s.file, s.line, s.value);
+  return out;
+}
+
 export function debugInfo(build) {
   const byAddr = new Map(), byLine = new Map(), labels = new Map(), names = new Map();
   for (const l of build?.lines ?? []) {

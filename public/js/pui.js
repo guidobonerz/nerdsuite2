@@ -292,6 +292,12 @@ export function checkbox(label, checked, onchange, extra = {}) {
     onchange: e => onchange(e.target.checked) }), label);
 }
 
+// a switch: on or off (onchange(on)), its label after it
+export function toggleSwitch(label, on, onchange, extra = {}) {
+  return h('label', { class: `md-switch ${extra.cls ?? ''}`, 'data-tip': extra.tip }, h('input', { type: 'checkbox', role: 'switch', checked: !!on, disabled: extra.disabled,
+    'aria-checked': String(!!on), onchange: e => onchange(e.target.checked) }), label);
+}
+
 // an accordion entry: the header opens and closes it (ontoggle(open)), its buttons
 // (actions) stay clickable; lead is shown before the title
 export function accordion({ title, sub, open, ontoggle, actions = [], content = [], lead, cls = '' }) {
