@@ -11,8 +11,11 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 	"path"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"nerdsuite/backend/core"
 	"nerdsuite/backend/emu"
@@ -30,6 +33,10 @@ type Options struct {
 	Version  string // shown in the About of the IDE
 	Settings string // the file of the settings ("" - NERDSUITE_SETTINGS, else ~/.nerdsuite/settings.json)
 	TmpDir   string // the folder of the temporary files
+	// Idle > 0: the server ends this long after the last request (a desktop start without a console
+	// window: nothing else ends it); the IDE asks every Idle/5 while a window of it is open (/api/info
+	// answers "idle": seconds)
+	Idle time.Duration
 }
 
 // Server: the HTTP server of the IDE
@@ -42,6 +49,7 @@ type Server struct {
 	tc       *toolchain.API
 	ult      *ultimate.API
 	fonts    *romfont.API
+	last     atomic.Int64 // the time of the last request, unix nanoseconds
 }
 
 func New(o Options) *Server {
@@ -94,7 +102,19 @@ var mime = map[string]string{
 	".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf",
 }
 
+// QuitWhenIdle: ends the program when no request came for Options.Idle - the windows of the IDE are closed
+func (s *Server) QuitWhenIdle() {
+	s.last.Store(time.Now().UnixNano())
+	for range time.Tick(s.opts.Idle / 10) {
+		if time.Since(time.Unix(0, s.last.Load())) > s.opts.Idle {
+			s.Close()
+			os.Exit(0)
+		}
+	}
+}
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.last.Store(time.Now().UnixNano())
 	defer func() {
 		if e := recover(); e != nil {
 			log.Printf("%s %s: %v", r.Method, r.URL.Path, e)
@@ -131,7 +151,11 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	case under("/api/emu"):
 		s.emu.ServeHTTP(w, r)
 	case core.Route(r) == "GET /api/info":
-		core.WriteJSON(w, 200, map[string]any{"version": s.opts.Version, "name": "nerdsuite"})
+		info := map[string]any{"version": s.opts.Version, "name": "nerdsuite"}
+		if s.opts.Idle > 0 {
+			info["idle"] = int(s.opts.Idle / time.Second)
+		}
+		core.WriteJSON(w, 200, info)
 	case core.Route(r) == "GET /api/examples":
 		files, err := readTree(s.opts.Examples)
 		if err != nil {

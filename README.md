@@ -19,7 +19,7 @@ An IDE in the browser for programs of 8 bit machines: the Commodore family (C64,
 ## Start
 
 ```sh
-nerdsuite                     # a binary of a release: the server, and the IDE in the browser
+nerdsuite                     # a binary of a release (a double click): the server, and the IDE in a window of its own
 nerdsuite --port 8080         # another port (a port that is taken: the next free one); --no-browser: the server only
 npm start                     # from a checkout: go run ./cmd/nerdsuite --root . (the files of the checkout), http://localhost:3064
 npm run build                 # bin/nerdsuite(.exe): the server with the IDE built in
@@ -29,7 +29,7 @@ npm run test:go               # the tests of the server (Go): VICE, the emulator
 VICE_TEST=1 go test ./backend/vice/   # also the test that starts VICE for real
 ```
 
-The server is written in Go (`backend/`, `cmd/nerdsuite`) and holds the IDE: one file of about 6 MB per system, nothing to install. A release (a tag `v*`) builds them on GitHub Actions (`.github/workflows/ci.yml`): Windows, Linux (amd64 and arm64) and macOS (one file for Apple silicon and Intel). From a checkout: **Go 1.24+** for the server, **Node.js 20+** for the tests of the IDE (nothing from npm). For Run and Debug **VICE 3.5 or newer** (the binary remote monitor): the server looks for it in the folder of the environment variable `VICE`, else in `PATH`. For KickAssembler sources **KickAss.jar** and **Java** (see *The assemblers*).
+The server is written in Go (`backend/`, `cmd/nerdsuite`) and holds the IDE: one file of about 6 MB per system, nothing to install. A release (a tag `v*`) builds them on GitHub Actions (`.github/workflows/ci.yml`): Windows, Linux (amd64 and arm64) and macOS (one file for Apple silicon and Intel). Started, it opens the IDE in an app window of Edge, Chrome, Brave, Chromium or Vivaldi: no tabs, no address bar (only without any of them, in the default browser). The Windows file opens no console window; on Linux and macOS a double click leaves the terminal. Without a console the server ends five minutes after the last window of the IDE is closed, and a second start opens a window of the running one. From a checkout: **Go 1.24+** for the server, **Node.js 20+** for the tests of the IDE (nothing from npm). For Run and Debug **VICE 3.5 or newer** (the binary remote monitor): the server looks for it in the folder of the environment variable `VICE`, else in `PATH`. For KickAssembler sources **KickAss.jar** and **Java** (see *The assemblers*).
 
 The server serves the IDE, the example project (`examples/demo`) and the bridges to VICE and the other tools (`backend/`). It keeps no project: the project lives in the browser tab (IndexedDB, like yopaca) and is saved as a package `NAME.nsp` (a zip) with **Export**. Assembling and tokenizing happen in the browser.
 

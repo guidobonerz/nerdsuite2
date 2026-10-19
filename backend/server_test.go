@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 func testServer(t *testing.T) *Server {
@@ -150,5 +151,19 @@ func TestCleanToolchain(t *testing.T) {
 		if _, err := CleanToolchain(c.in, 0); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%v: want %q, got %v", c.in, c.want, err)
 		}
+	}
+}
+
+// a desktop start without a console window: /api/info tells the IDE how long the server waits for it,
+// and every request is the last one
+func TestIdle(t *testing.T) {
+	s := testServer(t)
+	s.opts.Idle = 5 * time.Minute
+	before := time.Now().UnixNano()
+	if _, body, _ := do(s, "GET", "/api/info", "", nil); body != `{"idle":300,"name":"nerdsuite","version":"v-test"}` {
+		t.Fatalf("info: %s", body)
+	}
+	if s.last.Load() < before {
+		t.Fatal("the request is not the last one")
 	}
 }

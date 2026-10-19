@@ -982,6 +982,11 @@ vice.onEvent(() => updateChrome());
       v.dataset.tip = `nerdsuite ${info.version}`;
       v.hidden = false;
     }
+    if (info.idle) {                                  // a desktop start without a console window: it ends when no window asks any more
+      const alive = () => api('GET', 'api/info').catch(() => {});
+      setInterval(alive, Math.max(10, info.idle / 5) * 1000);
+      addEventListener('visibilitychange', () => { if (!document.hidden) alive(); });
+    }
   } catch (e) {
     snackbar(`The server does not answer: ${e.message}`, { error: true, timeout: 0 });
   }
