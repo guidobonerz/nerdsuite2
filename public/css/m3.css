@@ -476,7 +476,8 @@ select.md-field__control option { background: var(--md-sys-color-surface); color
   max-width: calc(100% - 2px);
 }
 .md-field--error .md-field__support { color: var(--md-sys-color-error); }
-.md-field__trailing { position: absolute; right: 2px; bottom: 2px; }   /* inside the control (36px) */
+.md-field__trailing { position: absolute; right: 2px; bottom: 2px; display: flex; }   /* inside the control (36px) */
+.md-field__box:has(> .md-field__trailing) > .md-field__control { padding-right: 38px; }
 .md-field--reveal .md-field__control { padding-right: 34px; }   /* place for the eye of a secret */
 .md-field--secret .md-field__control { -webkit-text-security: disc; }   /* masked like a password, without being one */
 

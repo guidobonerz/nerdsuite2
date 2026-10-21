@@ -1,11 +1,11 @@
 # NerdSuite
 
-An IDE in the browser for programs of 8 bit machines: the Commodore family (C64, C128, VIC-20, Plus/4, C16, PET) and the MEGA65, the Atari 8-bit computers and the Atari 2600, the Amstrad / Schneider CPC, the Nintendo NES and SNES, the Sinclair ZX81, the Tandy TRS-80 Model I and III and the BBC Micro. It has the layout, look and feel of [yopaca](../yopaca) and takes its graphics editors and its composer; in place of yopaca's story it has a tabbed code editor for assembler and BASIC, and a debugger that drives the VICE emulator.
+An IDE in the browser for programs of 8 bit machines: the Commodore family (C64, C128, VIC-20, Plus/4, C16, PET) and the MEGA65, the Atari 8-bit computers and the Atari 2600, the Amstrad / Schneider CPC, the Nintendo NES and SNES, the Sinclair ZX81, the Tandy TRS-80 Model I and III and the BBC Micro. It has the layout, look and feel of [yopaca](../yopaca) and takes its graphics editors and its composer; in place of yopaca's story it has a tabbed code editor for assembler and BASIC, and a debugger that drives the VICE or the mimic emulator.
 
 | View | What it does |
 |---|---|
 | **Code** | The sources in tabs: ACME assembler (`.asm .a .s .inc`) and BASIC (`.bas`) in the dialect of the file. Colours, autocompletion, the errors of the build, breakpoints in the gutter, an outline. |
-| **Debugger** | The program in VICE through its binary remote monitor: breakpoints, watchpoints, stepping, registers, memory, disassembly, watches, the screen. |
+| **Debugger** | The program in VICE through its binary remote monitor, or in mimic through its own debug protocol: breakpoints, watchpoints, stepping, registers, memory, disassembly, watches, the screen. |
 | **Screen** | yopaca's screen editor: char screens of 25 rows, 40 to 120 columns, charsets, multicolor, ECM, layers and their animations. No objects, walk or behind areas. |
 | **Sprites** | yopaca's sprite editor: sprites with frames, layers and animations, hires and multicolor, several sprites wide. |
 | **Chars** | yopaca's char editor: 256 chars of a charset, tiles of chars, char animations. |
@@ -27,6 +27,7 @@ npm run dist                  # the binaries of every system into build/dist (to
 npm test                      # the tests of the IDE: the assembler, the BASIC tokenizer, the languages (Node)
 npm run test:go               # the tests of the server (Go): VICE, the emulators, KickAssembler, the toolchains
 VICE_TEST=1 go test ./backend/vice/   # also the test that starts VICE for real
+MIMIC_TEST=1 go test ./backend/mimic/ # also the test that starts mimic-headless for real
 node tools/handbook-shots.mjs # the screenshots of the handbook (a headless Chrome and a server, see the file)
 ```
 
@@ -42,7 +43,7 @@ xattr -d com.apple.quarantine nerdsuite-v0.1beta-macos
 
 Linux: a download loses the executable bit too - `chmod +x nerdsuite-v0.1beta-linux-amd64` (or the `.tar.gz` of the release). Windows: the `.exe` is not signed, so SmartScreen stops its first start ("Windows protected your PC"): **More info**, then **Run anyway** - or unblock it once with `Unblock-File .\nerdsuite-v0.1beta-windows-amd64.exe` (or **Unblock** in its Properties).
 
-The server is written in Go (`backend/`, `cmd/nerdsuite`) and holds the IDE: one file of about 6 MB per system, nothing to install. A release (a tag `v*`) builds them on GitHub Actions (`.github/workflows/ci.yml`): Windows, Linux (amd64 and arm64) and macOS (one file for Apple silicon and Intel). Started, it opens the IDE in an app window of Edge, Chrome, Brave, Chromium or Vivaldi: no tabs, no address bar (only without any of them, in the default browser). The window has a browser profile of its own (`~/.nerdsuite/browser`): not the tabs, the session and the extensions of the browser you browse with - and the projects of the IDE are kept there (a project of an older version, kept in your browser's profile: Export it there, Import it in the app window). The Windows file opens no console window; on Linux and macOS a double click leaves the terminal. Without a console the server ends when the last window of the IDE is closed, and a second start opens a window of the running one. From a checkout: **Go 1.24+** for the server, **Node.js 20+** for the tests of the IDE (nothing from npm). For Run and Debug **VICE 3.5 or newer** (the binary remote monitor): the server looks for it in the folder of the environment variable `VICE`, else in `PATH`. For KickAssembler sources **KickAss.jar** and **Java** (see *The assemblers*).
+The server is written in Go (`backend/`, `cmd/nerdsuite`) and holds the IDE: one file of about 6 MB per system, nothing to install. A release (a tag `v*`) builds them on GitHub Actions (`.github/workflows/ci.yml`): Windows, Linux (amd64 and arm64) and macOS (one file for Apple silicon and Intel). Started, it opens the IDE in an app window of Edge, Chrome, Brave, Chromium or Vivaldi: no tabs, no address bar (only without any of them, in the default browser). The window has a browser profile of its own (`~/.nerdsuite/browser`): not the tabs, the session and the extensions of the browser you browse with - and the projects of the IDE are kept there (a project of an older version, kept in your browser's profile: Export it there, Import it in the app window). The Windows file opens no console window; on Linux and macOS a double click leaves the terminal. Without a console the server ends when the last window of the IDE is closed, and a second start opens a window of the running one. From a checkout: **Go 1.24+** for the server, **Node.js 20+** for the tests of the IDE (nothing from npm). For Run and Debug **VICE 3.5 or newer** (the binary remote monitor): the server looks for it in the folder of the environment variable `VICE`, else in `PATH`. Or **mimic** (`mimic.exe` with its `roms` folder): the setting or the environment variable `MIMIC`, else `~/applications/mimic`. For KickAssembler sources **KickAss.jar** and **Java** (see *The assemblers*).
 
 The server serves the IDE, the example project (`examples/demo`) and the bridges to VICE and the other tools (`backend/`). It keeps no project: the project lives in the browser tab (IndexedDB, like yopaca) and is saved as a package `NAME.nsp` (a zip) with **Export** - or it is a folder of your computer: **File › Open folder…** opens one, **File › Save to a folder…** puts the project into one. The server reads its files and writes every change back a moment later (`backend/disk`), so git, another editor and the file manager see the same files; a reload reads the folder again. Only the page of the server itself may use these requests (not another site, not another name of the address). Assembling and tokenizing happen in the browser.
 
@@ -50,17 +51,17 @@ The server serves the IDE, the example project (`examples/demo`) and the bridges
 
 | Family | Machines | CPU | BASIC | Output | Runs in |
 |---|---|---|---|---|---|
-| Commodore | C64, C128, VIC-20, Plus/4, C16, PET | 6510 / 6502 | V2, Simons', 7.0, 3.5, 4.0 | .prg | VICE: run **and debug** |
-| Atari | 800 XL / 130 XE | 6502 | Atari BASIC, Turbo-Basic XL | .xex (binary load file) | Altirra (or atari800) |
-| Atari | 2600 (VCS) | 6507 | - | .a26 cartridge | Stella |
-| Amstrad / Schneider | CPC 464, CPC 6128 | Z80 | Locomotive BASIC | AMSDOS binary on a .dsk | WinAPE (or Caprice32) |
+| Commodore | C64, C128, VIC-20, Plus/4, C16, PET | 6510 / 6502 | V2, Simons', 7.0, 3.5, 4.0 | .prg | mimic or VICE: run **and debug** |
+| Atari | 800 XL / 130 XE | 6502 | Atari BASIC, Turbo-Basic XL | .xex (binary load file) | mimic: run **and debug**; Altirra (or atari800) |
+| Atari | 2600 (VCS) | 6507 | - | .a26 cartridge | mimic: run **and debug**; Stella (or MAME) |
+| Amstrad / Schneider | CPC 464, CPC 6128 | Z80 | Locomotive BASIC | AMSDOS binary on a .dsk | mimic: run **and debug**; WinAPE (or Caprice32) |
 | Nintendo | NES | 6502 (2A03) | - | .nes cartridge (iNES, mapper 0) | Mesen, FCEUX, Nestopia (or MAME) |
 | Nintendo | SNES | 65816 | - | .sfc cartridge (LoROM, 32K) | Mesen, bsnes, Snes9x (or MAME) |
 | Sinclair | ZX81 (16K) | Z80 | ZX81 BASIC | .p file (code in a 1 REM line at $4082) | EightyOne (or ZEsarUX) |
 | Tandy / Radio Shack | TRS-80 Model I, Model III | Z80 | Level II BASIC | /CMD file | trs80gp (or MAME) |
 | Acorn | BBC Micro Model B | 6502 | BBC BASIC II | a .ssd disc that boots it | BeebEm, b2 (or MAME) |
 
-The assembler is the same for all of them: ACME's syntax, with `!cpu z80` for the CPC and `!cpu 65816` for the SNES (long addresses, `[dp]`, `sr,s`, `mvn`/`mvp`, `brl`; `!al`/`!as` and `!rl`/`!rs` set the size of the immediates, as ACME's). `!to` picks the output (`cbm`, `plain`, `xex`, `amsdos`, `zx81`, `trs80`); without it the platform's. Two pseudo ops are nerdsuite's own: `!run ADDR` (the RUNAD segment of a .xex, the exec address of an AMSDOS header) and `!init ADDR` (INITAD). Atari BASIC, Locomotive BASIC, Level II BASIC and BBC BASIC are not tokenized: the build gives the listing the machine ENTERs or LOADs as text (the BBC: !BOOT of the disc types it in). ZX81 BASIC is: the build makes a .p file (its keywords as tokens, the numbers as 5 byte floats; `{$xx}` for the block graphics, `{inv}`...`{/inv}` for inverse letters). The debugger needs VICE's binary monitor: the other platforms run in their emulator, found by the environment variables `ALTIRRA`, `STELLA`, `WINAPE`, `MESEN` (or `ATARI800`, `CAPRICE`, `FCEUX`, `NESTOPIA`, `BSNES`, `SNES9X`, `MAME`), `EIGHTYONE` or `ZESARUX`, `TRS80GP`, `BEEBEM` or `B2`. The 64K of the assembler hold a NES cartridge of mapper 0 and the first 32K bank of a SNES ROM. The graphics editors and the composer make Commodore data (VIC-II, SID); for the other machines the hex view and the exports give the bytes.
+The assembler is the same for all of them: ACME's syntax, with `!cpu z80` for the CPC and `!cpu 65816` for the SNES (long addresses, `[dp]`, `sr,s`, `mvn`/`mvp`, `brl`; `!al`/`!as` and `!rl`/`!rs` set the size of the immediates, as ACME's). `!to` picks the output (`cbm`, `plain`, `xex`, `amsdos`, `zx81`, `trs80`); without it the platform's. Two pseudo ops are nerdsuite's own: `!run ADDR` (the RUNAD segment of a .xex, the exec address of an AMSDOS header) and `!init ADDR` (INITAD). Atari BASIC, Locomotive BASIC, Level II BASIC and BBC BASIC are not tokenized: the build gives the listing the machine ENTERs or LOADs as text (the BBC: !BOOT of the disc types it in). ZX81 BASIC is: the build makes a .p file (its keywords as tokens, the numbers as 5 byte floats; `{$xx}` for the block graphics, `{inv}`...`{/inv}` for inverse letters). The debugger needs VICE's binary monitor or mimic: the other platforms run in their emulator, found by the environment variables `ALTIRRA`, `STELLA`, `WINAPE`, `MESEN` (or `ATARI800`, `CAPRICE`, `FCEUX`, `NESTOPIA`, `BSNES`, `SNES9X`, `MAME`), `EIGHTYONE` or `ZESARUX`, `TRS80GP`, `BEEBEM` or `B2`. The 64K of the assembler hold a NES cartridge of mapper 0 and the first 32K bank of a SNES ROM. The graphics editors and the composer make Commodore data (VIC-II, SID); for the other machines the hex view and the exports give the bytes.
 
 ## A new project
 
@@ -99,7 +100,7 @@ A project has two assemblers: **ACME** (the default) and **KickAssembler**. The 
 
 ## The debugger
 
-**Run** (F5) builds the main program and starts it in VICE; **Debug** (F6) does the same with the breakpoints and opens the Debugger view. Click a line number of an assembler source for a breakpoint - it is a checkpoint of VICE at the address of the line, set again after each build. While the CPU is stopped:
+**Run** (F5) builds the main program and starts it in VICE or mimic - the one chosen in the Settings (*Emulator per platform*), else mimic when it is found, else VICE; **Debug** (F6) does the same with the breakpoints and opens the Debugger view. mimic runs and debugs the Atari 800 XL, the Atari 2600 and the CPC too: there Run uses mimic when it is chosen in the Settings or none is, Debug whenever mimic is found. A Commodore .prg and an Atari .xex go into mimic's program slot (into the RAM, RUN for a BASIC program; the .xex loaded as DOS does); a 2600 cartridge (.a26) goes into mimic's cartridge slot and the console powers up; a CPC binary is put into the RAM once BASIC is up and started with `CALL`, a Locomotive BASIC listing goes onto a disc in drive A and is started with `RUN"` (the 6128 - the 464 has no drive); an Atari BASIC listing is typed in after a cold start into BASIC, then `RUN` (letters as capitals, as the Atari types them with caps lock on). The debugger shows the Z80's registers, flags and stack for the CPC. Click a line number of an assembler source for a breakpoint - it is a checkpoint of the emulator at the address of the line, set again after each build. While the CPU is stopped:
 
 | Key | |
 |---|---|
@@ -118,13 +119,14 @@ The view shows the registers and flags (editable), the stack, the disassembly ar
 | `backend/server.go`, `settings_api.go` | static files, `/api/info`, `/api/examples`, the routes of the parts, the settings of the tools |
 | `backend/core` | what the parts share: JSON answers, errors, the tools found, the settings file |
 | `backend/vice` | the binary remote monitor of VICE: the codec, the process and connection, the HTTP and event-stream API |
+| `backend/mimic` | mimic and its debug protocol (JSON lines): the process and connection, the checkpoints, the same HTTP and event-stream API as VICE's under `/api/mimic` |
 | `public/js/app.js` | the shell: the project, the views, Save, Build, Run, Debug, routes, keys |
 | `public/js/codeview.js`, `codeeditor.js` | the Code view and its editor surface |
 | `public/js/lang-acme.js`, `lang-basic.js` | colours and completion of the languages |
 | `public/js/acme/` | the ACME compatible assembler and its documentation data |
 | `public/js/basic/` | the BASIC tokenizer and its dialects |
 | `public/js/nsbuild.js` | the project settings, the build, the debug info (addresses ↔ lines) |
-| `public/js/vice.js`, `debugview.js` | the debugger: the browser side of VICE, the Debugger view |
+| `public/js/vice.js`, `debugview.js` | the debugger: the browser side of VICE and mimic, the Debugger view |
 | `backend/kickass` | KickAssembler on the server: `/api/kickass/status`, `/info`, `/assemble` |
 | `public/js/lang-kickass.js`, `public/js/kickass/docs.js` | colours and completion of KickAssembler; its directives and library |
 | `public/js/platforms.js` | the machines: CPU, BASIC, output, start address, emulator, the starter programs |

@@ -44,6 +44,7 @@ import { chooseFolder, forgetFolder } from './folderchooser.js';
 import { setWriterTag } from './filetag.js';
 import { keepUi, loadUi, watchUi } from './uistate.js';
 import { readSettings, writeSettings, machineOf, MACHINES, SETTINGS } from './nsbuild.js';
+import { canDebug } from './platforms.js';
 import { hasEditor, setVideoMachine, GFX_VIEWS } from './video.js';
 import { loadMachineFont, onFontChange } from './romfonts.js';
 import { buildWith, currentToolchain, loadToolchains, projectToolchain, toolchains, chainLabel, emulatorRuns, runCommand, ultimate, ultimateRuns, runOnUltimate } from './toolchain.js';
@@ -377,8 +378,8 @@ async function build({ quiet = false } = {}) {
 }
 let lastBuild = null;
 
-// build and start it in its emulator: VICE for the Commodore machines (debug: with the breakpoints,
-// the debugger view shows), Altirra, Stella or WinAPE for the others (backend/emu) - or the
+// build and start it in its emulator: VICE or mimic for the Commodore machines (vice.js: chooseDebugger;
+// debug: with the breakpoints, the debugger view shows), Altirra, Stella or WinAPE for the others (backend/emu) - or the
 // emulator of the toolchain of the project: one of them, or its command (backend/toolchain)
 async function runMain({ debug = false, onUltimate = false } = {}) {
   const r = await build({ quiet: true });
@@ -411,10 +412,13 @@ async function runMain({ debug = false, onUltimate = false } = {}) {
     return;
   }
   if (p.emulator.kind !== 'vice') {
-    if (debug) snackbar(`The debugger works with VICE (the Commodore machines): ${p.name} programs only run`, { timeout: 6000 });
+    // the names of the formats of the launcher (backend/emu)
+    const format = { amsdos: 'amsdos-bin', zx81: 'zx81-p', trs80: 'trs80-cmd', plain: { vcs: 'a26', nes: 'nes', snes: 'sfc', bbc: 'bbc-bin' }[p.emulator.platform] ?? 'plain' }[r.file.format] ?? r.file.format;
+    // the Atari XL, the 2600 and the CPC: run and debug in mimic (the Settings choose)
+    if (p.mimic && emu === 'auto' && MIMIC_FORMATS.includes(format) && await vice.chooseDebugger(p, { debug }) === 'mimic') return runInDebugger(r, p, { debug, format, download });
+    if (debug) snackbar(!p.mimic ? `The debugger works with VICE and mimic: ${p.name} programs only run`
+      : !MIMIC_FORMATS.includes(format) ? `mimic does not load ${r.file.name}: it only runs, in its emulator` : `The debugger works with mimic: set its path in the Settings - ${p.name} programs only run`, { timeout: 6000 });
     try {
-      // the names of the formats of the launcher (backend/emu)
-      const format = { amsdos: 'amsdos-bin', zx81: 'zx81-p', trs80: 'trs80-cmd', plain: { vcs: 'a26', nes: 'nes', snes: 'sfc', bbc: 'bbc-bin' }[p.emulator.platform] ?? 'plain' }[r.file.format] ?? r.file.format;
       const emulator = emu !== 'auto' && emulatorRuns(emu, p) ? emu : undefined;     // the toolchain's, else the one of the settings
       const res = await api('POST', 'api/emu/run', { platform: p.emulator.platform, model: p.emulator.model, emulator, name: r.name, data: toBase64(r.file.bytes), format, load: r.start, exec: r.exec });
       snackbar(`${r.file.name} runs in ${res.emulator ?? 'the emulator'} (${p.name})${res.emulator === 'altirra' ? ' - click its window: Altirra pauses while it has no focus' : ''}`, { timeout: 6000 });
@@ -423,18 +427,28 @@ async function runMain({ debug = false, onUltimate = false } = {}) {
     }
     return;
   }
-  if (!r.prg) { snackbar(`${r.file.name} is no program VICE loads (format ${r.file.format})`, { error: true, ...download }); return; }
+  return runInDebugger(r, p, { debug, download });
+}
+
+// the files mimic loads besides a .prg (backend/mimic: load)
+const MIMIC_FORMATS = ['xex', 'atascii-lst', 'amsdos-bin', 'cpc-ascii', 'a26'];
+
+// a build in VICE or mimic (vice.js), with the debugger: a .prg, or a file of a format of mimic
+async function runInDebugger(r, p, { debug, format = null, download }) {
+  const which = await vice.chooseDebugger(p, { debug }), name = vice.debuggerName();
+  if (!format && !r.prg) { snackbar(`${r.file.name} is no program ${name} loads (format ${r.file.format})`, { error: true, ...download }); return; }
   const s = await vice.refreshStatus();
   if (!s.available) {
-    snackbar('VICE was not found: set the environment variable VICE to the folder of x64sc and restart the server. The program is built.', { error: true, timeout: 10000, ...download });
+    snackbar(which === 'mimic' ? 'mimic was not found: set its path (MIMIC) in the Settings. The program is built.'
+      : 'VICE was not found: set the environment variable VICE to the folder of x64sc and restart the server. The program is built.', { error: true, timeout: 10000, ...download });
     return;
   }
   try {
-    await vice.runBuild(r, p, { debug });
-    snackbar(`${r.file.name} runs in VICE (${p.name})${debug ? ' with its breakpoints' : ''}`);
+    await vice.runBuild(r, p, { debug, format });
+    snackbar(`${r.file.name} runs in ${name} (${p.name})${debug ? ' with its breakpoints' : ''}`);
     if (debug) setView('debug');
   } catch (e) {
-    snackbar(`VICE: ${e.message}`, { error: true, timeout: 8000 });
+    snackbar(`${name}: ${e.message}`, { error: true, timeout: 8000 });
   }
 }
 
@@ -825,7 +839,7 @@ function showStart() {
   startView = mount(el, () => [h('img', { class: 'start-screen__logo', src: 'images/nerdsuite.png', alt: 'nerdsuite' }),
 
     h('div', { class: 'md-body-medium start-screen__text' },
-      'An IDE for 8 bit machines - Commodore, Atari, Amstrad / Schneider CPC: assembler (ACME, 6502 and Z80) and BASIC with autocompletion, the screen, sprite, char, tile and bitmap editors, the composer, a hex view, and a debugger in VICE.'),
+      'An IDE for 8 bit machines - Commodore, Atari, Amstrad / Schneider CPC: assembler (ACME, 6502 and Z80) and BASIC with autocompletion, the screen, sprite, char, tile and bitmap editors, the composer, a hex view, and a debugger in mimic or VICE.'),
     h('div', { class: 'start-screen__actions' },
       button('New project', { icon: 'add', variant: 'filled', onclick: newProject }),
       button('Open folder…', { icon: 'folder_open', variant: 'tonal', onclick: openProjectFolder }),
@@ -898,12 +912,12 @@ function updateChrome() {
   $('#search-box').hidden = !isOpen() || !SEARCH[view];
   // Build, Run, Debug and the Ultimate as the bar of the code editor shows them (codeview.js)
   const platform = machineOf(readSettings().machine);
-  const off = !isOpen() || !main || building, vice = platform.emulator.kind === 'vice';
+  const off = !isOpen() || !main || building, vice = canDebug(platform);
   const chain = isOpen() ? chainLabel(projectToolchain(), platform, main) : '';   // the steps of the toolchain of the project
   runState.value = {
     build: { disabled: off, tip: (main ? `Build ${main} (Ctrl+B)` : 'Build: create a source first') + (chain ? ` · ${chain}` : '') },
     run: { disabled: off, tip: chain ? `Build and run: ${chain} (F5)` : 'Build and run (F5)' },
-    debug: { disabled: off || !vice, tip: vice ? 'Build and debug in VICE (F6)' : `The debugger works with VICE: ${platform.name} programs run with F5` },
+    debug: { disabled: off || !vice, tip: vice ? 'Build and debug in VICE or mimic (F6)' : `The debugger works with VICE and mimic: ${platform.name} programs run with F5` },
     // the Ultimate 64: set up in the Settings, a C64 project
     ultimate: { disabled: off, hidden: !ultimate.value.host || !ultimateRuns(platform), tip: `Build and run on the Ultimate 64 at ${ultimate.value.host} (Shift+F5)` },
   };
@@ -945,7 +959,7 @@ function openHandbook(code) {
 function showKeys() {
   const rows = [
     ['Ctrl+S', 'save every editor'], ['Ctrl+B', 'build the main program'], ['F5', 'build and run in VICE (continue while stopped)'],
-    ['Shift+F5', 'build and run on the Ultimate 64 (Settings)'], ['F6', 'build and debug in VICE'], ['F8', 'pause / continue'], ['F10', 'step over'], ['F11', 'step into'], ['Shift+F11', 'step out'],
+    ['Shift+F5', 'build and run on the Ultimate 64 (Settings)'], ['F6', 'build and debug in VICE or mimic'], ['F8', 'pause / continue'], ['F10', 'step over'], ['F11', 'step into'], ['Shift+F11', 'step out'],
     ['Ctrl+Space', 'suggestions at the caret'], ['Ctrl+click', 'go to the definition of a label or macro'], ['Ctrl+/', 'comment the lines in or out'],
     ['Ctrl+wheel / Ctrl+0', 'zoom the code / its own size'], ['Ctrl+,', 'the settings: editor, colours, assemblers and emulators'],
     ['Tab / Shift+Tab', 'indent the lines in or out'], ['Ctrl+F', 'search'], ['Ctrl+Z / Ctrl+Y', 'undo / redo'],
@@ -1098,6 +1112,7 @@ vice.onEvent(() => updateChrome());
   } catch (e) {
     snackbar(`The server does not answer: ${e.message}`, { error: true, timeout: 0 });
   }
+  await vice.chooseDebugger(machineOf(readSettings().machine));
   vice.connectEvents();
   vice.refreshStatus();
   try {

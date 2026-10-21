@@ -136,7 +136,7 @@ export function projectWizard() {
           h('span', { class: 'ns-wiz-platform__text' },
             h('span', { class: 'ns-wiz-platform__name' }, x.name),
             h('span', { class: 'ns-wiz-platform__desc', 'data-i18n': 'off' },
-              `${cpuName(x.cpu)} · ${x.basic.length ? x.basic.map(d => DIALECTS[d]?.name ?? d).join(', ') : 'no BASIC'} · .${x.ext} · ${canDebug(x) ? 'run and debug in VICE' : `run in ${{ atari: 'Altirra', vcs: 'Stella', cpc: 'WinAPE', nes: 'Mesen or FCEUX', snes: 'Mesen, bsnes or Snes9x', zx81: 'EightyOne or ZEsarUX', trs80: 'trs80gp or MAME', bbc: 'BeebEm, b2 or MAME', mega65: 'Xemu' }[x.emulator.platform] ?? 'its emulator'}`}`))))),
+              `${cpuName(x.cpu)} · ${x.basic.length ? x.basic.map(d => DIALECTS[d]?.name ?? d).join(', ') : 'no BASIC'} · .${x.ext} · ${x.emulator.kind === 'vice' ? 'run and debug in mimic or VICE' : canDebug(x) ? `run and debug in mimic, run in ${{ atari: 'Altirra', vcs: 'Stella', cpc: 'WinAPE' }[x.emulator.platform]}` : `run in ${{ atari: 'Altirra', vcs: 'Stella', cpc: 'WinAPE', nes: 'Mesen or FCEUX', snes: 'Mesen, bsnes or Snes9x', zx81: 'EightyOne or ZEsarUX', trs80: 'trs80gp or MAME', bbc: 'BeebEm, b2 or MAME', mega65: 'Xemu' }[x.emulator.platform] ?? 'its emulator'}`}`))))),
       ];
     },
     project: () => {
