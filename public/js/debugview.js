@@ -1,5 +1,5 @@
-// debugview.js - the Debugger view: the program in VICE through its binary remote monitor
-// (vice.js, backend/vice). What the monitor of VICE offers, in panels:
+// debugview.js - the Debugger view: the program in VICE through its binary remote monitor, or in mimic
+// through its debug protocol (vice.js, backend/vice, backend/mimic). What the two offer, in panels:
 //   - run, pause, step into, step over, step out (until RTS), reset, load and run the build
 //   - the registers and the flags (editable), the stack
 //   - the disassembly around the PC with the labels and the source lines of the build
@@ -7,7 +7,7 @@
 //     temporary, enabled or not, and the hits VICE counts
 //   - the memory as hex and PETSCII, in every bank VICE has, editable
 //   - watches: labels or addresses as bytes, words or text, read whenever the CPU stops
-//   - the screen of the emulator, the log
+//   - the screen of the emulator (mimic: its raw stream, up to 50 frames a second), the log
 // The breakpoints of the sources (the gutter of the code view) are checkpoints at the addresses
 // of their lines; the ones made here are checkpoints of an address.
 
@@ -15,9 +15,16 @@ import { h, mount, signal, icon, iconButton, button, select, field, promptDialog
 import * as vice from './vice.js';
 import { hasFile, readText } from './project.js';
 import { disassemble, parseAddress, hex2, hex4, MACHINES, machineOf, readSettings, writeSettings, isCodeLine } from './nsbuild.js';
+import { canDebug } from './platforms.js';
 
-const REGS = ['pc', 'a', 'x', 'y', 'sp'];
-const FLAGS = [['N', 0x80], ['V', 0x40], ['-', 0x20], ['B', 0x10], ['D', 0x08], ['I', 0x04], ['Z', 0x02], ['C', 0x01]];
+// the registers shown first, the 16 bit ones, the flags and their register: the 6502 (VICE's names, mimic's
+// are made so), the Z80 of the CPC (mimic)
+const CPUS = {
+  6502: { regs: ['pc', 'a', 'x', 'y', 'sp'], wide: ['pc'], flagReg: 'fl',
+    flags: [['N', 0x80], ['V', 0x40], ['-', 0x20], ['B', 0x10], ['D', 0x08], ['I', 0x04], ['Z', 0x02], ['C', 0x01]] },
+  z80: { regs: ['pc', 'sp', 'a', 'b', 'c', 'd', 'e', 'h', 'l', 'ix', 'iy'], wide: ['pc', 'sp', 'ix', 'iy', "af'", "bc'", "de'", "hl'", 'wz'], flagReg: 'f',
+    flags: [['S', 0x80], ['Z', 0x40], ['5', 0x20], ['H', 0x10], ['3', 0x08], ['P', 0x04], ['N', 0x02], ['C', 0x01]] },
+};
 const KEY = 'nerdsuite.debug';
 const MEM_ROWS = 16;
 const DIS_LINES = 28;
@@ -48,7 +55,9 @@ export function createDebugView(el, bar, hooks = {}) {
   screenCanvas.className = 'ns-screen';
 
   const machine = () => readSettings().machine;
-  const cpu = () => readSettings().cpu || machineOf(machine()).cpu || '6502';
+  // the CPU of the settings when the machine has it (a project switched to the CPC keeps its 6510), else the machine's
+  const cpu = () => { const m = machineOf(machine()), c = readSettings().cpu; return (c && m.cpus?.includes(c) ? c : m.cpu) || '6502'; };
+  const regSet = () => CPUS[cpu() === 'z80' ? 'z80' : 6502];
   const info = () => vice.debug();
   const running = () => vice.status.value.running;
   const isStopped = () => !!vice.stopped.value;
@@ -65,9 +74,11 @@ export function createDebugView(el, bar, hooks = {}) {
     await act(async () => {
       if (isStopped()) {
         st.registers = vice.stopped.value.registers ?? await vice.vice.get('registers');
-        const sp = st.registers.sp ?? 0xff;
-        const stack = await vice.readMemory(0x100 + ((sp + 1) & 0xff), 0x1ff);
-        st.stack = { sp, bytes: stack.slice(0, 16) };
+        // the stack: page 1 above S of the 6502, the 16 bytes from SP of the Z80
+        const sp = st.registers.sp ?? 0xff, z80 = cpu() === 'z80';
+        const from = z80 ? sp : 0x100 + ((sp + 1) & 0xff);
+        const stack = await vice.readMemory(from, z80 ? Math.min(0xffff, sp + 15) : 0x1ff);
+        st.stack = { from, bytes: stack.slice(0, 16) };
         await disassembly();
         await readWatches();
         // the BASIC line the interpreter is at (C64, C128, VIC-20: CURLIN $39/$3A)
@@ -78,6 +89,7 @@ export function createDebugView(el, bar, hooks = {}) {
       await readCheckpoints();
       if (isStopped() || st.liveScreen) await readScreen();
     }, 'refresh');
+    syncStream();
     update();
   }
 
@@ -128,12 +140,109 @@ export function createDebugView(el, bar, hooks = {}) {
     }
   }
 
+  // the screen with mimic: the raw stream of its preview server (api/mimic/stream; the messages: mimic's
+  // crates/emu-preview/src/raw.rs) - palette indices at 4 or 8 bits or RGB at 24, the pixel aspect, after a
+  // key frame only the lines that changed, and a frame whenever the machine stops or steps (flag paused, the beam where
+  // it stopped). The picture is kept here and drawn once per animation frame: while running with "Live",
+  // always when it stops. A mimic without /stream (the socket closes twice before a message) and VICE get
+  // the screen from 'display'.
+  const stream = { socket: null, live: false, fails: 0, unsupported: false, retry: 0, pic: null, paused: false, beam: null, drawing: false, ratio: 0 };
+  const wantStream = () => shown && running() && vice.debuggerName() === 'mimic' && !stream.unsupported;
+  const streaming = () => vice.debuggerName() === 'mimic' && !stream.unsupported;
+
+  function syncStream() {
+    if (!wantStream()) closeStream();
+    else if (!stream.socket) openStream();
+  }
+
+  function openStream() {
+    clearTimeout(stream.retry);
+    const url = new URL('api/mimic/stream?fps=50', location.href);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(url);
+    ws.binaryType = 'arraybuffer';
+    let got = false;
+    ws.onmessage = e => { got = true; stream.live = true; stream.fails = 0; onRaw(e.data); };
+    ws.onclose = () => {
+      if (stream.socket !== ws) return;
+      stream.socket = null; stream.live = false; stream.pic = null;
+      if (!got && ++stream.fails >= 2) { stream.unsupported = true; update(); }
+      if (wantStream()) stream.retry = setTimeout(syncStream, 1000);
+    };
+    stream.socket = ws;
+  }
+
+  function closeStream() {
+    clearTimeout(stream.retry);
+    const ws = stream.socket;
+    stream.socket = null; stream.live = false; stream.pic = null;
+    if (ws) { ws.onclose = null; ws.close(); }
+  }
+
+  function onRaw(buffer) {
+    const v = new DataView(buffer), bytes = new Uint8Array(buffer);
+    if (bytes.length < 32 || String.fromCharCode(...bytes.subarray(0, 4)) !== 'PTRV') return;   // PTRA: sound, not asked for
+    const flags = v.getUint8(5), bpp = v.getUint8(6);
+    const [w, h, entries, runs] = [20, 22, 24, 26].map(o => v.getUint16(o, true));
+    // the shape on the machine's monitor: the pixel aspect (16.16; 0: unknown, square) - the canvas keeps the
+    // pixels, CSS draws it width x aspect wide
+    const par = v.getUint32(28, true) / 65536, ratio = par > 0 && h ? w * par / h : 0;
+    if (ratio !== stream.ratio) { stream.ratio = ratio; screenCanvas.style.aspectRatio = ratio ? String(ratio) : ''; }
+    let pic = stream.pic;
+    if (flags & 1 || !pic || pic.w !== w || pic.h !== h) {
+      const img = new ImageData(w, h);
+      pic = stream.pic = { w, h, idx: new Uint8Array(w * h), pal: new Uint32Array(256).fill(0xff000000), img, px: new Uint32Array(img.data.buffer), top: 0, bottom: h };
+    }
+    // the colours as 32-bit pixels (ABGR in the little endian ImageData); indices without one are black
+    const paint = (from, to) => {
+      for (let i = from * w; i < to * w; i++) pic.px[i] = pic.pal[pic.idx[i]];
+      pic.top = Math.min(pic.top, from); pic.bottom = Math.max(pic.bottom, to);
+    };
+    let o = 32, all = false;
+    if (flags & 4) {
+      pic.pal.fill(0xff000000);
+      for (let i = 0; i < entries; i++, o += 3) pic.pal[i] = 0xff000000 | bytes[o + 2] << 16 | bytes[o + 1] << 8 | bytes[o];
+      all = true;
+    }
+    const len = bpp === 4 ? (w + 1) >> 1 : bpp === 8 ? w : 3 * w;
+    for (let r = 0; r < runs; r++) {
+      const first = v.getUint16(o, true), count = v.getUint16(o + 2, true);
+      o += 4;
+      for (let y = first; y < first + count && y < h; y++, o += len) {
+        const row = y * w;
+        if (bpp === 4) for (let x = 0; x < w; x++) pic.idx[row + x] = x & 1 ? bytes[o + (x >> 1)] >> 4 : bytes[o + (x >> 1)] & 15;
+        else if (bpp === 8) pic.idx.set(bytes.subarray(o, o + w), row);
+        else for (let x = 0; x < w; x++) pic.px[row + x] = 0xff000000 | bytes[o + 3 * x + 2] << 16 | bytes[o + 3 * x + 1] << 8 | bytes[o + 3 * x];
+        if (bpp === 24) { pic.top = Math.min(pic.top, y); pic.bottom = Math.max(pic.bottom, y + 1); } else if (!all) paint(y, y + 1);
+      }
+    }
+    if (all && bpp !== 24) paint(0, h);
+    const paused = !!(flags & 2), line = v.getUint16(16, true);
+    const beam = paused && line !== 0xffff ? { frame: Number(v.getBigUint64(8, true)), line, cycle: v.getUint16(18, true) } : null;
+    const changed = paused !== stream.paused || beam?.line !== stream.beam?.line || beam?.cycle !== stream.beam?.cycle;
+    stream.paused = paused; stream.beam = beam;
+    if (!stream.drawing) { stream.drawing = true; requestAnimationFrame(showStream); }
+    if (changed) update();
+  }
+
+  function showStream() {
+    stream.drawing = false;
+    const pic = stream.pic;
+    if (!pic || pic.top >= pic.bottom || !(st.liveScreen || stream.paused)) return;
+    if (screenCanvas.width !== pic.w || screenCanvas.height !== pic.h) { screenCanvas.width = pic.w; screenCanvas.height = pic.h; pic.top = 0; pic.bottom = pic.h; }
+    screenCanvas.getContext('2d').putImageData(pic.img, 0, 0, 0, pic.top, pic.w, pic.bottom - pic.top);
+    pic.top = pic.h; pic.bottom = 0;
+    if (!st.screen) { st.screen = { width: pic.w, height: pic.h }; update(); }
+  }
+
   async function readScreen() {
+    if (stream.live) return;
     const d = await vice.vice.get('display').catch(() => null);
     if (!d?.rgba) return;
     const bytes = Uint8ClampedArray.from(atob(d.rgba), c => c.charCodeAt(0));
     if (bytes.length !== d.width * d.height * 4) return;
     screenCanvas.width = d.width; screenCanvas.height = d.height;
+    stream.ratio = 0; screenCanvas.style.aspectRatio = '';     // the pixels as they come: square
     screenCanvas.getContext('2d').putImageData(new ImageData(bytes, d.width, d.height), 0, 0);
     st.screen = d;
   }
@@ -143,6 +252,7 @@ export function createDebugView(el, bar, hooks = {}) {
     persist();
     clearInterval(screenTimer);
     if (on) screenTimer = setInterval(() => { if (shown && running() && !isStopped()) readScreen().then(update); }, 1000);
+    if (on && stream.pic && !stream.drawing) { stream.drawing = true; requestAnimationFrame(showStream); }
     update();
   }
 
@@ -150,11 +260,11 @@ export function createDebugView(el, bar, hooks = {}) {
 
   async function start() {
     const p = machineOf(machine());
-    if (p.emulator.kind !== 'vice') return snackbar(`${p.name} programs run in their emulator (Run, F5): the debugger works with VICE and the Commodore machines`, { error: true, timeout: 8000 });
-    await act(() => vice.ensureRunning(p), 'start VICE');
+    if (!canDebug(p)) return snackbar(`${p.name} programs run in their emulator (Run, F5): the debugger works with VICE or mimic - the Commodore machines, the Atari XL, the 2600, the CPC`, { error: true, timeout: 8000 });
+    await act(() => vice.ensureRunning(p), 'start the emulator');
     await refresh();
   }
-  const stop = () => act(() => vice.vice.post('stop'), 'stop VICE').then(refresh);
+  const stop = () => act(() => vice.vice.post('stop'), `stop ${vice.debuggerName()}`).then(refresh);
   const cont = () => act(() => vice.vice.post('continue'), 'continue');
   const pause = () => act(async () => { const r = await vice.vice.post('pause'); vice.stopped.value = r; await refresh(); }, 'pause');
   const stepped = r => { if (r) { vice.stopped.value = r; vice.here.value = (() => { const at = info().lineOf(r.pc); return at ? { file: at.file, line: at.line } : null; })(); } return refresh(); };
@@ -170,7 +280,7 @@ export function createDebugView(el, bar, hooks = {}) {
     if (name === 'pc') await disassembly();
     update();
   }
-  const toggleFlag = bit => setRegister('fl', String((st.registers?.fl ?? 0) ^ bit));
+  const toggleFlag = bit => { const f = regSet().flagReg; return setRegister(f, String((st.registers?.[f] ?? 0) ^ bit)); };
 
   // --- checkpoints ------------------------------------------------------------------------------
 
@@ -235,8 +345,8 @@ export function createDebugView(el, bar, hooks = {}) {
       h('span', { class: 'md-title-medium' }, 'Debugger'),
       h('span', { class: 'screen-bar__sep' }),
       select({ label: 'Machine', hideLabel: true, dense: true, value: machine(), cls: 'ns-bar__select',
-        options: MACHINES.filter(m => m.emulator.kind === 'vice' || m.id === machine()).map(m => ({ value: m.id, label: m.name })), onchange: v => { writeSettings({ machine: v }); update(); } }),
-      s.running ? iconButton('power', 'Stop VICE', stop, 'md-icon-button--selected') : iconButton('power', 'Start VICE', start, '', { disabled: !s.available }),
+        options: MACHINES.filter(m => canDebug(m) || m.id === machine()).map(m => ({ value: m.id, label: m.name })), onchange: v => { writeSettings({ machine: v }); update(); } }),
+      s.running ? iconButton('power', `Stop ${vice.debuggerName()}`, stop, 'md-icon-button--selected') : iconButton('power', `Start ${vice.debuggerName()}`, start, '', { disabled: !s.available }),
       h('span', { class: 'screen-bar__sep' }),
       iconButton('hammer', 'Build, load and run the main program with its breakpoints (F6)', () => hooks.debug?.()),
       stoppedAt ? iconButton('play', 'Continue (F5 / F8)', cont, '', { disabled: !s.running }) : iconButton('pause', 'Pause (F8)', pause, '', { disabled: !s.running }),
@@ -247,26 +357,27 @@ export function createDebugView(el, bar, hooks = {}) {
       iconButton('refresh', 'Read the state again', refresh, '', { disabled: !s.running }),
       h('span', { class: 'screen-bar__sep' }),
       h('span', { class: `md-body-medium ns-state ${stoppedAt ? 'ns-state--stopped' : s.running ? 'ns-state--running' : ''}`, 'data-i18n': 'off' },
-        !s.available ? 'VICE not found - set VICE to its folder and restart the server'
-          : !s.running ? 'VICE is not running'
+        !s.available ? `${vice.debuggerName()} not found - set its path in the Settings`
+          : !s.running ? `${vice.debuggerName()} is not running`
             : stoppedAt ? `Stopped at $${hex4(stoppedAt.pc ?? 0)}${label ? ` (${label})` : ''}${vice.here.value ? ` · ${vice.here.value.file}:${vice.here.value.line}` : ''}${st.basicLine != null ? ` · BASIC line ${st.basicLine}` : ''}`
-              : `Running · ${machineOf(s.machine ?? machine()).name}`),
+              : `Running · ${machineOf(machine()).name}`),
       h('div', { class: 'app-bar__spacer' }));
   }
 
   function registersView() {
     const r = st.registers;
-    if (!r) return h('div', { class: 'section__hint' }, running() ? 'Pause the CPU to see its registers.' : 'Start VICE first.');
-    const fl = r.fl ?? 0;
+    if (!r) return h('div', { class: 'section__hint' }, running() ? 'Pause the CPU to see its registers.' : `Start ${vice.debuggerName()} first.`);
+    const { regs, wide, flags, flagReg } = regSet(), fl = r[flagReg] ?? 0;
+    const value = (n, v) => (wide.includes(n) || v > 0xff ? hex4(v ?? 0) : hex2(v ?? 0));
     return h('div', { class: 'ns-regs' },
-      h('div', { class: 'ns-regs__row' }, REGS.map(n => h('label', { class: 'ns-reg' }, h('span', { class: 'ns-reg__name' }, n.toUpperCase()),
-        h('input', { class: 'ns-reg__value', value: n === 'pc' ? hex4(r[n] ?? 0) : hex2(r[n] ?? 0), spellcheck: false, 'data-i18n': 'off',
+      h('div', { class: 'ns-regs__row' }, regs.map(n => h('label', { class: 'ns-reg' }, h('span', { class: 'ns-reg__name' }, n.toUpperCase()),
+        h('input', { class: 'ns-reg__value', value: value(n, r[n]), spellcheck: false, 'data-i18n': 'off',
           onchange: e => setRegister(n, '$' + e.target.value) })))),
-      h('div', { class: 'ns-flags' }, FLAGS.map(([f, bit]) => h('button', { type: 'button', class: `ns-flag ${fl & bit ? 'ns-flag--on' : ''}`, title: `${f}: click to toggle`, onclick: () => toggleFlag(bit) }, f))),
-      // other registers VICE reports (the 6510 port, raster line, cycles ...)
-      h('div', { class: 'ns-regs__more', 'data-i18n': 'off' }, Object.entries(r).filter(([k]) => !REGS.includes(k) && k !== 'fl').map(([k, v]) => h('span', {}, `${k} ${typeof v === 'number' ? (v > 0xff ? hex4(v) : hex2(v)) : v}`))),
+      h('div', { class: 'ns-flags' }, flags.map(([f, bit]) => h('button', { type: 'button', class: `ns-flag ${fl & bit ? 'ns-flag--on' : ''}`, title: `${f}: click to toggle`, onclick: () => toggleFlag(bit) }, f))),
+      // other registers the emulator reports (the 6510 port, raster line, cycles, the Z80's second set ...)
+      h('div', { class: 'ns-regs__more', 'data-i18n': 'off' }, Object.entries(r).filter(([k]) => !regs.includes(k) && k !== flagReg).map(([k, v]) => h('span', {}, `${k} ${typeof v === 'number' ? value(k, v) : v}`))),
       st.stack && h('div', { class: 'ns-stack', 'data-i18n': 'off' }, h('span', { class: 'ns-reg__name' }, 'Stack'),
-        [...st.stack.bytes].map((b, k) => h('span', { title: `$01${hex2((st.stack.sp + 1 + k) & 0xff)}` }, hex2(b)))));
+        [...st.stack.bytes].map((b, k) => h('span', { title: `$${hex4((st.stack.from + k) & 0xffff)}` }, hex2(b)))));
   }
 
   function disView() {
@@ -301,7 +412,7 @@ export function createDebugView(el, bar, hooks = {}) {
         iconButton('chevron_right', 'On a page', () => gotoMemory('$' + hex4((st.memStart + MEM_ROWS * 16) & 0xffff))),
         st.banks.length ? select({ label: 'Bank', hideLabel: true, dense: true, value: String(st.memBank), cls: 'ns-bar__select',
           options: st.banks.map(b => ({ value: String(b.id), label: b.name })), onchange: v => { st.memBank = Number(v); persist(); refresh(); } }) : ''),
-      !m ? h('div', { class: 'section__hint' }, running() ? 'Reading…' : 'The memory shows while VICE runs.')
+      !m ? h('div', { class: 'section__hint' }, running() ? 'Reading…' : `The memory shows while ${vice.debuggerName()} runs.`)
         : h('div', { class: 'ns-mem', 'data-i18n': 'off' }, Array.from({ length: Math.ceil(m.bytes.length / 16) }, (_, row) => {
           const base = m.start + row * 16, line = m.bytes.slice(row * 16, row * 16 + 16);
           return h('div', { class: 'ns-mem__row' },
@@ -370,7 +481,8 @@ export function createDebugView(el, bar, hooks = {}) {
         section('Breakpoints and watchpoints', checkpointsView(), iconButton('add', 'New breakpoint or watchpoint', () => addCheckpoint()), 'debug'),
         section('Watches', watchesView(), iconButton('add', 'New watch', addWatch), 'debug'),
         section('Screen', h('div', { class: 'ns-screen-wrap' }, st.screen ? h('div', { ref: n => { if (n && screenCanvas.parentNode !== n) n.replaceChildren(screenCanvas); } }) : h('div', { class: 'section__hint' }, 'The screen of the emulator shows when the CPU stops.'),
-          checkbox('Live while running (every second)', st.liveScreen, liveScreen)), null, 'debug'),
+          stream.paused && stream.beam && isStopped() ? h('div', { class: 'section__hint' }, `Frame ${stream.beam.frame}, stopped at line ${stream.beam.line}, cycle ${stream.beam.cycle} - the picture up to there`) : null,
+          checkbox(streaming() ? 'Live while running' : 'Live while running (every second)', st.liveScreen, liveScreen)), null, 'debug'),
         section('Log', logView(), iconButton('delete_sweep', 'Clear the log', () => { vice.log.value = []; }), 'debug'),
       ]));
   }
@@ -383,7 +495,8 @@ export function createDebugView(el, bar, hooks = {}) {
   vice.onEvent(type => {
     if (type === 'stopped') { st.disStart = null; refresh(); }
     if (type === 'resumed' || type === 'exit' || type === 'status') update();
-    if (type === 'exit') { st.registers = null; st.dis = []; st.mem = null; }
+    if (type === 'exit') { st.registers = null; st.dis = []; st.mem = null; stream.fails = 0; stream.unsupported = false; stream.paused = false; stream.beam = null; }
+    if (type === 'resumed' || type === 'exit' || type === 'status') syncStream();
   });
 
   function keys(e) {
@@ -398,7 +511,7 @@ export function createDebugView(el, bar, hooks = {}) {
   return {
     render, refresh, keys,
     open() { shown = true; render(); vice.refreshStatus().then(refresh); if (st.liveScreen) liveScreen(true); },
-    close() { shown = false; clearInterval(screenTimer); },
+    close() { shown = false; clearInterval(screenTimer); closeStream(); },
   };
 }
 

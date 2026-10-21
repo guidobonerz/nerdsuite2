@@ -471,3 +471,34 @@ func buildProgramDisk(name, kind string, content []byte, load, exec *int) (built
 	}
 	return builtDisk{Dsk: disk.toExtendedDsk(), Filename: filename, RunName: strings.Split(filename, ".")[0], Disk: disk}, nil
 }
+
+// CPCDisk: a DATA-format disc with one program (kind "bin" or "ascii", as buildProgramDisk) and the
+// name to RUN - for emulators started elsewhere (backend/mimic)
+func CPCDisk(name, kind string, content []byte, load, exec *int) (dsk []byte, runName string, err error) {
+	built, err := buildProgramDisk(name, kind, content, load, exec)
+	if err != nil {
+		return nil, "", err
+	}
+	return built.Dsk, built.RunName, nil
+}
+
+// AmsdosBinary: a CPC binary without its AMSDOS header, where it loads and where it starts - the
+// header's, else load (required) and exec (else load)
+func AmsdosBinary(data []byte, load, exec *int) (body []byte, at, start int, err error) {
+	if hasAmsdosHeader(data) {
+		h := parseAmsdosHeader(data[:128])
+		body = data[128:]
+		if h.Length > 0 && h.Length < len(body) {
+			body = body[:h.Length]
+		}
+		return body, h.Load, h.Exec, nil
+	}
+	if load == nil {
+		return nil, 0, 0, errors.New("load address required for a binary without AMSDOS header")
+	}
+	start = *load
+	if exec != nil {
+		start = *exec
+	}
+	return data, *load, start, nil
+}

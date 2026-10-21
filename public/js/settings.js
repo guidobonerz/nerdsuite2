@@ -121,7 +121,7 @@ async function api(method, data) {
   if (!res.ok) throw new Error(json.error || `${res.status} ${res.statusText}`);
   return json;
 }
-const PLATFORM_NAMES = { atari: 'Atari 8-bit', cpc: 'Amstrad / Schneider CPC', vcs: 'Atari 2600 (VCS)', nes: 'NES', snes: 'SNES', zx81: 'Sinclair ZX81', trs80: 'TRS-80', bbc: 'BBC Micro' };
+const PLATFORM_NAMES = { c64: 'Commodore 64', c128: 'Commodore 128', vic20: 'VIC-20', plus4: 'Plus/4', c16: 'Commodore 16', pet: 'PET / CBM', atari: 'Atari 8-bit', cpc: 'Amstrad / Schneider CPC', vcs: 'Atari 2600 (VCS)', nes: 'NES', snes: 'SNES', zx81: 'Sinclair ZX81', trs80: 'TRS-80', bbc: 'BBC Micro' };
 // a path set that the program found does not come from: the default or the PATH stood in
 const strayed = t => t.value && t.found && !t.found.toLowerCase().replace(/\\/g, '/').startsWith(t.value.toLowerCase().replace(/\\/g, '/').replace(/\/+$/, ''));
 
@@ -290,15 +290,16 @@ function Settings() {
           `toolchain chain compiler packer emulator ${tc.compiler.kind} ${tc.packer.kind} ${tc.emulator.kind} ${tc.compiler.command} ${tc.packer.command} ${tc.emulator.command} ${p.name}`, 'ns-set__row--block');
       }
     }
-    // the tools
+    // the tools and the Ultimate 64: the hint above the field, the field the whole width
     if (tools && !tools.error) {
+      const stacked = 'ns-set__row--block ns-set__row--path';
       for (const t of tools.tools) {
         const status = t.available ? (strayed(t) ? `not found there - ${t.found} is used` : t.found) : 'not found';
         add('tools', t.group, t.label, t.hint, h('div', { class: 'ns-set__ctl ns-set__ctl--wide' },
           field({ label: 'Path', dense: true, mono: true, value: t.value, placeholder: t.env ? `${t.env} (from the environment variable ${t.key})` : `the default, or the environment variable ${t.key}`,
             onchange: v => saveTools({ paths: { [t.key]: v } }), onkeydown: enterCommits,
             support: h('span', { class: `ns-set__found ${t.available && !strayed(t) ? 'ns-set__found--ok' : 'ns-set__found--bad'}` }, icon(t.available && !strayed(t) ? 'task_alt' : 'warning'), status) })),
-        `${t.key} path program executable`);
+        `${t.key} path program executable`, stacked);
       }
       // the Ultimate 64 on the network: its address and its password (Run on the Ultimate, Shift+F5)
       const u = tools.ultimate ?? { host: '' };
@@ -311,15 +312,15 @@ function Settings() {
           field({ label: 'Address', dense: true, mono: true, value: u.host, placeholder: u.env ? `${u.env} (from the environment variable ULTIMATE)` : '192.168.1.64',
             onchange: v => saveTools({ ultimate: { host: v } }), onkeydown: enterCommits, support: reach,
             trailing: iconButton('refresh', 'Ask the device again', askUltimate) })),
-        'ultimate u64 ultimate-ii real c64 hardware network ip host');
+        'ultimate u64 ultimate-ii real c64 hardware network ip host', stacked);
       add('tools', 'Ultimate 64', 'Password', 'the network password of the device, when it has one (kept on the server, not shown again)',
         h('div', { class: 'ns-set__ctl ns-set__ctl--wide' },
           field({ label: 'Password', dense: true, type: 'password', value: '', placeholder: u.password ? '•••••• set - type a new one' : 'none',
             onchange: v => saveTools({ ultimate: { host: u.host, password: v } }), onkeydown: enterCommits,
             trailing: u.password && iconButton('close', 'Remove the password', () => saveTools({ ultimate: { host: u.host, password: '' } })) })),
-        'ultimate u64 password network');
+        'ultimate u64 password network', stacked);
       for (const p of tools.platforms) {
-        add('tools', 'Emulator per platform', PLATFORM_NAMES[p.id] ?? p.id, 'the emulator Run starts; the first one found when none is chosen',
+        add('tools', 'Emulator per platform', PLATFORM_NAMES[p.id] ?? p.id, '',
           h('div', { class: 'ns-set__ctl' }, select({ label: 'Emulator', hideLabel: true, dense: true, value: p.preferred,
             options: [{ value: '', label: 'the first one found' }, ...p.emulators.map(id => {
               const t = tools.tools.find(x => x.label.toLowerCase() === id);
@@ -362,7 +363,7 @@ function Settings() {
         groups.map(g => h('section', { class: 'ns-set__group' },
           h('h3', { class: 'ns-set__group-title' }, g.name),
           g.list.map(e => h('div', { class: `ns-set__row ${e.cls}` },
-            h('div', { class: 'ns-set__text' }, h('div', { class: 'ns-set__label' }, e.label), h('div', { class: 'ns-set__hint' }, e.hint)),
+            h('div', { class: 'ns-set__text' }, h('div', { class: 'ns-set__label' }, e.label), e.hint && h('div', { class: 'ns-set__hint' }, e.hint)),
             e.control)))),
         !q && (section === 'editor' || section === 'colors') && h('div', { class: 'ns-set__reset' },
           button(section === 'colors' ? 'All colours as the theme has them' : 'The editor as it was', { icon: 'undo',

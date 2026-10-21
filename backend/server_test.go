@@ -92,10 +92,12 @@ func TestSettingsTools(t *testing.T) {
 		Toolchains []any
 		Ultimate   map[string]any
 	}
-	if json.Unmarshal([]byte(body), &got); code != 200 || len(got.Tools) < 5 || got.Tools[0].Key != "VICE" || got.Toolchains == nil {
+	if json.Unmarshal([]byte(body), &got); code != 200 || len(got.Tools) < 5 || got.Tools[0].Key != "VICE" || got.Tools[1].Key != "MIMIC" || got.Toolchains == nil {
 		t.Fatalf("GET: %d %s", code, body)
 	}
-	if len(got.Platforms) == 0 || got.Platforms[0].ID != "atari" || got.Ultimate["password"] != false {
+	// the Commodore machines first: debugged in mimic or VICE
+	if len(got.Platforms) < 7 || got.Platforms[0].ID != "c64" || strings.Join(got.Platforms[0].Emulators, ",") != "mimic,vice" ||
+		got.Platforms[5].ID != "pet" || got.Platforms[6].ID != "atari" || got.Platforms[6].Emulators[0] != "mimic" || got.Ultimate["password"] != false {
 		t.Fatalf("platforms / ultimate: %s", body)
 	}
 	put := func(b string, h map[string]string) (int, string) {
@@ -113,6 +115,12 @@ func TestSettingsTools(t *testing.T) {
 	}
 	if c, b := put(`{"preferred":{"atari":"stella"}}`, jsonHeader); c != 400 || !strings.Contains(b, "'stella' does not run atari") {
 		t.Fatalf("preferred: %d %s", c, b)
+	}
+	if c, b := put(`{"preferred":{"c64":"altirra"}}`, jsonHeader); c != 400 || !strings.Contains(b, "'altirra' does not run c64") {
+		t.Fatalf("preferred c64: %d %s", c, b)
+	}
+	if c, b := put(`{"preferred":{"c64":"vice"}}`, jsonHeader); c != 200 || !strings.Contains(b, `"id":"c64","preferred":"vice"`) {
+		t.Fatalf("preferred c64 vice: %d %s", c, b)
 	}
 	if c, b := put(`{"ultimate":{"host":"x/../y"}}`, jsonHeader); c != 400 || !strings.Contains(b, "is no address of a device") {
 		t.Fatalf("ultimate host: %d %s", c, b)

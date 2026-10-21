@@ -1,8 +1,10 @@
-// vice.js - the browser side of the debugger: the VICE emulator behind the server (backend/vice,
-// its binary remote monitor), the breakpoints of the sources and where the CPU stopped. Shared by
-// the code view (breakpoints in the gutter, the line of the PC) and the debugger view.
+// vice.js - the browser side of the debugger: the emulator behind the server - VICE (backend/vice, its
+// binary remote monitor) or mimic (backend/mimic, its own debug protocol), both under the same routes
+// (api/vice/..., api/mimic/...) - the breakpoints of the sources and where the CPU stopped. Shared by
+// the code view (breakpoints in the gutter, the line of the PC) and the debugger view. Which of the two
+// debugs a machine: the Settings (Emulator per platform), else mimic when it is found, else VICE.
 //
-// The breakpoints are lines of the sources ({ file, line, enabled, condition }); while VICE runs
+// The breakpoints are lines of the sources ({ file, line, enabled, condition }); while the emulator runs
 // they are checkpoints at the addresses the last build put there (nsbuild.js: debugInfo). Other
 // checkpoints - an address, a range read or written (a watchpoint) - are made in the debugger view.
 
@@ -28,8 +30,13 @@ export function addLog(text, kind = 'info') {
   log.value = [...log.value.slice(-199), { time: new Date(), text, kind }];
 }
 
+// the debugger the calls go to: 'vice' or 'mimic'
+const NAMES = { vice: 'VICE', mimic: 'mimic' };
+let backend = 'vice';
+export const debuggerName = () => NAMES[backend];
+
 async function call(method, path, body) {
-  const res = await fetch(`api/vice/${path}`, { method, body: body && JSON.stringify(body), headers: body ? { 'Content-Type': 'application/json' } : {} });
+  const res = await fetch(`api/${backend}/${path}`, { method, body: body && JSON.stringify(body), headers: body ? { 'Content-Type': 'application/json' } : {} });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `${res.status} ${res.statusText}`);
   return json;
@@ -45,13 +52,13 @@ export const vice = {
 let source = null;
 export function connectEvents() {
   if (source || typeof EventSource === 'undefined') return;
-  source = new EventSource('api/vice/events');
+  source = new EventSource(`api/${backend}/events`);
   source.addEventListener('status', e => { status.value = JSON.parse(e.data); if (!status.value.running) { stopped.value = null; here.value = null; } fire('status', status.value); });
   source.addEventListener('stopped', e => { const d = JSON.parse(e.data); onStopped(d); });
   source.addEventListener('resumed', e => { stopped.value = null; here.value = null; status.value = { ...status.value, stopped: false }; fire('resumed', JSON.parse(e.data)); });
   source.addEventListener('checkpoint', e => { const d = JSON.parse(e.data); fire('checkpoint', d); });
   source.addEventListener('jam', e => { const d = JSON.parse(e.data); addLog(`CPU JAM at $${(d.pc ?? 0).toString(16).padStart(4, '0')}`, 'error'); fire('jam', d); });
-  source.addEventListener('exit', e => { stopped.value = null; here.value = null; status.value = { ...status.value, running: false, connected: false }; cpIds.clear(); addLog('VICE has ended'); fire('exit', JSON.parse(e.data)); });
+  source.addEventListener('exit', e => { stopped.value = null; here.value = null; status.value = { ...status.value, running: false, connected: false }; cpIds.clear(); addLog(`${debuggerName()} has ended`); fire('exit', JSON.parse(e.data)); });
   source.addEventListener('log', e => addLog(JSON.parse(e.data).text));
   source.onerror = () => { /* the browser reconnects by itself */ };
 }
@@ -67,6 +74,31 @@ function onStopped(d) {
 export async function refreshStatus() {
   try { status.value = await vice.get('status'); } catch { status.value = { available: false, running: false }; }
   return status.value;
+}
+
+// the debugger of a platform: 'vice' or 'mimic' - the calls and the events go there from now on - or 'emu'
+// (the launcher runs it, backend/emu; nothing changes here). A Commodore machine (emulator.kind 'vice'): the
+// one chosen in the Settings, else mimic when it is found, else VICE. The Atari XL and the CPC: mimic when it
+// is chosen or none is - debug: when it is found at all -, else their emulator
+export async function chooseDebugger(platform, { debug = false } = {}) {
+  const commodore = platform.emulator.kind === 'vice';
+  let id = commodore ? 'vice' : 'emu';
+  try {
+    const t = await (await fetch('api/settings/tools')).json();
+    const mimic = !!platform.mimic && !!t.tools?.find(x => x.key === 'MIMIC')?.available;
+    const pref = t.platforms?.find(x => x.id === (commodore ? platform.id : platform.emulator.platform))?.preferred;
+    if (commodore) id = pref || (mimic ? 'mimic' : 'vice');
+    else if (mimic && (!pref || pref === 'mimic' || debug)) id = 'mimic';
+  } catch { /* the server does not answer: VICE, or the launcher */ }
+  if (!NAMES[id]) return id;
+  if (id === backend) return backend;
+  backend = id;
+  stopped.value = null; here.value = null;
+  cpIds.clear();
+  startedFor = null;
+  if (source) { source.close(); source = null; connectEvents(); }
+  await refreshStatus();
+  return backend;
 }
 
 // --- breakpoints of the sources -----------------------------------------------------------------
@@ -160,24 +192,32 @@ export const isSourceCheckpoint = id => [...cpIds.values()].some(ids => ids.incl
 
 // --- running ------------------------------------------------------------------------------------
 
-// VICE started (or running) for the machine of a platform (platforms.js: emulator { machine, args })
+// the emulator started (or running) for the machine of a platform (platforms.js: emulator { machine, args }
+// for VICE; mimic has a machine of its own for each platform: its id)
 let startedFor = null;
 export async function ensureRunning(platform) {
-  const { machine, args = [] } = platform.emulator;
+  if (await chooseDebugger(platform, { debug: true }) === 'emu') throw new Error(`${platform.name}: the debugger needs mimic`);
+  const { machine, model, args = [] } = backend === 'mimic' ? platform.mimic : platform.emulator;
   const s = await refreshStatus();
   if (s.running && s.machine === machine && startedFor === platform.id) return s;
-  addLog(`starting VICE (${platform.name})…`);
-  status.value = await vice.post('start', { machine, args });
+  addLog(`starting ${debuggerName()} (${platform.name})…`);
+  status.value = await vice.post('start', { machine, model, args });
   startedFor = platform.id;
   cpIds.clear();
   return status.value;
 }
 
-// load a build into VICE and run it; debug: the breakpoints are placed first
-export async function runBuild(build, platform, { debug: withBreakpoints = true } = {}) {
+// load a build into the emulator and run it; debug: the breakpoints are placed first. format: the file of
+// the build as mimic loads it (xex, atascii-lst, amsdos-bin, cpc-ascii, a26 - the names of the launcher), else the .prg
+export async function runBuild(build, platform, { debug: withBreakpoints = true, format = null } = {}) {
   await ensureRunning(platform);
   await setBuild(build);
   if (!withBreakpoints) for (const key of [...cpIds.keys()]) await removeCheckpoints(key);
+  if (format) {
+    status.value = await vice.post('load', { name: build.file.name, data: toBase64(build.file.bytes), format, load: build.start, exec: build.exec });
+    addLog(`${build.file.name} loaded and started`);
+    return;
+  }
   // a packed program (toolchain.js): the packed one runs, the debugger knows the unpacked one
   status.value = await vice.post('load', { name: build.name, prg: toBase64(build.runPrg ?? build.prg), run: true });
   addLog(`${build.name}.prg loaded and started`);

@@ -1,5 +1,6 @@
 // Package backend: the server of nerdsuite - the IDE (public/), the example project and the bridges to
-// the tools: VICE for running and debugging (backend/vice), the other emulators (backend/emu),
+// the tools: VICE and mimic for running and debugging the Commodore machines (backend/vice, backend/mimic),
+// the other emulators (backend/emu),
 // KickAssembler (backend/kickass), the toolchains (backend/toolchain) and the Ultimate 64
 // (backend/ultimate). It keeps no project: the project lives in the browser, assembling and tokenizing
 // happen there too - a project in a folder of this computer is read and written through it (backend/disk). The paths of the tools are set in the Settings of the IDE (settings_api.go).
@@ -20,6 +21,7 @@ import (
 	"nerdsuite/backend/disk"
 	"nerdsuite/backend/emu"
 	"nerdsuite/backend/kickass"
+	"nerdsuite/backend/mimic"
 	"nerdsuite/backend/romfont"
 	"nerdsuite/backend/toolchain"
 	"nerdsuite/backend/ultimate"
@@ -44,6 +46,7 @@ type Server struct {
 	opts     Options
 	settings *settingsAPI
 	vice     *vice.API
+	mimic    *mimic.API
 	emu      *emu.API
 	kick     *kickass.API
 	tc       *toolchain.API
@@ -57,7 +60,7 @@ type Server struct {
 func New(o Options) *Server {
 	st := core.NewSettings(o.Settings)
 	env := core.Env{Settings: st, TmpDir: o.TmpDir}
-	s := &Server{opts: o, vice: vice.New(env), emu: emu.New(env), kick: kickass.New(env), tc: toolchain.New(env), ult: ultimate.New(env), fonts: romfont.New(env), disk: disk.New()}
+	s := &Server{opts: o, vice: vice.New(env), mimic: mimic.New(env), emu: emu.New(env), kick: kickass.New(env), tc: toolchain.New(env), ult: ultimate.New(env), fonts: romfont.New(env), disk: disk.New()}
 
 	// the settings list: the tools, where the server finds them; the emulator of each platform
 	tools := []tool{
@@ -67,6 +70,9 @@ func New(o Options) *Server {
 				return ""
 			}
 			return p
+		}},
+		{mimic.Tool.Env, mimic.Tool.Name, "Emulators", "mimic.exe or its folder (with roms) - C64, C128, VIC-20, Plus/4, C16, PET, Atari 800 XL, Atari 2600, CPC: run and debug", func() string {
+			return mimic.FindExecutable(st)
 		}},
 		{"KICKASS", "KickAssembler", "Assemblers", "KickAss.jar or its folder", func() string { jar, _ := s.kick.Found(); return jar }},
 		{"JAVA", "Java", "Assemblers", "java(.exe) for KickAssembler - else JAVA_HOME or java on the PATH", func() string { _, java := s.kick.Found(); return java }},
@@ -81,9 +87,18 @@ func New(o Options) *Server {
 		tools = append(tools, tool{d.Env, capital(d.ID), "Emulators", fmt.Sprintf("the program or its folder - %s", strings.Join(d.Platforms, ", ")),
 			func() string { return core.ResolveExe(st, d) }})
 	}
+	// the Commodore machines: debugged in mimic or VICE; the Atari 8-bit, the 2600 and the CPC: mimic runs and
+	// debugs them, the launcher (backend/emu) runs them in the others (the first one found when none is chosen)
 	var platforms []platformList
+	for _, m := range mimic.Commodore {
+		platforms = append(platforms, platformList{m, []string{mimic.Tool.ID, "vice"}})
+	}
 	for _, p := range emu.Preferred {
-		platforms = append(platforms, platformList{p.ID, p.Emulators})
+		list := p.Emulators
+		if p.ID == "atari" || p.ID == "vcs" || p.ID == "cpc" {
+			list = append([]string{mimic.Tool.ID}, list...)
+		}
+		platforms = append(platforms, platformList{p.ID, list})
 	}
 	s.settings = &settingsAPI{st: st, tools: tools, platforms: platforms, onChange: s.kick.Rescan}
 	return s
@@ -92,6 +107,7 @@ func New(o Options) *Server {
 // Close: the emulators and the tools this server started end with it
 func (s *Server) Close() {
 	s.vice.Close()
+	s.mimic.Close()
 	s.emu.Close()
 	s.kick.Close()
 	s.tc.Close()
@@ -140,6 +156,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		s.kick.ServeHTTP(w, r)
 	case under("/api/vice"):
 		s.vice.ServeHTTP(w, r)
+	case under("/api/mimic"):
+		s.mimic.ServeHTTP(w, r)
 	case under("/api/emu"):
 		s.emu.ServeHTTP(w, r)
 	case under("/api/disk"):

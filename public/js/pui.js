@@ -213,7 +213,7 @@ export function Field(o) {
       }),
     }),
     number && !o.disabled && spinArrows(),
-    o.trailing),
+    o.trailing && h('span', { class: 'md-field__trailing' }, o.trailing)),
     support && h('div', { class: 'md-field__support' }, support));
 }
 export const field = (o = {}) => h(Field, o);
