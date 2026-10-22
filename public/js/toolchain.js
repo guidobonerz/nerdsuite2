@@ -39,6 +39,7 @@ export const EMULATORS = [
   { id: 'trs80gp', name: 'trs80gp', platforms: ['trs80'] },
   { id: 'beebem', name: 'BeebEm', platforms: ['bbc'] }, { id: 'b2', name: 'b2', platforms: ['bbc'] },
   { id: 'xemu', name: 'Xemu', platforms: ['mega65'] },
+  { id: 'winuae', name: 'WinUAE', platforms: ['amiga'] }, { id: 'fsuae', name: 'FS-UAE', platforms: ['amiga'] },
   { id: 'mame', name: 'MAME', platforms: ['cpc', 'vcs', 'nes', 'snes', 'trs80', 'bbc'] },
   { id: 'ultimate', name: 'Ultimate 64 (a real C64)', platforms: ['vice'] },
   { id: 'command', name: 'A command…' },

@@ -404,8 +404,58 @@ const BBC = [
     [0xfff7, 'OSCLI', 'run a * command (XY: the text)']].map(([a, n, d]) => [a, n, `MOS: ${d}`]),
 ];
 
+// the Amiga 500 (OCS): the custom chips at $dff000 (word registers), the two CIAs, the memory
+const CUSTOM = (off, name, desc) => [0xdff000 + off, name, `Custom: ${desc}`];
+const AMIGA = [
+  [0x000000, 'CHIP_RAM', 'the chip RAM (512K): the custom chips read it', 0x80000],
+  [0x000004, 'EXEC_BASE', 'Exec: the pointer to ExecBase (a long)'],
+  [0xc00000, 'SLOW_RAM', 'the trapdoor RAM (512K, "slow")', 0x80000],
+  [0xf80000, 'KICKSTART', 'the Kickstart ROM', 0x80000],
+  [0xbfe001, 'CIAA_PRA', 'CIA-A: port A - the fire buttons (bits 6, 7), the LED (bit 1), the ROM overlay (bit 0)'],
+  [0xbfe101, 'CIAA_PRB', 'CIA-A: port B - the parallel port'],
+  [0xbfe401, 'CIAA_TALO', 'CIA-A: timer A low'], [0xbfe501, 'CIAA_TAHI', 'CIA-A: timer A high'],
+  [0xbfe601, 'CIAA_TBLO', 'CIA-A: timer B low'], [0xbfe701, 'CIAA_TBHI', 'CIA-A: timer B high'],
+  [0xbfe801, 'CIAA_TODLO', 'CIA-A: the vertical blank counter, low'], [0xbfec01, 'CIAA_SDR', 'CIA-A: the keyboard data'],
+  [0xbfed01, 'CIAA_ICR', 'CIA-A: interrupt control'], [0xbfee01, 'CIAA_CRA', 'CIA-A: control A'], [0xbfef01, 'CIAA_CRB', 'CIA-A: control B'],
+  [0xbfd000, 'CIAB_PRA', 'CIA-B: port A - the serial and parallel lines'], [0xbfd100, 'CIAB_PRB', 'CIA-B: port B - the disk drives (motor, select, side, direction, step)'],
+  [0xbfd400, 'CIAB_TALO', 'CIA-B: timer A low'], [0xbfd500, 'CIAB_TAHI', 'CIA-B: timer A high'],
+  [0xbfd600, 'CIAB_TBLO', 'CIA-B: timer B low'], [0xbfd700, 'CIAB_TBHI', 'CIA-B: timer B high'],
+  [0xbfd800, 'CIAB_TODLO', 'CIA-B: the horizontal sync counter, low'], [0xbfdd00, 'CIAB_ICR', 'CIA-B: interrupt control'],
+  [0xbfde00, 'CIAB_CRA', 'CIA-B: control A'], [0xbfdf00, 'CIAB_CRB', 'CIA-B: control B'],
+  CUSTOM(0x002, 'DMACONR', 'DMA control (read)'), CUSTOM(0x004, 'VPOSR', 'the beam: long frame, bit 8 of the line'),
+  CUSTOM(0x006, 'VHPOSR', 'the beam: line (high byte) and position (low byte)'),
+  CUSTOM(0x00a, 'JOY0DAT', 'port 0: mouse or joystick counters'), CUSTOM(0x00c, 'JOY1DAT', 'port 1: joystick or mouse counters'),
+  CUSTOM(0x010, 'ADKCONR', 'audio and disk control (read)'), CUSTOM(0x016, 'POTGOR', 'the pot pins: the right mouse button (bit 10)'),
+  CUSTOM(0x01a, 'DSKBYTR', 'the disk data byte'), CUSTOM(0x01c, 'INTENAR', 'interrupts on (read)'), CUSTOM(0x01e, 'INTREQR', 'interrupt requests (read)'),
+  CUSTOM(0x020, 'DSKPTH', 'the disk DMA pointer (a long)'), CUSTOM(0x024, 'DSKLEN', 'the disk DMA length'), CUSTOM(0x02a, 'VPOSW', 'the beam (write)'),
+  CUSTOM(0x02e, 'COPCON', 'the Copper may write the blitter'), CUSTOM(0x034, 'POTGO', 'the pot pins (write)'),
+  CUSTOM(0x040, 'BLTCON0', 'blitter: shift A, channels, minterms'), CUSTOM(0x042, 'BLTCON1', 'blitter: shift B, line mode, fill'),
+  CUSTOM(0x044, 'BLTAFWM', 'blitter: the mask of the first word of A'), CUSTOM(0x046, 'BLTALWM', 'blitter: the mask of the last word of A'),
+  CUSTOM(0x048, 'BLTCPTH', 'blitter: the pointer of C (a long)'), CUSTOM(0x04c, 'BLTBPTH', 'blitter: the pointer of B (a long)'),
+  CUSTOM(0x050, 'BLTAPTH', 'blitter: the pointer of A (a long)'), CUSTOM(0x054, 'BLTDPTH', 'blitter: the pointer of D (a long)'),
+  CUSTOM(0x058, 'BLTSIZE', 'blitter: height and width - starts the blit'),
+  CUSTOM(0x060, 'BLTCMOD', 'blitter: the modulo of C'), CUSTOM(0x062, 'BLTBMOD', 'blitter: the modulo of B'),
+  CUSTOM(0x064, 'BLTAMOD', 'blitter: the modulo of A'), CUSTOM(0x066, 'BLTDMOD', 'blitter: the modulo of D'),
+  CUSTOM(0x070, 'BLTCDAT', 'blitter: the data of C'), CUSTOM(0x072, 'BLTBDAT', 'blitter: the data of B'), CUSTOM(0x074, 'BLTADAT', 'blitter: the data of A'),
+  CUSTOM(0x07e, 'DSKSYNC', 'the disk sync word'),
+  CUSTOM(0x080, 'COP1LC', 'the first Copper list (a long)'), CUSTOM(0x084, 'COP2LC', 'the second Copper list (a long)'),
+  CUSTOM(0x088, 'COPJMP1', 'restart the Copper at COP1LC (a strobe)'), CUSTOM(0x08a, 'COPJMP2', 'restart the Copper at COP2LC (a strobe)'),
+  CUSTOM(0x08e, 'DIWSTRT', 'the display window: start'), CUSTOM(0x090, 'DIWSTOP', 'the display window: stop'),
+  CUSTOM(0x092, 'DDFSTRT', 'the bitplane fetch: start'), CUSTOM(0x094, 'DDFSTOP', 'the bitplane fetch: stop'),
+  CUSTOM(0x096, 'DMACON', 'DMA control: bit 15 set or clear, bitplanes, Copper, blitter, sprites, disk, audio'),
+  CUSTOM(0x098, 'CLXCON', 'collision control'), CUSTOM(0x09a, 'INTENA', 'interrupts on: bit 15 set or clear, bit 14 the master'),
+  CUSTOM(0x09c, 'INTREQ', 'interrupt requests: bit 15 set or clear'), CUSTOM(0x09e, 'ADKCON', 'audio and disk control'),
+  ...[0, 1, 2, 3].flatMap(k => [CUSTOM(0x0a0 + k * 16, `AUD${k}LC`, `audio ${k}: the sample (a long)`), CUSTOM(0x0a4 + k * 16, `AUD${k}LEN`, `audio ${k}: the length in words`),
+    CUSTOM(0x0a6 + k * 16, `AUD${k}PER`, `audio ${k}: the period`), CUSTOM(0x0a8 + k * 16, `AUD${k}VOL`, `audio ${k}: the volume (0 to 64)`)]),
+  ...[1, 2, 3, 4, 5, 6].map(k => CUSTOM(0x0e0 + (k - 1) * 4, `BPL${k}PT`, `the pointer of bitplane ${k} (a long)`)),
+  CUSTOM(0x100, 'BPLCON0', 'bitplanes: their number, hires, HAM, dual playfield, color'), CUSTOM(0x102, 'BPLCON1', 'bitplanes: the scroll of the playfields'),
+  CUSTOM(0x104, 'BPLCON2', 'bitplanes: the priorities'), CUSTOM(0x108, 'BPL1MOD', 'the modulo of the odd bitplanes'), CUSTOM(0x10a, 'BPL2MOD', 'the modulo of the even bitplanes'),
+  ...[0, 1, 2, 3, 4, 5, 6, 7].map(k => CUSTOM(0x120 + k * 4, `SPR${k}PT`, `the pointer of sprite ${k} (a long)`)),
+  ...Array.from({ length: 32 }, (_, k) => CUSTOM(0x180 + k * 2, `COLOR${String(k).padStart(2, '0')}`, `color ${k} ($0RGB)${k === 0 ? ' - the background' : ''}`)),
+];
+
 const MAPS = { c64: C64, c128: C128, vic20: VIC20, plus4: PLUS4, c16: PLUS4, pet: PET, atari8: ATARI8, vcs: VCS, nes: NES, snes: SNES, cpc464: CPC, cpc6128: CPC,
-  zx81: ZX81, trs80: TRS80, trs80m3: TRS80, bbcb: BBC, mega65: MEGA65 };
+  zx81: ZX81, trs80: TRS80, trs80m3: TRS80, bbcb: BBC, mega65: MEGA65, amiga500: AMIGA };
 
 // --- lookups ---------------------------------------------------------------------------------------
 

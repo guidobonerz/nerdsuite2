@@ -97,6 +97,16 @@ func TestVcsPlans(t *testing.T) {
 	eq(t, "mame args", m.Args[:2], []string{"a2600", "-cart"})
 }
 
+func TestAmigaPlans(t *testing.T) {
+	w := mustPlan(t, runRequest{Platform: "amiga", Emulator: "winuae", Name: "demo", Data: make([]byte, 901120), Format: "adf"})
+	eq(t, "winuae args", w.Args, []string{"-s", "use_gui=no", "-s", "floppy0=" + w.File})
+	matches(t, "winuae file", w.File, `DEMO\.adf$`)
+	f := mustPlan(t, runRequest{Platform: "amiga", Emulator: "fsuae", Name: "demo", Data: make([]byte, 901120), Format: "adf"})
+	eq(t, "fs-uae args", f.Args, []string{"--amiga_model=A500", "--floppy_drive_0=" + f.File})
+	planFails(t, runRequest{Platform: "amiga", Emulator: "winuae", Name: "x", Data: make([]byte, 1024), Format: "adf"}, `901120`)
+	planFails(t, runRequest{Platform: "amiga", Emulator: "fsuae", Name: "x", Data: make([]byte, 901120), Format: "prg"}, `unsupported`)
+}
+
 func TestNesSnesPlans(t *testing.T) {
 	nes := append([]byte{0x4e, 0x45, 0x53, 0x1a, 1, 1, 1, 0}, make([]byte, 8+0x6000)...)
 	s := mustPlan(t, runRequest{Platform: "nes", Emulator: "mesen", Name: "game", Data: nes, Format: "nes"})
@@ -178,7 +188,7 @@ func TestStatusAndRunChecks(t *testing.T) {
 			t.Errorf("%s/%s: available %v, exe %v", e.ID, e.Platform, e.Available, e.Exe)
 		}
 	}
-	for _, id := range []string{"altirra/atari", "atari800/atari", "winape/cpc", "caprice/cpc", "mame/cpc", "stella/vcs", "mame/vcs", "mesen/nes", "fceux/nes", "mesen/snes", "bsnes/snes", "snes9x/snes", "eightyone/zx81", "zesarux/zx81", "trs80gp/trs80", "mame/trs80", "beebem/bbc", "b2/bbc", "mame/bbc", "xemu/mega65"} {
+	for _, id := range []string{"altirra/atari", "atari800/atari", "winape/cpc", "caprice/cpc", "mame/cpc", "stella/vcs", "mame/vcs", "mesen/nes", "fceux/nes", "mesen/snes", "bsnes/snes", "snes9x/snes", "eightyone/zx81", "zesarux/zx81", "trs80gp/trs80", "mame/trs80", "beebem/bbc", "b2/bbc", "mame/bbc", "xemu/mega65", "winuae/amiga", "fsuae/amiga"} {
 		if !ids[id] {
 			t.Errorf("status lacks %s", id)
 		}
@@ -203,16 +213,16 @@ func TestEmulatorDefinitions(t *testing.T) {
 	var order []string
 	for _, d := range Emulators {
 		order = append(order, d.ID)
-		if d.Name != strings.ToUpper(d.ID[:1])+d.ID[1:] {
+		if want := map[string]string{"winuae": "WinUAE", "fsuae": "FS-UAE"}[d.ID]; want != "" && d.Name != want || want == "" && d.Name != strings.ToUpper(d.ID[:1])+d.ID[1:] {
 			t.Errorf("%s: name %q", d.ID, d.Name)
 		}
 	}
-	eq(t, "order", order, []string{"altirra", "atari800", "winape", "caprice", "stella", "mesen", "fceux", "nestopia", "bsnes", "snes9x", "eightyone", "zesarux", "trs80gp", "beebem", "b2", "xemu", "mame"})
+	eq(t, "order", order, []string{"altirra", "atari800", "winape", "caprice", "stella", "mesen", "fceux", "nestopia", "bsnes", "snes9x", "eightyone", "zesarux", "trs80gp", "beebem", "b2", "xemu", "winuae", "fsuae", "mame"})
 	var platforms []string
 	for _, p := range Preferred {
 		platforms = append(platforms, p.ID)
 	}
-	eq(t, "platforms", platforms, []string{"atari", "cpc", "vcs", "nes", "snes", "zx81", "trs80", "bbc", "mega65"})
+	eq(t, "platforms", platforms, []string{"atari", "cpc", "vcs", "nes", "snes", "zx81", "trs80", "bbc", "mega65", "amiga"})
 }
 
 func TestHTTPRoutes(t *testing.T) {
@@ -237,7 +247,7 @@ func TestHTTPRoutes(t *testing.T) {
 	if code, v := do("POST", "/api/emu/run", "{"); code != 400 || v["error"] != "invalid JSON body" {
 		t.Errorf("bad JSON: %d %v", code, v)
 	}
-	if code, v := do("POST", "/api/emu/run", `{"platform":"zx"}`); code != 400 || v["error"] != "unknown platform 'zx' (one of atari, cpc, vcs, nes, snes, zx81, trs80, bbc, mega65)" {
+	if code, v := do("POST", "/api/emu/run", `{"platform":"zx"}`); code != 400 || v["error"] != "unknown platform 'zx' (one of atari, cpc, vcs, nes, snes, zx81, trs80, bbc, mega65, amiga)" {
 		t.Errorf("unknown platform: %d %v", code, v)
 	}
 	if code, v := do("POST", "/api/emu/run", `{"platform":"atari","format":"xex","data":5}`); code != 400 || v["error"] != "'data' must be a base64 string" {

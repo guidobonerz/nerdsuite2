@@ -9,6 +9,7 @@
  */
 
 import { codeP } from '../zx81.js';
+import { M68K_TABLE, m68kInstruction, disassembleM68k } from './m68k.js';
 
 const MAX_PASSES = 24;
 const MAX_DEPTH = 64;
@@ -332,9 +333,10 @@ export const CPU_ALIASES = {
   '65ce02': '65ce02', '4502': '4502', m65: 'm65',
 };
 CPU_ALIASES.z80 = 'z80';
+CPU_ALIASES['68000'] = CPU_ALIASES.m68k = CPU_ALIASES.mc68000 = 'm68k';
 const UNSUPPORTED_CPUS = new Set(['c64dtv2']);
-/** Output formats accepted by !to and opts.format (zx81: a .p file, trs80: a /CMD file). */
-export const OUTPUT_FORMATS = ['cbm', 'plain', 'apple', 'xex', 'amsdos', 'zx81', 'trs80'];
+/** Output formats accepted by !to and opts.format (zx81: a .p file, trs80: a /CMD file, adf: an Amiga disk, the code in its boot block). */
+export const OUTPUT_FORMATS = ['cbm', 'plain', 'apple', 'xex', 'amsdos', 'zx81', 'trs80', 'adf'];
 const ALL_MNEMONICS = new Set();
 for (const t of Object.values(CPU_TABLES)) for (const m of Object.keys(t)) ALL_MNEMONICS.add(m);
 
@@ -550,6 +552,7 @@ class Asm {
     this.changed = false;
     this.undefCount = 0;
     this.dry = 0;
+    this.top = 0xffff;                  // the highest address: 64K, 16 MB for the 68000 (setCpu)
     this.mem = new Uint8Array(0x10000);
     this.written = new Uint8Array(0x10000);
     this.minAddr = Infinity;
@@ -808,7 +811,7 @@ class Asm {
       const lname = name.toLowerCase();
       const isMn = c !== '.' && c !== '@' && Object.prototype.hasOwnProperty.call(this.cpuTable, lname);
       let force = 0;
-      if (isMn && this.cpuKey !== 'z80' && r.peek() === '+' &&/[123]/.test(r.peek(1)) && !isIdChar(r.peek(2))) {
+      if (isMn && this.cpuKey !== 'z80' && this.cpuKey !== 'm68k' && r.peek() === '+' &&/[123]/.test(r.peek(1)) && !isIdChar(r.peek(2))) {
         force = +r.peek(1);
         r.pos += 2;
       }
@@ -858,7 +861,7 @@ class Asm {
       else if (k !== 'invisible') this.err('Unknown "*=" segment modifier.');
     }
     if (v.u) n = 0;
-    if (n < 0 || n > 0xffff) this.err('Program counter out of range.');
+    if (n < 0 || n > this.top) this.err('Program counter out of range.');
     this.closeSegment();
     const real = n - this.pcOffset;
     if (this.final && !overlay) {
@@ -872,7 +875,7 @@ class Asm {
   emit(b) {
     if (this.realpc === null) this.err('Program counter undefined.');
     const a = this.realpc;
-    if (a > 0xffff || a < 0) this.err('Produced too much code.');
+    if (a > this.top || a < 0) this.err('Produced too much code.');
     const x = (b ^ this.xorVal) & 0xff;
     this.mem[a] = x;
     this.written[a] = 1;
@@ -1290,12 +1293,21 @@ class Asm {
   setCpu(name) {
     const k = CPU_ALIASES[name];
     if (!k) {
-      if (UNSUPPORTED_CPUS.has(name)) this.err(`Unsupported CPU "${name}" (supported: 6502, nmos6502/6510, 65c02, r65c02, w65c02, 65816, 65ce02, 4502, m65, z80).`);
+      if (UNSUPPORTED_CPUS.has(name)) this.err(`Unsupported CPU "${name}" (supported: 6502, nmos6502/6510, 65c02, r65c02, w65c02, 65816, 65ce02, 4502, m65, z80, 68000).`);
       this.err(`Unknown processor "${name}".`);
     }
     this.cpuName = name;
     this.cpuKey = k;
-    this.cpuTable = k === 'z80' ? Z80_TABLE : CPU_TABLES[k];
+    this.cpuTable = k === 'z80' ? Z80_TABLE : k === 'm68k' ? M68K_TABLE : CPU_TABLES[k];
+    if (k === 'm68k' && this.top < 0xffffff) {
+      // the 68000 addresses 16 MB: the memory of the pass grows (what is written stays)
+      this.top = 0xffffff;
+      const mem = new Uint8Array(0x1000000), written = new Uint8Array(0x1000000);
+      mem.set(this.mem);
+      written.set(this.written);
+      this.mem = mem;
+      this.written = written;
+    }
   }
 
   looksIndirect(r) {
@@ -1330,6 +1342,7 @@ class Asm {
 
   instruction(mn, force, r) {
     if (this.cpuKey === 'z80') return this.z80Instruction(mn, r);
+    if (this.cpuKey === 'm68k') return m68kInstruction(this, mn, r);
     const tab = this.cpuTable[mn];
     let mode, v, v2;
     if (r.eos()) mode = 'imp';
@@ -1594,7 +1607,7 @@ class Asm {
         // nerdsuite extension: entry point (xex RUNAD / amsdos exec) and xex INITAD
         const v = this.expr(r);
         const n = v.u ? 0 : this.toInt(v);
-        if (n < 0 || n > 0xffff) this.err('Number out of range.');
+        if (n < 0 || n > this.top) this.err('Number out of range.');
         if (name === 'run') this.runAddr = n; else this.initAddr = n;
         return false;
       }
@@ -1666,7 +1679,7 @@ class Asm {
       if (!fv.u && (fill < -128 || fill > 255)) this.error('Number out of range.');
     }
     if (n < 0) this.err('Negative size argument.');
-    if (n > 0x10000) this.err('Produced too much code.');
+    if (n > 0x10000 && n > this.top + 1) this.err('Produced too much code.');
     for (let i = 0; i < n; i++) this.emit(fill);
     return false;
   }
@@ -1686,7 +1699,7 @@ class Asm {
     if (r.peek() !== ',') this.err('Missing comma.');
     r.pos++;
     const eq = this.toInt(this.expr(r));
-    let fill = this.cpuKey === 'z80' ? 0x00 : 0xea;
+    let fill = this.cpuKey === 'z80' || this.cpuKey === 'm68k' ? 0x00 : 0xea;
     r.ws();
     if (r.peek() === ',') { r.pos++; fill = this.toInt(this.expr(r)); }
     if ((eq & ~and) !== 0) this.err('"!align" can never be satisfied (equal value has bits outside the AND value).');
@@ -1753,7 +1766,7 @@ class Asm {
     const data = toBytes(this.files.get(path));
     const avail = data.subarray(Math.min(skip, data.length));
     const n = size === undefined ? avail.length : size;
-    if (n > 0x10000) this.err('Produced too much code.');
+    if (n > 0x10000 && n > this.top + 1) this.err('Produced too much code.');
     for (let i = 0; i < n; i++) this.emit(i < avail.length ? avail[i] : 0);
     return false;
   }
@@ -2007,7 +2020,7 @@ class Asm {
   poPseudopc(r) {
     const v = this.expr(r);
     const n = v.u ? 0 : this.toInt(v);
-    if (n < 0 || n > 0xffff) this.err('Program counter out of range.');
+    if (n < 0 || n > this.top) this.err('Program counter out of range.');
     return this.withBlock(r, () => {
       if (this.realpc === null) this.err('Program counter undefined.');
       const old = this.pcOffset;
@@ -2122,7 +2135,7 @@ class Asm {
         if (e) {
           addr = hex4(e.addr);
           const n = Math.min(e.size, 8);
-          for (let k = 0; k < n; k++) hx += hex2(this.mem[(e.real + k) & 0xffff]);
+          for (let k = 0; k < n; k++) hx += hex2(this.mem[(e.real + k) & this.top]);
           if (e.total > n) hx += '...';
         }
         out += `${String(i + 1).padStart(6)}  ${addr} ${hx.padEnd(19)} ${txt}\n`;
@@ -2166,6 +2179,45 @@ class Asm {
   }
 
   /** Amstrad CPC AMSDOS binary file: 128-byte header + data. */
+  /**
+   * An Amiga disk (ADF, 880K): the code in the boot block from its byte 12 ("DOS ", the checksum and the
+   * root block before it) - Kickstart loads the boot block's 1024 bytes and calls the code with a6 = ExecBase.
+   * Code past them lies in the following sectors. The root and bitmap blocks of an empty OFS disk follow.
+   */
+  buildAdf(data) {
+    const BLOCK = 512, BLOCKS = 1760, ROOT = 880, img = new Uint8Array(BLOCKS * BLOCK), view = new DataView(img.buffer);
+    if (data.length > img.length - 12 - 2 * BLOCK) { this.errors.push({ file: this.main, line: null, msg: 'The code does not fit the disk.' }); return null; }
+    if (data.length > 1012) this.warnings.push({ file: this.main, line: null, msg: `Kickstart loads 1012 bytes of the boot block's code, the program has ${data.length}: it loads the rest itself.` });
+    img.set([0x44, 0x4f, 0x53, 0x00], 0);
+    view.setUint32(8, ROOT);
+    img.set(data, 12);
+    // the boot block's checksum: the sum of its longs with the carries added back in, inverted
+    let sum = 0;
+    for (let i = 0; i < 1024; i += 4) { sum += view.getUint32(i); if (sum > 0xffffffff) sum -= 0xffffffff; }
+    view.setUint32(4, ~sum >>> 0);
+    const blockSum = (at, field) => {
+      let s = 0;
+      for (let i = 0; i < BLOCK; i += 4) s = (s + view.getUint32(at + i)) >>> 0;
+      view.setUint32(at + field, (0x100000000 - s) >>> 0);
+    };
+    const root = ROOT * BLOCK;
+    view.setUint32(root, 2);                          // T_HEADER
+    view.setUint32(root + 12, 72);                    // the size of the hash table
+    view.setUint32(root + 312, 0xffffffff);           // the bitmap is valid
+    view.setUint32(root + 316, ROOT + 1);             // the bitmap block
+    const name = (this.outName ?? 'nerdsuite').replace(/^.*\//, '').replace(/\.adf$/i, '').slice(0, 30) || 'nerdsuite';
+    img[root + 432] = name.length;
+    for (let i = 0; i < name.length; i++) img[root + 433 + i] = name.charCodeAt(i) & 0xff;
+    view.setUint32(root + 508, 1);                    // ST_ROOT
+    blockSum(root, 20);
+    // the bitmap: a set bit is a free block (from block 2); the boot code, the root and the bitmap are used
+    const bm = (ROOT + 1) * BLOCK, used = new Set([ROOT, ROOT + 1]);
+    for (let b = 2; b * BLOCK < 12 + data.length; b++) used.add(b);
+    for (let b = 2; b < BLOCKS; b++) if (!used.has(b)) img[bm + 4 + ((b - 2) >> 5) * 4 + 3 - (((b - 2) & 31) >> 3)] |= 1 << ((b - 2) & 7);
+    blockSum(bm, 0);
+    return img;
+  }
+
   buildAmsdos(data, start) {
     const h = new Uint8Array(128);
     const base = (this.outName || this.main || 'NONAME').split('/').pop().toUpperCase();
@@ -2206,6 +2258,7 @@ class Asm {
         if (format === 'xex') output = this.buildXex();
         else if (format === 'amsdos') output = this.buildAmsdos(data, start);
         else if (format === 'trs80') output = this.buildTrs80();
+        else if (format === 'adf') output = this.buildAdf(data);
         else if (format === 'zx81') {
           // the code in the REM line of a .p file: *= $4082 (zx81.js)
           try { output = codeP(data, start, this.runAddr ?? start); } catch (e) { errors.push({ file: this.main, line: null, msg: e.message }); }
@@ -2280,6 +2333,7 @@ export function assemble(main, files, opts = {}) {
 export function disassemble(bytes, addr = 0, cpu = '6502', flags = { m8: true, x8: true }) {
   const key = CPU_ALIASES[String(cpu).toLowerCase()] || '6502';
   if (key === 'z80') return disassembleZ80(bytes, addr);
+  if (key === 'm68k') return disassembleM68k(bytes, addr);
   const rev = REVERSE[key], pre = PREFIXED[key];
   const out = [];
   const h2 = n => '$' + hex2(n);

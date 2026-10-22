@@ -9,14 +9,15 @@ package mimic
 //   POST load { name, prg (base64), run } - a .prg; or { name, data (base64), format, load, exec }: format
 //        "prg", "xex" (the Atari), "amsdos-bin" (a CPC binary: poked and CALLed), "cpc-ascii" (a BASIC
 //        listing on a disc, RUN), "atascii-lst" (an Atari BASIC listing, typed in, RUN), "a26" (a 2600
-//        cartridge: inserted, the console powers up)
+//        cartridge: inserted, the console powers up), "adf" (an Amiga disk: into DF0:, a hard reset boots it)
 //   GET  registers, POST registers { a: 1, ... }; GET memory ?start&end&bank, POST memory { start,
 //        data (base64), bank } - bank: a memory space of mimic (GET banks); GET display
 //   GET  stream ?fps&screen     WebSocket: the raw stream of mimic's preview server, passed through (its
 //        messages: crates/emu-preview/src/raw.rs of mimic - palette indices, only the changed lines)
 //   GET/POST checkpoints, GET/POST/PUT/PATCH/DELETE checkpoints/<id>
 // keyboard types on the CPC and the Atari only (key events of their keyboards): 501 for the others.
-// Numbers may be sent as 49152, "49152", "$c000" or "0xc000"; flags as true, 1, "1" or "true".
+// Numbers may be sent as 49152, "49152", "$c000" or "0xc000"; flags as true, 1, "1" or "true". Addresses go
+// to $ffff, on the Amiga to $ffffff (register values to $ffffffff); a memory read is 64 KB at most.
 
 import (
 	"encoding/base64"
@@ -382,6 +383,9 @@ func answer[T any](w http.ResponseWriter, v T, err error) error {
 
 var okBody = map[string]any{"ok": true}
 
+// adfSize: an Amiga DD disk - 80 cylinders, 2 sides, 11 sectors of 512 bytes
+const adfSize = 901120
+
 var checkpointPath = regexp.MustCompile(`^/checkpoints/([0-9]+)$`)
 
 // load: a program into the machine, by its format
@@ -458,6 +462,16 @@ func (a *API) load(w http.ResponseWriter, body map[string]any) error {
 		}
 		_, err = a.b.loadDisk(file, run)
 		return answer(w, a.status(), err)
+	case format == "adf" && machine == "amiga":
+		if len(data) != adfSize {
+			return mErr(400, "an ADF is %d bytes (a DD disk), not %d", adfSize, len(data))
+		}
+		file, err := writeTemp(a.tmpDir, stem+".adf", data)
+		if err != nil {
+			return err
+		}
+		_, err = a.b.loadADF(file)
+		return answer(w, a.status(), err)
 	}
 	return mErr(400, "mimic's %s does not load the format '%s'", machine, format)
 }
@@ -492,6 +506,7 @@ func (a *API) route(w http.ResponseWriter, r *http.Request, path string) error {
 		}
 	}
 	zero := 0
+	top, valTop := addrTop(a.b.machineIs()), valueTop(a.b.machineIs())
 	switch method + " " + sub {
 	case "POST /start":
 		machine := "c64"
@@ -552,7 +567,7 @@ func (a *API) route(w http.ResponseWriter, r *http.Request, path string) error {
 	case "POST /registers":
 		values := map[string]int{}
 		for k, v := range body {
-			n, err := num(v, k, 0, 0xffff, nil)
+			n, err := num(v, k, 0, valTop, nil)
 			if err != nil {
 				return err
 			}
@@ -561,17 +576,20 @@ func (a *API) route(w http.ResponseWriter, r *http.Request, path string) error {
 		v, err := a.b.setRegisters(values)
 		return answer(w, v, err)
 	case "GET /memory":
-		start, err := num(query("start"), "start", 0, 0xffff, &zero)
+		start, err := num(query("start"), "start", 0, top, &zero)
 		if err != nil {
 			return err
 		}
-		def := min(0xffff, start+255)
-		end, err := num(query("end"), "end", 0, 0xffff, &def)
+		def := min(top, start+255)
+		end, err := num(query("end"), "end", 0, top, &def)
 		if err != nil {
 			return err
 		}
 		if end < start {
 			return mErr(400, "'end' must be >= 'start'")
+		}
+		if end-start >= 0x10000 {
+			return mErr(400, "a read is 64 KB at most")
 		}
 		bk, err := num(query("bank"), "bank", 0, 0xffff, &zero)
 		if err != nil {
@@ -583,7 +601,7 @@ func (a *API) route(w http.ResponseWriter, r *http.Request, path string) error {
 		}
 		return ok(w, map[string]any{"start": start, "end": end, "data": base64.StdEncoding.EncodeToString(data)})
 	case "POST /memory":
-		start, err := num(body["start"], "start", 0, 0xffff, nil)
+		start, err := num(body["start"], "start", 0, top, nil)
 		if err != nil {
 			return err
 		}
@@ -594,7 +612,7 @@ func (a *API) route(w http.ResponseWriter, r *http.Request, path string) error {
 		if len(data) == 0 {
 			return mErr(400, "'data' is empty")
 		}
-		if start+len(data) > 0x10000 {
+		if start+len(data) > top+1 {
 			return mErr(400, "data exceeds address space")
 		}
 		bk, err := num(body["bank"], "bank", 0, 0xffff, &zero)
@@ -612,11 +630,11 @@ func (a *API) route(w http.ResponseWriter, r *http.Request, path string) error {
 		v, err := a.b.listCheckpoints()
 		return answer(w, v, err)
 	case "POST /checkpoints":
-		start, err := num(body["start"], "start", 0, 0xffff, nil)
+		start, err := num(body["start"], "start", 0, top, nil)
 		if err != nil {
 			return err
 		}
-		end, err := num(body["end"], "end", 0, 0xffff, &start)
+		end, err := num(body["end"], "end", 0, top, &start)
 		if err != nil {
 			return err
 		}

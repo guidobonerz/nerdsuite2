@@ -78,7 +78,7 @@ export async function refreshStatus() {
 
 // the debugger of a platform: 'vice' or 'mimic' - the calls and the events go there from now on - or 'emu'
 // (the launcher runs it, backend/emu; nothing changes here). A Commodore machine (emulator.kind 'vice'): the
-// one chosen in the Settings, else mimic when it is found, else VICE. The Atari XL and the CPC: mimic when it
+// one chosen in the Settings, else mimic when it is found, else VICE. The Atari XL, the 2600, the CPC and the Amiga: mimic when it
 // is chosen or none is - debug: when it is found at all -, else their emulator
 export async function chooseDebugger(platform, { debug = false } = {}) {
   const commodore = platform.emulator.kind === 'vice';
@@ -208,7 +208,7 @@ export async function ensureRunning(platform) {
 }
 
 // load a build into the emulator and run it; debug: the breakpoints are placed first. format: the file of
-// the build as mimic loads it (xex, atascii-lst, amsdos-bin, cpc-ascii, a26 - the names of the launcher), else the .prg
+// the build as mimic loads it (xex, atascii-lst, amsdos-bin, cpc-ascii, a26, adf - the names of the launcher), else the .prg
 export async function runBuild(build, platform, { debug: withBreakpoints = true, format = null } = {}) {
   await ensureRunning(platform);
   await setBuild(build);

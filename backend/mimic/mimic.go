@@ -1,4 +1,5 @@
-// Package mimic: the mimic emulator (C64, C128, VIC-20, Plus/4, C16, PET, Atari 800 XL, Atari 2600, Amstrad CPC) and
+// Package mimic: the mimic emulator (C64, C128, VIC-20, Plus/4, C16, PET, Atari 800 XL, Atari 2600, Amstrad CPC,
+// Amiga 500) and
 // its own debug protocol - run and debug, as the IDE does it with VICE, but without VICE's binary monitor.
 //
 // mimic (c:\Users\guido\git\mimic, docs/usage.md) is started with
@@ -10,7 +11,9 @@
 // RUNAD); an Atari BASIC listing is typed in after a cold start into BASIC, then RUN. The CPC has no program slot: a binary is poked into the RAM once BASIC is up and started with
 // CALL, a BASIC listing goes onto a disc in drive A (664, 6128) and is started with RUN"NAME - typed as key
 // events of the CPC's keyboard matrix (input). The Atari 2600 takes an .a26 into its cartridge slot: inserting
-// it powers the console up, the CPU starts at the RESET vector of the cartridge.
+// it powers the console up, the CPU starts at the RESET vector of the cartridge. The Amiga 500 boots an ADF
+// from DF0: (a hard reset after the disk is in: Kickstart reads its bootblock and runs it); its 68000 has
+// 24-bit addresses and 32-bit registers (d0-d7, a0-a7, pc, sr, usp, ssp).
 //
 // --debug serves the native protocol "mimic-debug" (version 7): TCP, a JSON object per line. A request is
 // { id, cmd, ...fields }, its response { id, ok, result | error }; events have "event" instead of "id"
@@ -63,9 +66,25 @@ import (
 // Commodore: the Commodore platforms of the IDE mimic runs - their ids are mimic's --machine ids
 var Commodore = []string{"c64", "c128", "vic20", "plus4", "c16", "pet"}
 
-// Machines: mimic's --machine ids the IDE starts (the Atari 800 XL, the Atari 2600 and the CPC besides the
-// Commodore ones)
-var Machines = append(append([]string{}, Commodore...), "atari800xl", "atari2600", "cpc")
+// Machines: mimic's --machine ids the IDE starts (the Atari 800 XL, the Atari 2600, the CPC and the Amiga 500
+// besides the Commodore ones)
+var Machines = append(append([]string{}, Commodore...), "atari800xl", "atari2600", "cpc", "amiga")
+
+// addrTop, valueTop: the highest address of the machine's CPU (the 68000 of the Amiga: 24 bits) and the
+// highest value of its registers (the 68000: 32 bits)
+func addrTop(machine string) int {
+	if machine == "amiga" {
+		return 0xffffff
+	}
+	return 0xffff
+}
+
+func valueTop(machine string) int {
+	if machine == "amiga" {
+		return 0xffffffff
+	}
+	return 0xffff
+}
 
 // Tool: where mimic is - the settings (key MIMIC: the program or its folder), else ~/applications/mimic,
 // else the PATH. The desktop program (mimic.exe, built as mimic-desktop) has a window;
@@ -362,7 +381,7 @@ type bridge struct {
 	bpOf      map[uint32]uint32 // mimic breakpoint -> checkpoint
 	nextCP    uint32
 	slotProg  *int
-	slotDisk  *int // drive A of the CPC
+	slotDisk  *int // drive A of the CPC, DF0: of the Amiga
 	slotCart  *int // the cartridge of the 2600
 }
 
@@ -591,7 +610,7 @@ func (b *bridge) handshake() error {
 		if s.Kind == "Program" {
 			b.slotProg = intp(s.ID)
 		}
-		if s.Kind == "Disk" && s.Name == "drive A" {
+		if s.Kind == "Disk" && (s.Name == "drive A" || s.Name == "DF0:") {
 			b.slotDisk = intp(s.ID)
 		}
 		if s.Kind == "Cartridge" && b.machine == "atari2600" {
@@ -1095,6 +1114,26 @@ func (b *bridge) loadDisk(file, runName string) (status, error) {
 			return err
 		}
 		return b.call("input", map[string]any{"events": cpcKeyboard.typed(`RUN"` + runName + "\r")}, nil, 0)
+	})
+	return b.status(), err
+}
+
+// loadADF: the disk into DF0:, then a hard reset - Kickstart boots it (the Amiga)
+func (b *bridge) loadADF(file string) (status, error) {
+	err := b.exclusive(func() error {
+		b.mu.Lock()
+		slot := b.slotDisk
+		b.mu.Unlock()
+		if slot == nil || b.machineIs() != "amiga" {
+			return mErr(400, "ADF disks boot on the Amiga only")
+		}
+		if err := b.call("insert_media", map[string]any{"slot": *slot, "path": file}, nil, 15*time.Second); err != nil {
+			return err
+		}
+		if err := b.call("reset", map[string]any{"kind": "hard"}, nil, 0); err != nil {
+			return err
+		}
+		return b.call("resume", nil, nil, 0)
 	})
 	return b.status(), err
 }

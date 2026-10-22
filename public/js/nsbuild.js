@@ -29,7 +29,13 @@ export const ASSEMBLERS = [{ id: 'acme', name: 'ACME' }, { id: 'kickass', name: 
 
 export function readSettings() {
   try {
-    return { ...DEFAULTS, ...(hasFile(SETTINGS) ? JSON.parse(readText(SETTINGS)) : {}) };
+    const s = { ...DEFAULTS, ...(hasFile(SETTINGS) ? JSON.parse(readText(SETTINGS)) : {}) };
+    // a machine by another of its names (mimic's "amiga", the launcher's "cpc"): the platform's id
+    if (!PLATFORMS.some(p => p.id === s.machine)) {
+      const p = platformOf(s.machine);
+      if (p.mimic?.machine === s.machine || p.emulator.platform === s.machine) s.machine = p.id;
+    }
+    return s;
   } catch {
     return { ...DEFAULTS };
   }
@@ -170,7 +176,7 @@ export async function kickassStatus() {
 
 async function kickassBuild(main, name, platform, over) {
   const fail = msg => ({ ok: false, kind: 'asm', main, name, errors: [{ file: main, line: null, msg, severity: 'error' }], symbols: [], lines: [] });
-  if (platform.cpu === 'z80') return fail(`KickAssembler makes 6502 code: the ${platform.name} needs ACME (!cpu z80)`);
+  if (platform.cpu === 'z80' || platform.cpu === '68000') return fail(`KickAssembler makes 6502 code: the ${platform.name} needs ACME (!cpu ${platform.cpu})`);
   if (platform.family !== 'commodore') return fail(`KickAssembler writes .prg files for the Commodore machines: the ${platform.name} needs ACME (its ${platform.format} output)`);
   const enc = new TextEncoder();
   const files = {};
@@ -198,8 +204,9 @@ async function kickassBuild(main, name, platform, over) {
 // whether an assembler source line holds an instruction - not data (!byte, .text ...), not *= or NAME =
 export function isCodeLine(text) {
   const t = (text ?? '').replace(/;.*$|\/\/.*$/, '');
-  // ACME: !byte ...; KickAssembler: .byte, .text, .fill, .import ... (data); both: *= and NAME =
+  // ACME: !byte ...; KickAssembler: .byte, .text, .fill, .import ... (data); both: *= and NAME =; the 68000: dc.w, ds.b, even
   if (/^\s*([A-Za-z_]\w*:|![\w]*:)?\s*\.(byte|by|word|wo|dword|dw|text|te|fill|fillword|lohifill|import|align|encoding|pc)\b/.test(t)) return false;
+  if (/^\s*([.@]?[A-Za-z_]\w*:?\s+)?((dc|ds)\.[bwl]\b|even\s*$)/i.test(t)) return false;
   return !/^\s*([.@]?[A-Za-z_]\w*:?\s+|[+-]+\s+)?(!|\*\s*=|[.@]?[A-Za-z_]\w*\s*=)/.test(t);
 }
 
@@ -245,20 +252,22 @@ export function debugInfo(build) {
   };
 }
 
-// an address typed by the user: $c000, 0xc000, 49152, %..., or a label of the build
-export function parseAddress(text, info) {
+// an address typed by the user: $c000, 0xc000, 49152, %..., or a label of the build; mask: its width
+// (the 68000's addresses $ffffff, its registers $ffffffff)
+export function parseAddress(text, info, mask = 0xffff) {
   const t = String(text ?? '').trim();
   if (!t) return null;
+  const cut = n => (mask > 0xffffff ? n >>> 0 : n & mask);
   let m;
-  if ((m = /^\$([0-9a-f]+)$/i.exec(t)) || (m = /^0x([0-9a-f]+)$/i.exec(t))) return parseInt(m[1], 16) & 0xffff;
-  if (/^\d+$/.test(t)) return Number(t) & 0xffff;
-  if ((m = /^%([01]+)$/.exec(t))) return parseInt(m[1], 2) & 0xffff;
+  if ((m = /^\$([0-9a-f]+)$/i.exec(t)) || (m = /^0x([0-9a-f]+)$/i.exec(t))) return cut(parseInt(m[1], 16));
+  if (/^\d+$/.test(t)) return cut(Number(t));
+  if ((m = /^%([01]+)$/.exec(t))) return cut(parseInt(m[1], 2));
   if ((m = /^(.+?)\s*([+-])\s*(\$?[0-9a-f]+)$/i.exec(t))) {
-    const base = parseAddress(m[1], info), off = parseAddress(m[3].startsWith('$') ? m[3] : m[3], info);
-    if (base != null && off != null) return (m[2] === '+' ? base + off : base - off) & 0xffff;
+    const base = parseAddress(m[1], info, mask), off = parseAddress(m[3], info, mask);
+    if (base != null && off != null) return cut(m[2] === '+' ? base + off : base - off);
   }
   const v = info?.valueOf(t);
-  return v == null ? null : v & 0xffff;
+  return v == null ? null : cut(v);
 }
 
 export const hex2 = n => n.toString(16).padStart(2, '0');
