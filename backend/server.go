@@ -71,7 +71,7 @@ func New(o Options) *Server {
 			}
 			return p
 		}},
-		{mimic.Tool.Env, mimic.Tool.Name, "Emulators", "mimic.exe or its folder (with roms) - C64, C128, VIC-20, Plus/4, C16, PET, Atari 800 XL, Atari 2600, CPC, Amiga 500: run and debug", func() string {
+		{mimic.Tool.Env, mimic.Tool.Name, "Emulators", "mimic.exe or its folder (with roms) - C64, C128, VIC-20, Plus/4, C16, PET, Atari 400/800/XL/XE, Atari 2600, CPC, Amiga 500, ZX81: run and debug", func() string {
 			return mimic.FindExecutable(st)
 		}},
 		{"KICKASS", "KickAssembler", "Assemblers", "KickAss.jar or its folder", func() string { jar, _ := s.kick.Found(); return jar }},
@@ -87,7 +87,7 @@ func New(o Options) *Server {
 		tools = append(tools, tool{d.Env, d.Name, "Emulators", fmt.Sprintf("the program or its folder - %s", strings.Join(d.Platforms, ", ")),
 			func() string { return core.ResolveExe(st, d) }})
 	}
-	// the Commodore machines: debugged in mimic or VICE; the Atari 8-bit, the 2600, the CPC and the Amiga: mimic
+	// the Commodore machines: debugged in mimic or VICE; the Atari 8-bit, the 2600, the CPC, the Amiga and the ZX81: mimic
 	// runs and debugs them, the launcher (backend/emu) runs them in the others (the first one found when none is
 	// chosen)
 	var platforms []platformList
@@ -96,7 +96,7 @@ func New(o Options) *Server {
 	}
 	for _, p := range emu.Preferred {
 		list := p.Emulators
-		if p.ID == "atari" || p.ID == "vcs" || p.ID == "cpc" || p.ID == "amiga" {
+		if p.ID == "atari" || p.ID == "vcs" || p.ID == "cpc" || p.ID == "amiga" || p.ID == "zx81" {
 			list = append([]string{mimic.Tool.ID}, list...)
 		}
 		platforms = append(platforms, platformList{p.ID, list})

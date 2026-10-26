@@ -7,6 +7,8 @@
 // when it is read (the TIA, GTIA, POKEY) has a name of its own for that; size > 1 is an area that
 // is named with an offset (SCREEN_RAM+40). 'port' entries are Z80 I/O ports: in the include file only.
 
+import { platformKin } from './platforms.js';
+
 // --- the chips and ROMs, by group ------------------------------------------------------------------
 
 const range = (base, names, chip, extra = {}) => names.map((n, k) => n && [base + k, n, `${chip}: ${extra[n] ?? n.toLowerCase().replace(/_/g, ' ')}`]).filter(Boolean);
@@ -463,7 +465,7 @@ const cache = new Map();
 // the symbols of a machine: { list: [{ addr, name, desc, size, read, port }], at(addr, read) -> { name, desc, offset } | null }
 export function symbolsFor(machine) {
   if (cache.has(machine)) return cache.get(machine);
-  const list = (MAPS[machine] ?? []).map(e => (e[0] === 'port'
+  const list = (MAPS[platformKin(machine)] ?? []).map(e => (e[0] === 'port'
     ? { addr: e[1], name: e[2], desc: e[3], size: 1, port: true }
     : { addr: e[0], name: e[1], desc: e[2], size: e[3] ?? 1, read: e[4] ?? null }));
   const exact = new Map(), areas = [];
@@ -485,7 +487,7 @@ export function symbolsFor(machine) {
 }
 
 // the machines that have a memory map
-export const hasMemoryMap = machine => !!MAPS[machine];
+export const hasMemoryMap = machine => !!MAPS[platformKin(machine)];
 
 // the include file of a machine: every name as an ACME constant, by area
 export function includeSource(machine, title = machine) {
@@ -657,7 +659,7 @@ const BITS = { mega65: MEGA65_BITS, c64: C64_BITS, c128: C128_BITS, vic20: VIC20
 const COLOR_NAMES = { mega65: C64_COLORS, c64: C64_COLORS, c128: C64_COLORS, vic20: VIC20_COLORS, plus4: TED_COLORS, c16: TED_COLORS };
 
 // the fields of a register of a machine, or null
-export const bitsOf = (machine, name) => BITS[machine]?.[name] ?? null;
+export const bitsOf = (machine, name) => BITS[platformKin(machine)]?.[name] ?? null;
 
 // a value of a register in words: 'y scroll 3 · 25 rows · screen on'
 export function decodeBits(machine, name, value) {

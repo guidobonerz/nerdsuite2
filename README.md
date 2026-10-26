@@ -52,13 +52,13 @@ The server serves the IDE, the example project (`examples/demo`) and the bridges
 | Family | Machines | CPU | BASIC | Output | Runs in |
 |---|---|---|---|---|---|
 | Commodore | C64, C128, VIC-20, Plus/4, C16, PET | 6510 / 6502 | V2, Simons', 7.0, 3.5, 4.0 | .prg | mimic or VICE: run **and debug** |
-| Atari | 800 XL / 130 XE | 6502 | Atari BASIC, Turbo-Basic XL | .xex (binary load file) | mimic: run **and debug**; Altirra (or atari800) |
+| Atari | 400 / 800, 800 XL, 65 XE, 130 XE | 6502 | Atari BASIC, Turbo-Basic XL | .xex (binary load file) | mimic: run **and debug**; Altirra (or atari800) |
 | Atari | 2600 (VCS) | 6507 | - | .a26 cartridge | mimic: run **and debug**; Stella (or MAME) |
 | Amstrad / Schneider | CPC 464, CPC 6128 | Z80 | Locomotive BASIC | AMSDOS binary on a .dsk | mimic: run **and debug**; WinAPE (or Caprice32) |
 | Commodore Amiga | Amiga 500 | 68000 | - | bootable .adf (the bootblock) | mimic: run **and debug**; WinUAE (or FS-UAE) |
 | Nintendo | NES | 6502 (2A03) | - | .nes cartridge (iNES, mapper 0) | Mesen, FCEUX, Nestopia (or MAME) |
 | Nintendo | SNES | 65816 | - | .sfc cartridge (LoROM, 32K) | Mesen, bsnes, Snes9x (or MAME) |
-| Sinclair | ZX81 (16K) | Z80 | ZX81 BASIC | .p file (code in a 1 REM line at $4082) | EightyOne (or ZEsarUX) |
+| Sinclair | ZX81 (16K) | Z80 | ZX81 BASIC | .p file (code in a 1 REM line at $4082) | mimic: run **and debug**; EightyOne (or ZEsarUX) |
 | Tandy / Radio Shack | TRS-80 Model I, Model III | Z80 | Level II BASIC | /CMD file | trs80gp (or MAME) |
 | Acorn | BBC Micro Model B | 6502 | BBC BASIC II | a .ssd disc that boots it | BeebEm, b2 (or MAME) |
 
@@ -101,7 +101,7 @@ A project has two assemblers: **ACME** (the default) and **KickAssembler**. The 
 
 ## The debugger
 
-**Run** (F5) builds the main program and starts it in VICE or mimic - the one chosen in the Settings (*Emulator per platform*), else mimic when it is found, else VICE; **Debug** (F6) does the same with the breakpoints and opens the Debugger view. mimic runs and debugs the Atari 800 XL, the Atari 2600, the CPC and the Amiga 500 too: there Run uses mimic when it is chosen in the Settings or none is, Debug whenever mimic is found. A Commodore .prg and an Atari .xex go into mimic's program slot (into the RAM, RUN for a BASIC program; the .xex loaded as DOS does); a 2600 cartridge (.a26) goes into mimic's cartridge slot and the console powers up; an Amiga .adf goes into DF0: and a hard reset boots it (Kickstart 1.3 from mimic's `romsmiga`; its bootblock runs a few seconds later); a CPC binary is put into the RAM once BASIC is up and started with `CALL`, a Locomotive BASIC listing goes onto a disc in drive A and is started with `RUN"` (the 6128 - the 464 has no drive); an Atari BASIC listing is typed in after a cold start into BASIC, then `RUN` (letters as capitals, as the Atari types them with caps lock on). The debugger shows the Z80's registers, flags and stack for the CPC. Click a line number of an assembler source for a breakpoint - it is a checkpoint of the emulator at the address of the line, set again after each build. While the CPU is stopped:
+**Run** (F5) builds the main program and starts it in VICE or mimic - the one chosen in the Settings (*Emulator per platform*), else mimic when it is found, else VICE; **Debug** (F6) does the same with the breakpoints and opens the Debugger view. mimic runs and debugs the Atari 400/800/XL/XE, the Atari 2600, the CPC, the Amiga 500 and the ZX81 too: there Run uses mimic when it is chosen in the Settings or none is, Debug whenever mimic is found. A Commodore .prg and an Atari .xex go into mimic's program slot (into the RAM, RUN for a BASIC program; the .xex loaded as DOS does); a 2600 cartridge (.a26) goes into mimic's cartridge slot and the console powers up; an Amiga .adf goes into DF0: and a hard reset boots it (Kickstart 1.3 from mimic's `roms/amiga`; its bootblock runs a few seconds later); a ZX81 .p file goes into mimic's tape slot once the ROM is up and `LOAD ""` is typed - it runs the line it was saved with (a build: `RAND USR` of the code in its REM line), about six seconds after Run; a CPC binary is put into the RAM once BASIC is up and started with `CALL`, a Locomotive BASIC listing goes onto a disc in drive A and is started with `RUN"` (the 6128 - the 464 has no drive); an Atari BASIC listing is typed in after a cold start into BASIC, then `RUN` (letters as capitals, as the Atari types them with caps lock on). The debugger shows the Z80's registers, flags and stack for the CPC. Click a line number of an assembler source for a breakpoint - it is a checkpoint of the emulator at the address of the line, set again after each build. While the CPU is stopped:
 
 | Key | |
 |---|---|

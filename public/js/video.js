@@ -26,6 +26,8 @@
 //   screen    { cols, rows } of the text screen (the NES and SNES: the tile map)
 //   cols80    the machine shows 80 columns: a screen wider than 40 is drawn condensed, its cells half as wide
 
+import { platformKin } from './platforms.js';
+
 const hex = (r, g, b) => '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
 
 // the C64 (the colours of yopaca's editors, c64.js)
@@ -162,7 +164,7 @@ const PROFILES = {
 // the profile of a machine: { editors, palette: { name, colors, note }, cells, ecm, bitmap, screen };
 // an unknown one is a C64
 export function videoOf(machine) {
-  const p = PROFILES[machine] ?? PROFILES.c64;
+  const p = PROFILES[platformKin(machine)] ?? PROFILES.c64;
   return { ...p, palette: PALETTES[p.palette] };
 }
 
@@ -178,7 +180,7 @@ export const video = () => current;
 export const videoMachine = () => active;
 // the machine of the project: its palette in PALETTE (c64.js listens), its colour rules
 export function setVideoMachine(machine) {
-  if (!PROFILES[machine]) machine = 'c64';
+  machine = PROFILES[platformKin(machine)] ? platformKin(machine) : 'c64';
   if (machine === active) return false;
   active = machine;
   current = videoOf(machine);

@@ -269,7 +269,7 @@ export function createDebugView(el, bar, hooks = {}) {
 
   async function start() {
     const p = machineOf(machine());
-    if (!canDebug(p)) return snackbar(`${p.name} programs run in their emulator (Run, F5): the debugger works with VICE or mimic - the Commodore machines, the Atari XL, the 2600, the CPC, the Amiga`, { error: true, timeout: 8000 });
+    if (!canDebug(p)) return snackbar(`${p.name} programs run in their emulator (Run, F5): the debugger works with VICE or mimic - the Commodore machines, the Atari 8-bit, the 2600, the CPC, the ZX81, the Amiga`, { error: true, timeout: 8000 });
     await act(() => vice.ensureRunning(p), 'start the emulator');
     await refresh();
   }

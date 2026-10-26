@@ -14,6 +14,7 @@ import { CHARGEN } from './chargen.js';
 import { DRAWN, atariFont } from './atarifont.js';
 import { screencode } from './petscii.js';
 import { charOf } from './zx81.js';
+import { platformKin } from './platforms.js';
 
 const glyph = (set, code) => CHARGEN.subarray(set * 2048 + code * 8, set * 2048 + code * 8 + 8);
 const up = code => glyph(0, code), low = code => glyph(1, code);
@@ -78,6 +79,7 @@ export const onFontChange = f => { listeners.add(f); return () => listeners.dele
 let machine = 'c64';
 
 export function machineFont(m = machine) {
+  m = platformKin(m);
   if (loaded.has(m)) return loaded.get(m);
   if (COMMODORE.has(m)) return { kind: 'commodore', data: CHARGEN.subarray(0, 4096), source: 'the C64 (chargen.js)' };
   if (!MADE[m]) return { kind: 'commodore', data: CHARGEN.subarray(0, 4096), source: 'the C64 (chargen.js)' };
@@ -89,7 +91,7 @@ export function machineFont(m = machine) {
 // - the same answer for every caller while it is on the way (fontReady: the font of the machine, once it is there)
 const asking = new Map();         // machine -> the promise of its font
 export function loadMachineFont(m) {
-  machine = m;
+  machine = m = platformKin(m);
   if (!READ.has(m)) return Promise.resolve();
   if (!asking.has(m)) asking.set(m, (async () => {
     try {

@@ -39,6 +39,7 @@ type fakeMimic struct {
 	bps         map[uint32]map[string]any
 	nextBP      uint32
 	inserted    string
+	typed       []any // the input events, in their order
 	conns       []net.Conn
 	writeMu     sync.Mutex
 	done        chan struct{}
@@ -187,6 +188,9 @@ func (f *fakeMimic) handle(req map[string]any) (any, []any, string) {
 		if f.machine == "amiga" {
 			return []any{map[string]any{"id": 0, "kind": "Disk", "name": "DF0:"}, map[string]any{"id": 1, "kind": "Disk", "name": "DF1:"}}, nil, ""
 		}
+		if f.machine == "zx81" {
+			return []any{map[string]any{"id": 0, "kind": "Tape", "name": "tape"}}, nil, ""
+		}
 		return []any{map[string]any{"id": 0, "kind": "Disk"}, map[string]any{"id": 1, "kind": "Program"}}, nil, ""
 	case "regs":
 		var list []any
@@ -241,7 +245,7 @@ func (f *fakeMimic) handle(req map[string]any) (any, []any, string) {
 		f.reg["PC"] = 0xfce2
 		return f.state(), nil, ""
 	case "insert_media":
-		if f.machine == "amiga" && n("slot") != 0 || f.machine != "amiga" && n("slot") != 1 {
+		if first := f.machine == "amiga" || f.machine == "zx81"; first && n("slot") != 0 || !first && n("slot") != 1 {
 			return nil, nil, "no program slot"
 		}
 		f.inserted, _ = req["path"].(string)
@@ -264,6 +268,8 @@ func (f *fakeMimic) handle(req map[string]any) (any, []any, string) {
 		f.bps[uint32(n("bp"))]["enabled"] = req["enabled"]
 		return map[string]any{}, nil, ""
 	case "input":
+		list, _ := req["events"].([]any)
+		f.typed = append(f.typed, list...)
 		return map[string]any{}, nil, ""
 	}
 	return nil, nil, fmt.Sprintf("unknown command %v", req["cmd"])
@@ -311,6 +317,43 @@ func TestFlowFakeAmiga(t *testing.T) {
 		t.Fatalf("D0 %x", d0)
 	}
 }
+
+// TestFlowFakeZX81: a .P file into the tape slot once the ZX81 is up, then LOAD "" typed (J, SHIFT+P twice,
+// NEW LINE); the Atari's old id
+func TestFlowFakeZX81(t *testing.T) {
+	_, srv, f, _ := newFakeMachine(t, "zx81")
+	do(t, srv, "POST", "/api/mimic/load", `{"name":"x.p","format":"zx81-p","data":"AAAA"}`, 400) // too short
+	do(t, srv, "POST", "/api/mimic/load", `{"name":"x.xex","format":"xex","data":"AAAA"}`, 400)
+	f.mu.Lock()
+	f.cmds, f.typed = nil, nil
+	f.mu.Unlock()
+	do(t, srv, "POST", "/api/mimic/load", `{"name":"demo.p","format":"zx81-p","data":"`+zx81P+`"}`, 200)
+	f.mu.Lock()
+	cmds, inserted, typed := strings.Join(f.cmds, " "), f.inserted, f.typed
+	f.mu.Unlock()
+	if !strings.HasPrefix(cmds, "reset input resume") || !strings.HasSuffix(cmds, "insert_media input") || !strings.HasSuffix(inserted, "demo.p") {
+		t.Fatalf("commands %q, inserted %q", cmds, inserted)
+	}
+	var down []int
+	for _, e := range typed {
+		ev := e.(map[string]any)["event"].(map[string]any)
+		if ev["down"] == true {
+			down = append(down, int(ev["key"].(float64)))
+		}
+	}
+	// the keys of the last input: J (row 6, column 3), SHIFT (0) and P (25) twice, NEW LINE (30)
+	if got := fmt.Sprint(down[len(down)-6:]); got != "[33 0 25 0 25 30]" {
+		t.Fatalf("typed %v", down)
+	}
+
+	_, srv2, _, _ := newFakeMachine(t, "atari8")
+	if s := do(t, srv2, "POST", "/api/mimic/start", `{"machine":"atari800xl"}`, 200); s["machine"] != "atari8" {
+		t.Fatalf("the alias: %v", s)
+	}
+}
+
+// zx81P: a .P file as zx81.js codeP makes it: 1 REM with LD A,42 : LD ($7000),A : RET at $4082, 2 RAND USR 16514
+const zx81P = "AAAAm0CcQLRAAAC1QLRAAAC6QLpAAF1AAAIAAP///zeJQAAAAAAAjQwAAP//AAC8IRhAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB2AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQgA6j4qMgBwyXYAAg4A+dQdIiEdIH6PAQQAAHZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2gA=="
 
 // events: what the listener got, by name
 type events struct {
@@ -678,8 +721,19 @@ func waitStop(t *testing.T, a *API, ev *events, from int) stopInfo {
 	return ev.wait(t, "stopped", from).(stopInfo)
 }
 
+// TestFlowMimicAtari: the 800 XL (by the old id), the 130 XE and the 800 (OS-B, the BASIC cartridge)
 func TestFlowMimicAtari(t *testing.T) {
-	a, srv, ev := startReal(t, "atari800xl", "")
+	for _, model := range []string{"", "130xe", "800"} {
+		t.Run("model "+model, func(t *testing.T) { flowMimicAtari(t, model) })
+	}
+}
+
+func flowMimicAtari(t *testing.T, model string) {
+	machine := "atari8"
+	if model == "" {
+		machine = "atari800xl"
+	}
+	a, srv, ev := startReal(t, machine, model)
 	// INC COLBK : JMP $2000 at $2000, RUNAD $2000
 	xex := []byte{0xff, 0xff, 0x00, 0x20, 0x05, 0x20, 0xee, 0x1a, 0xd0, 0x4c, 0x00, 0x20, 0xe0, 0x02, 0xe1, 0x02, 0x00, 0x20}
 	do(t, srv, "POST", "/api/mimic/checkpoints", `{"start":"$2000","exec":true}`, 200)
@@ -704,7 +758,7 @@ func TestFlowMimicAtari(t *testing.T) {
 			return
 		}
 	}
-	shot(t, a, "atari.png")
+	shot(t, a, "atari"+model+".png")
 	t.Fatal("the BASIC listing did not run")
 }
 
@@ -854,7 +908,7 @@ func TestFlowMimicAmiga(t *testing.T) {
 			t.Skip(exe + " predates the Amiga")
 		}
 	}
-	a, srv, ev := startReal(t, "amiga", "pal")
+	a, srv, ev := startReal(t, "amiga", "500")
 	code := []byte{
 		0x33, 0xfc, 0x0f, 0x00, 0x00, 0xdf, 0xf1, 0x80, // move.w #$0f00,$dff180
 		0x41, 0xf9, 0x00, 0x07, 0x00, 0x00, // lea $70000,a0
@@ -894,6 +948,38 @@ func TestFlowMimicAmiga(t *testing.T) {
 	}
 	t.Logf("stopped at $%x, registers %v", pc, r)
 	shot(t, a, "amiga.png")
+}
+
+// TestFlowMimicZX81: a .P file (machine code in the REM line, started by RAND USR) loaded with LOAD "" -
+// the program runs by itself (NXTLIN) and pokes 42 to $7000; the Z80's registers (MIMIC to a mimic with the
+// ZX81, its ROM in roms/zx81 or EMU_ROM_DIR)
+func TestFlowMimicZX81(t *testing.T) {
+	for _, model := range []string{"zx81", "ts1000"} {
+		t.Run(model, func(t *testing.T) {
+			a, srv, _ := startReal(t, "zx81", model)
+			t0 := time.Now()
+			do(t, srv, "POST", "/api/mimic/load", `{"name":"poke.p","format":"zx81-p","data":"`+zx81P+`"}`, 200)
+			loaded := time.Since(t0)
+			want := base64.StdEncoding.EncodeToString([]byte{42})
+			for time.Since(t0) < 30*time.Second {
+				if do(t, srv, "GET", "/api/mimic/memory?start=$7000&end=$7000", ``, 200)["data"] == want {
+					t.Logf("booted and loaded in %v, ran after %v", loaded, time.Since(t0))
+					do(t, srv, "POST", "/api/mimic/pause", ``, 200)
+					r := do(t, srv, "GET", "/api/mimic/registers", ``, 200)
+					for _, n := range []string{"pc", "sp", "a", "h", "l", "ix", "iy"} {
+						if r[n] == nil {
+							t.Fatalf("no %s in %v", n, r)
+						}
+					}
+					shot(t, a, "zx81-"+model+".png")
+					return
+				}
+				time.Sleep(250 * time.Millisecond)
+			}
+			shot(t, a, "zx81-"+model+".png")
+			t.Fatal("the .P file did not run")
+		})
+	}
 }
 
 // shot: the screen into MIMIC_SHOT (a folder), when it is set
