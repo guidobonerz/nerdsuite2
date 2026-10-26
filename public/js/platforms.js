@@ -8,13 +8,14 @@
 //              load file), amsdos (a CPC binary with its header), plain (a cartridge image: the .a26 of
 //              the VCS, the .nes of the NES with its iNES header, the LoROM .sfc of the SNES; the code
 //              of the BBC Micro, *RUN from a disc), zx81 (a .p file: the code in a REM line, zx81.js),
-//              trs80 (a TRS-80 /CMD file)
+//              trs80 (a TRS-80 /CMD file), adf (an Amiga disk: the code in its boot block)
 //   start      where a new assembler program starts; basicStart: the BASIC area (a SYS line)
 //   emulator   { kind: 'vice', machine } - run and debug in VICE (the binary monitor) or in mimic (the Settings
 //              choose, vice.js: chooseDebugger);
 //              { kind: 'emu', platform }  - run in Altirra, WinAPE, Stella, Xemu … (backend/emu)
 //   mimic      { machine, model } - the machine of mimic (backend/mimic) that runs and debugs it: the Commodore
-//              machines, the Atari XL, the Atari 2600 and the CPC
+//              machines, the Atari 400/800/XL/XE, the Atari 2600, the CPC, the ZX81 and the Amiga 500
+//   like       the platform it is a model of: the same memory map, font and graphics (platformKin)
 //   commodore  the graphics editors (VIC-II and SID) make data for it as it is
 //   basicLine  the longest BASIC line the screen editor of the machine takes as typed in (with its line number):
 //              the logical line of the screen (C64 2 x 40, VIC-20 4 x 22, C128 4 x 40 ...); a build warns
@@ -22,10 +23,11 @@
 
 export const FAMILIES = [
   { id: 'commodore', name: 'Commodore', desc: '6502/6510, 45GS02 · VIC-II, VIC, TED, VIC-IV · BASIC 2 to 7, BASIC 65 · run and debug in mimic or VICE, the MEGA65 in Xemu' },
-  { id: 'atari', name: 'Atari', desc: '6502 · ANTIC/GTIA, TIA · Atari BASIC · run and debug the XL and the 2600 in mimic, run in Altirra or Stella' },
+  { id: 'amiga', name: 'Commodore Amiga', desc: '68000 · OCS: Copper, blitter, Paula · boot block disks (ADF) · run and debug in mimic, run in WinUAE or FS-UAE' },
+  { id: 'atari', name: 'Atari', desc: '6502 · ANTIC/GTIA, TIA · Atari BASIC · run and debug the 400/800, XL, XE and the 2600 in mimic, run in Altirra or Stella' },
   { id: 'amstrad', name: 'Amstrad / Schneider', desc: 'Z80 · Gate Array · Locomotive BASIC · run and debug in mimic, run in WinAPE' },
   { id: 'nintendo', name: 'Nintendo', desc: '6502 (2A03) and 65816 · PPU, APU · run in Mesen, FCEUX, bsnes or Snes9x' },
-  { id: 'sinclair', name: 'Sinclair', desc: 'Z80 · ZX81 BASIC · .p files · run in EightyOne or ZEsarUX' },
+  { id: 'sinclair', name: 'Sinclair', desc: 'Z80 · ZX81 BASIC · .p files · run and debug in mimic, run in EightyOne or ZEsarUX' },
   { id: 'tandy', name: 'Tandy / Radio Shack', desc: 'Z80 · Level II BASIC · /CMD files · run in trs80gp or MAME' },
   { id: 'acorn', name: 'Acorn', desc: '6502 · BBC BASIC · .ssd discs · run in BeebEm, b2 or MAME' },
 ];
@@ -45,8 +47,16 @@ export const PLATFORMS = [
     start: 0x0410, basicStart: 0x0401, screen: 0x8000, border: null, emulator: { kind: 'vice', machine: 'pet' }, mimic: { machine: 'pet' }, commodore: true, basicLine: 80 },
   { id: 'mega65', family: 'commodore', name: 'MEGA65', short: 'MEGA65', cpu: 'm65', cpus: ['m65', '4502', '65ce02', '6502'], basic: ['v65'], format: 'cbm', ext: 'prg',
     start: 0x2010, basicStart: 0x2001, screen: 0x0800, border: 0xd020, emulator: { kind: 'emu', platform: 'mega65' }, commodore: true, basicLine: 160 },
-  { id: 'atari8', family: 'atari', name: 'Atari 800 XL / 130 XE', short: 'Atari XL', cpu: '6502', cpus: ['6502'], basic: ['atari', 'turbo'], format: 'xex', ext: 'xex',
-    start: 0x2000, basicStart: null, screen: null, border: 0xd01a, emulator: { kind: 'emu', platform: 'atari' }, mimic: { machine: 'atari800xl' }, basicLine: 120 },
+  { id: 'amiga500', family: 'amiga', name: 'Amiga 500', short: 'A500', cpu: '68000', cpus: ['68000'], basic: [], format: 'adf', ext: 'adf',
+    start: 0x40000, basicStart: null, screen: null, border: null, emulator: { kind: 'emu', platform: 'amiga' }, mimic: { machine: 'amiga', model: '500' } },
+  { id: 'atari8', family: 'atari', name: 'Atari 800 XL', short: 'Atari XL', cpu: '6502', cpus: ['6502'], basic: ['atari', 'turbo'], format: 'xex', ext: 'xex',
+    start: 0x2000, basicStart: null, screen: null, border: 0xd01a, emulator: { kind: 'emu', platform: 'atari' }, mimic: { machine: 'atari8', model: '800xl' }, basicLine: 120 },
+  { id: 'atari65xe', like: 'atari8', family: 'atari', name: 'Atari 65 XE', short: 'Atari 65XE', cpu: '6502', cpus: ['6502'], basic: ['atari', 'turbo'], format: 'xex', ext: 'xex',
+    start: 0x2000, basicStart: null, screen: null, border: 0xd01a, emulator: { kind: 'emu', platform: 'atari' }, mimic: { machine: 'atari8', model: '65xe' }, basicLine: 120 },
+  { id: 'atari130xe', like: 'atari8', family: 'atari', name: 'Atari 130 XE (128K)', short: 'Atari 130XE', cpu: '6502', cpus: ['6502'], basic: ['atari', 'turbo'], format: 'xex', ext: 'xex',
+    start: 0x2000, basicStart: null, screen: null, border: 0xd01a, emulator: { kind: 'emu', platform: 'atari' }, mimic: { machine: 'atari8', model: '130xe' }, basicLine: 120 },
+  { id: 'atari800', like: 'atari8', family: 'atari', name: 'Atari 400 / 800 (48K, OS-B)', short: 'Atari 800', cpu: '6502', cpus: ['6502'], basic: ['atari', 'turbo'], format: 'xex', ext: 'xex',
+    start: 0x2000, basicStart: null, screen: null, border: 0xd01a, emulator: { kind: 'emu', platform: 'atari' }, mimic: { machine: 'atari8', model: '800' }, basicLine: 120 },
   { id: 'vcs', family: 'atari', name: 'Atari 2600 (VCS)', short: 'VCS', cpu: '6502', cpus: ['6502'], basic: [], format: 'plain', ext: 'a26',
     start: 0xf000, basicStart: null, screen: null, border: null, emulator: { kind: 'emu', platform: 'vcs' }, mimic: { machine: 'atari2600' } },
   { id: 'cpc464', family: 'amstrad', name: 'Amstrad / Schneider CPC 464', short: 'CPC 464', cpu: 'z80', cpus: ['z80'], basic: ['loco'], format: 'amsdos', ext: 'bin',
@@ -58,7 +68,9 @@ export const PLATFORMS = [
   { id: 'snes', family: 'nintendo', name: 'Super Nintendo (SNES)', short: 'SNES', cpu: '65816', cpus: ['65816'], basic: [], format: 'plain', ext: 'sfc',
     start: 0x8000, basicStart: null, screen: null, border: null, emulator: { kind: 'emu', platform: 'snes' } },
   { id: 'zx81', family: 'sinclair', name: 'Sinclair ZX81 (16K)', short: 'ZX81', cpu: 'z80', cpus: ['z80'], basic: ['zx81'], format: 'zx81', ext: 'p',
-    start: 0x4082, basicStart: null, screen: null, border: null, emulator: { kind: 'emu', platform: 'zx81' }, basicLine: 0 },
+    start: 0x4082, basicStart: null, screen: null, border: null, emulator: { kind: 'emu', platform: 'zx81' }, mimic: { machine: 'zx81', model: 'zx81' }, basicLine: 0 },
+  { id: 'ts1000', like: 'zx81', family: 'sinclair', name: 'Timex Sinclair 1000 (16K, 60 Hz)', short: 'TS1000', cpu: 'z80', cpus: ['z80'], basic: ['zx81'], format: 'zx81', ext: 'p',
+    start: 0x4082, basicStart: null, screen: null, border: null, emulator: { kind: 'emu', platform: 'zx81' }, mimic: { machine: 'zx81', model: 'ts1000' }, basicLine: 0 },
   { id: 'trs80', family: 'tandy', name: 'TRS-80 Model I (Level II, 48K)', short: 'TRS-80', cpu: 'z80', cpus: ['z80'], basic: ['trs80'], format: 'trs80', ext: 'cmd',
     start: 0x7000, basicStart: null, screen: 0x3c00, border: null, emulator: { kind: 'emu', platform: 'trs80', model: '1' }, basicLine: 240 },
   { id: 'trs80m3', family: 'tandy', name: 'TRS-80 Model III (48K)', short: 'TRS-80 M3', cpu: 'z80', cpus: ['z80'], basic: ['trs80'], format: 'trs80', ext: 'cmd',
@@ -67,8 +79,12 @@ export const PLATFORMS = [
     start: 0x2000, basicStart: null, screen: 0x7c00, border: null, emulator: { kind: 'emu', platform: 'bbc', model: 'bbcb' }, basicLine: 238 },
 ];
 
-export const platformOf = id => PLATFORMS.find(p => p.id === id) ?? PLATFORMS[0];
-// the debugger: VICE or mimic (vice.js) - the Commodore machines, the Atari XL, the 2600 and the CPC in mimic
+// a platform by its id, else by the machine of mimic or the platform of the launcher it goes by ("amiga",
+// "atari2600", "cpc" ...), else the C64
+// the platform a model is like (the 130 XE: the 800 XL) - the key of the memory maps, fonts and graphics
+export const platformKin = id => PLATFORMS.find(p => p.id === id)?.like ?? id;
+export const platformOf = id => PLATFORMS.find(p => p.id === id) ?? PLATFORMS.find(p => p.mimic?.machine === id || p.emulator.platform === id) ?? PLATFORMS[0];
+// the debugger: VICE or mimic (vice.js) - the Commodore machines, the Atari 8-bit, the 2600, the CPC, the ZX81 and the Amiga in mimic
 export const canDebug = p => p.emulator.kind === 'vice' || !!p.mimic;
 // the name of a CPU as the machine's papers write it (m65 is ACME's name of the MEGA65's 45GS02)
 export const cpuName = cpu => ({ m65: '45GS02' }[cpu] ?? cpu.toUpperCase());
@@ -108,7 +124,7 @@ loop:   txa
         jmp loop
 `}`;
   }
-  if (p.id === 'atari8') {
+  if (platformKin(p.id) === 'atari8') {
     return `${head}
 COLBK = $d01a                           ; the background color (GTIA)
 
@@ -121,6 +137,37 @@ loop:   sta COLBK                       ; a color a scan line
         jmp loop
 
 !run start                              ; the RUNAD segment: DOS starts the program here
+`;
+  }
+  if (p.id === 'amiga500') {
+    return `${head}
+; Kickstart loads the boot block to an address of its choice and calls the code (a6 = ExecBase). The code
+; copies itself to RUN and goes on there: from then on the labels hold (and the breakpoints)
+RUN     = ${hex(p.start)}                       ; where the program runs, in the chip RAM
+CUSTOM  = $dff000                       ; the custom chips
+VHPOSR  = $006                          ; the beam: the line in the high byte
+DMACON  = $096
+INTENA  = $09a
+INTREQ  = $09c
+COLOR00 = $180                          ; the background color, $0RGB
+
+*= RUN
+boot:   lea     boot(pc),a0             ; where Kickstart loaded the code
+        lea     RUN,a1
+        move.w  #(end-boot)>>2,d0
+.copy:  move.l  (a0)+,(a1)+
+        dbra    d0,.copy
+        jmp     start                   ; on at RUN
+
+start:  lea     CUSTOM,a6
+        move.w  #$7fff,INTENA(a6)       ; no interrupts: the system sleeps
+        move.w  #$7fff,INTREQ(a6)
+        move.w  #$7fff,DMACON(a6)       ; no DMA: no bitplanes, no Copper - the background fills the screen
+        moveq   #0,d0
+loop:   move.b  VHPOSR(a6),d0           ; the line
+        move.w  d0,COLOR00(a6)          ; a color a line
+        bra.s   loop
+end:
 `;
   }
   if (p.id === 'vcs') {
@@ -309,7 +356,7 @@ irq:    rti
         !word 0, 0, irq, 0, irq, nmi, reset, irq
 `;
   }
-  if (p.id === 'zx81') {
+  if (platformKin(p.id) === 'zx81') {
     return `${head}
 ; the code is in the line 1 REM of the .p file, 2 RAND USR ${p.start} starts it
 PRINT_A = $10                           ; RST $10: print the character in A (the ZX81 character set)

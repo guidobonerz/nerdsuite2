@@ -1,4 +1,5 @@
-// Package mimic: the mimic emulator (C64, C128, VIC-20, Plus/4, C16, PET, Atari 800 XL, Atari 2600, Amstrad CPC) and
+// Package mimic: the mimic emulator (C64, C128, VIC-20, Plus/4, C16, PET, Atari 800 XL, Atari 2600, Amstrad CPC,
+// Amiga 500) and
 // its own debug protocol - run and debug, as the IDE does it with VICE, but without VICE's binary monitor.
 //
 // mimic (c:\Users\guido\git\mimic, docs/usage.md) is started with
@@ -10,7 +11,9 @@
 // RUNAD); an Atari BASIC listing is typed in after a cold start into BASIC, then RUN. The CPC has no program slot: a binary is poked into the RAM once BASIC is up and started with
 // CALL, a BASIC listing goes onto a disc in drive A (664, 6128) and is started with RUN"NAME - typed as key
 // events of the CPC's keyboard matrix (input). The Atari 2600 takes an .a26 into its cartridge slot: inserting
-// it powers the console up, the CPU starts at the RESET vector of the cartridge.
+// it powers the console up, the CPU starts at the RESET vector of the cartridge. The Amiga 500 boots an ADF
+// from DF0: (a hard reset after the disk is in: Kickstart reads its bootblock and runs it); its 68000 has
+// 24-bit addresses and 32-bit registers (d0-d7, a0-a7, pc, sr, usp, ssp).
 //
 // --debug serves the native protocol "mimic-debug" (version 7): TCP, a JSON object per line. A request is
 // { id, cmd, ...fields }, its response { id, ok, result | error }; events have "event" instead of "id"
@@ -63,9 +66,28 @@ import (
 // Commodore: the Commodore platforms of the IDE mimic runs - their ids are mimic's --machine ids
 var Commodore = []string{"c64", "c128", "vic20", "plus4", "c16", "pet"}
 
-// Machines: mimic's --machine ids the IDE starts (the Atari 800 XL, the Atari 2600 and the CPC besides the
-// Commodore ones)
-var Machines = append(append([]string{}, Commodore...), "atari800xl", "atari2600", "cpc")
+// Machines: mimic's --machine ids the IDE starts (the Atari 400/800/XL/XE, the Atari 2600, the CPC, the Amiga
+// and the ZX81 besides the Commodore ones)
+var Machines = append(append([]string{}, Commodore...), "atari8", "atari2600", "cpc", "amiga", "zx81")
+
+// machineAliases: older ids of mimic's machines - the Atari 8-bit was "atari800xl"
+var machineAliases = map[string]string{"atari800xl": "atari8"}
+
+// addrTop, valueTop: the highest address of the machine's CPU (the 68000 of the Amiga: 24 bits) and the
+// highest value of its registers (the 68000: 32 bits)
+func addrTop(machine string) int {
+	if machine == "amiga" {
+		return 0xffffff
+	}
+	return 0xffff
+}
+
+func valueTop(machine string) int {
+	if machine == "amiga" {
+		return 0xffffffff
+	}
+	return 0xffff
+}
 
 // Tool: where mimic is - the settings (key MIMIC: the program or its folder), else ~/applications/mimic,
 // else the PATH. The desktop program (mimic.exe, built as mimic-desktop) has a window;
@@ -362,8 +384,9 @@ type bridge struct {
 	bpOf      map[uint32]uint32 // mimic breakpoint -> checkpoint
 	nextCP    uint32
 	slotProg  *int
-	slotDisk  *int // drive A of the CPC
+	slotDisk  *int // drive A of the CPC, DF0: of the Amiga
 	slotCart  *int // the cartridge of the 2600
+	slotTape  *int // the tape of the ZX81 (a .P file, read by the LOAD trap)
 }
 
 func newBridge(st *core.Settings, opts bridgeOptions) *bridge {
@@ -401,6 +424,7 @@ func (b *bridge) reset() {
 	b.slotProg = nil
 	b.slotDisk = nil
 	b.slotCart = nil
+	b.slotTape = nil
 }
 
 func (b *bridge) emit(event string, data any) {
@@ -591,11 +615,14 @@ func (b *bridge) handshake() error {
 		if s.Kind == "Program" {
 			b.slotProg = intp(s.ID)
 		}
-		if s.Kind == "Disk" && s.Name == "drive A" {
+		if s.Kind == "Disk" && (s.Name == "drive A" || s.Name == "DF0:") {
 			b.slotDisk = intp(s.ID)
 		}
 		if s.Kind == "Cartridge" && b.machine == "atari2600" {
 			b.slotCart = intp(s.ID)
+		}
+		if s.Kind == "Tape" && b.machine == "zx81" {
+			b.slotTape = intp(s.ID)
 		}
 	}
 	if pc, ok := rs.get("pc"); ok {
@@ -996,15 +1023,15 @@ func (b *bridge) load(file string, run bool) (status, error) {
 }
 
 // bootFrames: the frames from a reset to BASIC's Ready - the CPC takes about a second; the Atari at least
-// these, then READY on its screen (atariReady)
-var bootFrames = map[string]int{"cpc": 100, "atari800xl": 30}
+// these, then READY on its screen (atariReady); the ZX81 clears and tests its 16K first
+var bootFrames = map[string]int{"cpc": 100, "atari8": 30, "zx81": 250}
 
 // resetKind: the reset that starts BASIC - the Atari needs a cold start (BASIC is in when it powers up)
-var resetKind = map[string]string{"cpc": "soft", "atari800xl": "hard"}
+var resetKind = map[string]string{"cpc": "soft", "atari8": "hard", "zx81": "hard"}
 
 // keyCount: the key codes of the machine's keyboard (the CPC's matrix; the Atari's POKEY codes, SHIFT,
-// CONTROL, BREAK, START, SELECT, OPTION)
-var keyCount = map[string]int{"cpc": 80, "atari800xl": 70}
+// CONTROL, BREAK, START, SELECT, OPTION; the ZX81's 8 x 5 matrix)
+var keyCount = map[string]int{"cpc": 80, "atari8": 70, "zx81": 40}
 
 // boot: a reset, then it runs until BASIC is up (in an operation)
 func (b *bridge) boot() error {
@@ -1043,7 +1070,7 @@ func (b *bridge) boot() error {
 		if beam.Frame < st.Beam.Frame+bootFrames[machine] {
 			continue
 		}
-		if machine != "atari800xl" {
+		if machine != "atari8" {
 			return nil
 		}
 		// the Atari: its cold start takes as long as the OS waits for a disc - READY on the screen tells
@@ -1099,6 +1126,48 @@ func (b *bridge) loadDisk(file, runName string) (status, error) {
 	return b.status(), err
 }
 
+// loadADF: the disk into DF0:, then a hard reset - Kickstart boots it (the Amiga)
+func (b *bridge) loadADF(file string) (status, error) {
+	err := b.exclusive(func() error {
+		b.mu.Lock()
+		slot := b.slotDisk
+		b.mu.Unlock()
+		if slot == nil || b.machineIs() != "amiga" {
+			return mErr(400, "ADF disks boot on the Amiga only")
+		}
+		if err := b.call("insert_media", map[string]any{"slot": *slot, "path": file}, nil, 15*time.Second); err != nil {
+			return err
+		}
+		if err := b.call("reset", map[string]any{"kind": "hard"}, nil, 0); err != nil {
+			return err
+		}
+		return b.call("resume", nil, nil, 0)
+	})
+	return b.status(), err
+}
+
+// loadTape: a reset, BASIC up, the .P file into the tape slot, LOAD "" typed - the ROM's LOAD (a trap of
+// mimic) takes the program in and runs the line its NXTLIN names (the ZX81)
+func (b *bridge) loadTape(file string) (status, error) {
+	err := b.exclusive(func() error {
+		b.mu.Lock()
+		slot := b.slotTape
+		b.mu.Unlock()
+		if slot == nil || b.machineIs() != "zx81" {
+			return mErr(400, ".P files load on the ZX81 only")
+		}
+		if err := b.boot(); err != nil {
+			return err
+		}
+		if err := b.call("insert_media", map[string]any{"slot": *slot, "path": file}, nil, 15*time.Second); err != nil {
+			return err
+		}
+		// in K mode the J key is LOAD
+		return b.call("input", map[string]any{"events": zx81Keyboard.typed("J\"\"\r")}, nil, 0)
+	})
+	return b.status(), err
+}
+
 // atariReady: whether the Atari's screen shows READY (the screen at SAVMSC, $58; in screen codes)
 func (b *bridge) atariReady() (bool, error) {
 	var r struct {
@@ -1127,7 +1196,7 @@ func (b *bridge) atariReady() (bool, error) {
 // takes no file without a DOS)
 func (b *bridge) loadListing(listing []byte) (status, error) {
 	err := b.exclusive(func() error {
-		if b.machineIs() != "atari800xl" {
+		if b.machineIs() != "atari8" {
 			return mErr(400, "BASIC listings are typed into the Atari only")
 		}
 		b.mu.Lock()
@@ -1144,12 +1213,12 @@ func (b *bridge) loadListing(listing []byte) (status, error) {
 	return b.status(), err
 }
 
-// typeText: text typed on the keyboard (the CPC, the Atari)
+// typeText: text typed on the keyboard (the CPC, the Atari, the ZX81)
 func (b *bridge) typeText(text string) error {
 	return b.exclusive(func() error {
 		kb := keyboards[b.machineIs()]
 		if kb == nil {
-			return mErr(501, "mimic types text on the CPC and the Atari only")
+			return mErr(501, "mimic types text on the CPC, the Atari and the ZX81 only")
 		}
 		return b.call("input", map[string]any{"events": kb.typed(text)}, nil, 0)
 	})
@@ -1213,6 +1282,24 @@ var atariKeys = map[rune]cpcKey{
 	atariInverse: {0x27, false},
 }
 
+// zx81Keys: the ZX81's keys - row*5+column of its matrix (mimic: crates/machine-zx81/src/keyboard.rs);
+// a letter is the keyword of its key in K mode (J: LOAD, R: RUN), SHIFT gives the symbols
+var zx81Keys = func() map[rune]cpcKey {
+	keys := map[rune]cpcKey{' ': {35, false}, '\r': {30, false}, '\n': {30, false}}
+	for row, cols := range []string{" ZXCV", "ASDFG", "QWERT", "12345", "09876", "POIUY", " LKJH", " .MNB"} {
+		for col, c := range cols {
+			if c != ' ' {
+				keys[c] = cpcKey{row*5 + col, false}
+			}
+		}
+	}
+	for sym, c := range map[rune]rune{'"': 'P', ',': '.', '-': 'J', '+': 'K', '*': 'B', '/': 'V', '=': 'L', '(': 'I', ')': 'O',
+		'<': 'N', '>': 'M', ';': 'X', ':': 'Z', '?': 'C', '$': 'U'} {
+		keys[sym] = cpcKey{keys[c].key, true}
+	}
+	return keys
+}()
+
 // atariInverse: the inverse video key (the Atari logo key) in a text to type
 const atariInverse = '\x01'
 
@@ -1263,7 +1350,10 @@ var (
 	// the Atari (1.79 MHz): two passes of POKEY's scan held, a gap longer than the OS's repeat delay; Atari
 	// BASIC needs a moment for a line
 	atariKeyboard = &keyboard{keys: atariKeys, shift: 64, ret: 0x0c, hold: 30_000, gap: 90_000, afterReturn: 250_000}
-	keyboards     = map[string]*keyboard{"cpc": cpcKeyboard, "atari800xl": atariKeyboard}
+	// the ZX81 (3.25 MHz): the ROM takes a key held for a few fields and waits for the keyboard to be idle
+	// (mimic's typed_events: five fields down, twelve up), SHIFT a field before
+	zx81Keyboard = &keyboard{keys: zx81Keys, shift: 0, ret: 30, hold: 325_000, gap: 780_000, lead: 65_000}
+	keyboards    = map[string]*keyboard{"cpc": cpcKeyboard, "atari8": atariKeyboard, "zx81": zx81Keyboard}
 )
 
 // typed: the input events that type text (characters without a key are left out; CR LF is one RETURN)

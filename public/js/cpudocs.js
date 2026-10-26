@@ -85,6 +85,7 @@ const tableOf = cpu => CPU_TABLES[CPU_ALIASES[String(cpu).toLowerCase()] ?? cpu]
 export function mnemonicDoc(cpu, name, desc) {
   name = name.toLowerCase();
   if (String(cpu).toLowerCase() === 'z80') return z80Doc(name, desc);
+  if (CPU_ALIASES[String(cpu).toLowerCase()] === 'm68k') return m68kDoc(name, desc);
   const modes = tableOf(cpu)?.[name];
   if (!modes) return null;
   const c816 = /65816/.test(cpu);
@@ -136,6 +137,17 @@ const Z80_NOTES = {
   ldd: 'P/V: set while bc is not 0',
   cpi: 'P/V: set while bc is not 0; Z: set when a = (hl)',
 };
+
+// the 68000: the forms of an instruction (docs.js), the sizes
+function m68kDoc(name, desc) {
+  const m = MNEMONICS['68000']?.find(x => x.name === name);
+  if (!m) return null;
+  return {
+    title: name, desc: desc ?? m.desc,
+    modes: (m.modes ?? []).map(op => ({ syntax: op === 'implied' ? name : `${name} ${op}` })),
+    notes: ['.b .w .l the size (without one .w), .s a short branch · ea: dn an (an) (an)+ -(an) d(an) d(an,xn) abs.w abs.l d(pc) d(pc,xn) #n'],
+  };
+}
 
 function z80Doc(name, desc) {
   const m = MNEMONICS.z80?.find(x => x.name === name);
@@ -322,7 +334,8 @@ for (let n = 0; n < 8; n++) {
   OPERATION[`bbs${n}`] = `branch if bit ${n} of M = 1`;
 }
 // what an instruction does; the NMOS 6502's asr is the undocumented ALR
-export const operationOf = (cpu, name) => (name === 'asr' && /^(6510|nmos6502)$/i.test(String(cpu)) ? OPERATION.alr : OPERATION[name] ?? null);
+export const operationOf = (cpu, name) => (CPU_ALIASES[String(cpu).toLowerCase()] === 'm68k' ? null
+  : name === 'asr' && /^(6510|nmos6502)$/i.test(String(cpu)) ? OPERATION.alr : OPERATION[name] ?? null);
 
 // a value with what it is on the machine: the register or the area it addresses (its bits), as hex, decimal
 // and binary. name: the symbol it is the value of; immediate: #n, a value and no address; decimal: BASIC

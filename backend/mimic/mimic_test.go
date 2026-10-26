@@ -31,12 +31,15 @@ import (
 type fakeMimic struct {
 	ln, preview net.Listener
 	mu          sync.Mutex
-	mem         [0x10000]byte
+	machine     string
+	mem         []byte
+	cmds        []string // the commands, in their order
 	reg         map[string]int
 	running     bool
 	bps         map[uint32]map[string]any
 	nextBP      uint32
 	inserted    string
+	typed       []any // the input events, in their order
 	conns       []net.Conn
 	writeMu     sync.Mutex
 	done        chan struct{}
@@ -98,9 +101,13 @@ func fakeSpawn(started chan<- *fakeMimic) spawnFunc {
 			ln.Close()
 			return nil, err
 		}
-		f := &fakeMimic{ln: ln, preview: pv, reg: map[string]int{"PC": 0xe5cd, "A": 0, "X": 0, "Y": 0, "S": 0xf6, "P": 0x24},
-			running: true, bps: map[uint32]map[string]any{}, done: make(chan struct{})}
 		machine := argOf(args, "--machine")
+		mem := make([]byte, 0x10000)
+		if machine == "amiga" {
+			mem = make([]byte, 0x1000000)
+		}
+		f := &fakeMimic{ln: ln, preview: pv, machine: machine, mem: mem, reg: map[string]int{"PC": 0xe5cd, "A": 0, "X": 0, "Y": 0, "S": 0xf6, "P": 0x24},
+			running: true, bps: map[uint32]map[string]any{}, done: make(chan struct{})}
 		fmt.Fprintf(out, "debug server for '%s' listening on %s\n", machine, argOf(args, "--debug"))
 		go http.Serve(pv, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/stream" {
@@ -171,12 +178,19 @@ func (f *fakeMimic) handle(req map[string]any) (any, []any, string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n := func(k string) int { v, _ := req[k].(float64); return int(v) }
+	f.cmds = append(f.cmds, fmt.Sprint(req["cmd"]))
 	switch req["cmd"] {
 	case "info":
 		return map[string]any{"machine": "c64", "running": f.running, "devices": []string{"cpu", "drive8"},
 			"memory_spaces": []any{map[string]any{"id": 0, "name": "cpu", "device": "cpu"}, map[string]any{"id": 1, "name": "ram", "device": "cpu"},
 				map[string]any{"id": 3, "name": "drive8", "device": "drive8"}}}, nil, ""
 	case "list_media_slots":
+		if f.machine == "amiga" {
+			return []any{map[string]any{"id": 0, "kind": "Disk", "name": "DF0:"}, map[string]any{"id": 1, "kind": "Disk", "name": "DF1:"}}, nil, ""
+		}
+		if f.machine == "zx81" {
+			return []any{map[string]any{"id": 0, "kind": "Tape", "name": "tape"}}, nil, ""
+		}
 		return []any{map[string]any{"id": 0, "kind": "Disk"}, map[string]any{"id": 1, "kind": "Program"}}, nil, ""
 	case "regs":
 		var list []any
@@ -231,7 +245,7 @@ func (f *fakeMimic) handle(req map[string]any) (any, []any, string) {
 		f.reg["PC"] = 0xfce2
 		return f.state(), nil, ""
 	case "insert_media":
-		if n("slot") != 1 {
+		if first := f.machine == "amiga" || f.machine == "zx81"; first && n("slot") != 0 || !first && n("slot") != 1 {
 			return nil, nil, "no program slot"
 		}
 		f.inserted, _ = req["path"].(string)
@@ -254,10 +268,92 @@ func (f *fakeMimic) handle(req map[string]any) (any, []any, string) {
 		f.bps[uint32(n("bp"))]["enabled"] = req["enabled"]
 		return map[string]any{}, nil, ""
 	case "input":
+		list, _ := req["events"].([]any)
+		f.typed = append(f.typed, list...)
 		return map[string]any{}, nil, ""
 	}
 	return nil, nil, fmt.Sprintf("unknown command %v", req["cmd"])
 }
+
+// TestFlowFakeAmiga: an ADF into DF0:, then a hard reset; the 24-bit addresses and the 32-bit registers
+func TestFlowFakeAmiga(t *testing.T) {
+	_, srv, f, _ := newFakeMachine(t, "amiga")
+	do(t, srv, "POST", "/api/mimic/load", `{"name":"x.adf","format":"adf","data":"AAAA"}`, 400) // not 880 KB
+	do(t, srv, "POST", "/api/mimic/load", `{"name":"x.prg","prg":"AQgA"}`, 400)
+	f.mu.Lock()
+	f.cmds = nil
+	f.mu.Unlock()
+	adf := base64.StdEncoding.EncodeToString(make([]byte, adfSize))
+	do(t, srv, "POST", "/api/mimic/load", `{"name":"demo.adf","format":"adf","data":"`+adf+`"}`, 200)
+	f.mu.Lock()
+	cmds, inserted := strings.Join(f.cmds, " "), f.inserted
+	f.mu.Unlock()
+	if cmds != "insert_media reset resume" || !strings.HasSuffix(inserted, "demo.adf") {
+		t.Fatalf("commands %q, inserted %q", cmds, inserted)
+	}
+	if fi, err := os.Stat(inserted); err != nil || fi.Size() != adfSize {
+		t.Fatalf("the ADF: %v %v", fi, err)
+	}
+
+	do(t, srv, "POST", "/api/mimic/memory", `{"start":"$c00000","data":"KgE="}`, 200)
+	if v := do(t, srv, "GET", "/api/mimic/memory?start=$c00000&end=$c00001", ``, 200); v["data"] != "KgE=" {
+		t.Fatalf("memory: %v", v)
+	}
+	do(t, srv, "GET", "/api/mimic/memory?start=$1000000", ``, 400)
+	do(t, srv, "GET", "/api/mimic/memory?start=0&end=$10000", ``, 400) // more than 64 KB
+	do(t, srv, "POST", "/api/mimic/memory", `{"start":"$ffffff","data":"KgE="}`, 400)
+	cp := do(t, srv, "POST", "/api/mimic/checkpoints", `{"start":"$fc0010","exec":true}`, 200)
+	if cp["start"] != float64(0xfc0010) {
+		t.Fatalf("checkpoint: %v", cp)
+	}
+	f.mu.Lock()
+	f.reg["D0"] = 0
+	f.mu.Unlock()
+	do(t, srv, "POST", "/api/mimic/registers", `{"d0":"$deadbeef"}`, 200)
+	f.mu.Lock()
+	d0 := f.reg["D0"]
+	f.mu.Unlock()
+	if d0 != 0xdeadbeef {
+		t.Fatalf("D0 %x", d0)
+	}
+}
+
+// TestFlowFakeZX81: a .P file into the tape slot once the ZX81 is up, then LOAD "" typed (J, SHIFT+P twice,
+// NEW LINE); the Atari's old id
+func TestFlowFakeZX81(t *testing.T) {
+	_, srv, f, _ := newFakeMachine(t, "zx81")
+	do(t, srv, "POST", "/api/mimic/load", `{"name":"x.p","format":"zx81-p","data":"AAAA"}`, 400) // too short
+	do(t, srv, "POST", "/api/mimic/load", `{"name":"x.xex","format":"xex","data":"AAAA"}`, 400)
+	f.mu.Lock()
+	f.cmds, f.typed = nil, nil
+	f.mu.Unlock()
+	do(t, srv, "POST", "/api/mimic/load", `{"name":"demo.p","format":"zx81-p","data":"`+zx81P+`"}`, 200)
+	f.mu.Lock()
+	cmds, inserted, typed := strings.Join(f.cmds, " "), f.inserted, f.typed
+	f.mu.Unlock()
+	if !strings.HasPrefix(cmds, "reset input resume") || !strings.HasSuffix(cmds, "insert_media input") || !strings.HasSuffix(inserted, "demo.p") {
+		t.Fatalf("commands %q, inserted %q", cmds, inserted)
+	}
+	var down []int
+	for _, e := range typed {
+		ev := e.(map[string]any)["event"].(map[string]any)
+		if ev["down"] == true {
+			down = append(down, int(ev["key"].(float64)))
+		}
+	}
+	// the keys of the last input: J (row 6, column 3), SHIFT (0) and P (25) twice, NEW LINE (30)
+	if got := fmt.Sprint(down[len(down)-6:]); got != "[33 0 25 0 25 30]" {
+		t.Fatalf("typed %v", down)
+	}
+
+	_, srv2, _, _ := newFakeMachine(t, "atari8")
+	if s := do(t, srv2, "POST", "/api/mimic/start", `{"machine":"atari800xl"}`, 200); s["machine"] != "atari8" {
+		t.Fatalf("the alias: %v", s)
+	}
+}
+
+// zx81P: a .P file as zx81.js codeP makes it: 1 REM with LD A,42 : LD ($7000),A : RET at $4082, 2 RAND USR 16514
+const zx81P = "AAAAm0CcQLRAAAC1QLRAAAC6QLpAAF1AAAIAAP///zeJQAAAAAAAjQwAAP//AAC8IRhAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB2AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQgA6j4qMgBwyXYAAg4A+dQdIiEdIH6PAQQAAHZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2gA=="
 
 // events: what the listener got, by name
 type events struct {
@@ -298,6 +394,11 @@ func (e *events) count() int {
 
 func newFake(t *testing.T) (*API, *httptest.Server, *fakeMimic, *events) {
 	t.Helper()
+	return newFakeMachine(t, "c64")
+}
+
+func newFakeMachine(t *testing.T, machine string) (*API, *httptest.Server, *fakeMimic, *events) {
+	t.Helper()
 	exe := filepath.Join(t.TempDir(), "mimic.exe")
 	os.WriteFile(exe, nil, 0o755)
 	st := core.NewSettings(filepath.Join(t.TempDir(), "settings.json"))
@@ -313,12 +414,12 @@ func newFake(t *testing.T) (*API, *httptest.Server, *fakeMimic, *events) {
 	a.b.listener = func(name string, data any) { ev.add(name, data); inner(name, data) }
 	srv := httptest.NewServer(a)
 	t.Cleanup(func() { srv.Close(); a.Close() })
-	return a, srv, <-startAsync(t, srv, started), ev
+	return a, srv, <-startAsync(t, srv, started, machine), ev
 }
 
-func startAsync(t *testing.T, srv *httptest.Server, started chan *fakeMimic) chan *fakeMimic {
-	res := do(t, srv, "POST", "/api/mimic/start", `{"machine":"c64"}`, 200)
-	if res["running"] != true || res["machine"] != "c64" || res["version"] != "mimic-debug 7" {
+func startAsync(t *testing.T, srv *httptest.Server, started chan *fakeMimic, machine string) chan *fakeMimic {
+	res := do(t, srv, "POST", "/api/mimic/start", fmt.Sprintf(`{"machine":%q}`, machine), 200)
+	if res["running"] != true || res["machine"] != machine || res["version"] != "mimic-debug 7" {
 		t.Fatalf("start: %v", res)
 	}
 	return started
@@ -361,7 +462,7 @@ func TestStatusWithoutMimic(t *testing.T) {
 	srv := httptest.NewServer(a)
 	defer srv.Close()
 	do(t, srv, "POST", "/api/mimic/pause", ``, 409)
-	do(t, srv, "POST", "/api/mimic/start", `{"machine":"amiga"}`, 400)
+	do(t, srv, "POST", "/api/mimic/start", `{"machine":"amiga1200"}`, 400)
 }
 
 func TestFlowFake(t *testing.T) {
@@ -620,8 +721,19 @@ func waitStop(t *testing.T, a *API, ev *events, from int) stopInfo {
 	return ev.wait(t, "stopped", from).(stopInfo)
 }
 
+// TestFlowMimicAtari: the 800 XL (by the old id), the 130 XE and the 800 (OS-B, the BASIC cartridge)
 func TestFlowMimicAtari(t *testing.T) {
-	a, srv, ev := startReal(t, "atari800xl", "")
+	for _, model := range []string{"", "130xe", "800"} {
+		t.Run("model "+model, func(t *testing.T) { flowMimicAtari(t, model) })
+	}
+}
+
+func flowMimicAtari(t *testing.T, model string) {
+	machine := "atari8"
+	if model == "" {
+		machine = "atari800xl"
+	}
+	a, srv, ev := startReal(t, machine, model)
 	// INC COLBK : JMP $2000 at $2000, RUNAD $2000
 	xex := []byte{0xff, 0xff, 0x00, 0x20, 0x05, 0x20, 0xee, 0x1a, 0xd0, 0x4c, 0x00, 0x20, 0xe0, 0x02, 0xe1, 0x02, 0x00, 0x20}
 	do(t, srv, "POST", "/api/mimic/checkpoints", `{"start":"$2000","exec":true}`, 200)
@@ -646,7 +758,7 @@ func TestFlowMimicAtari(t *testing.T) {
 			return
 		}
 	}
-	shot(t, a, "atari.png")
+	shot(t, a, "atari"+model+".png")
 	t.Fatal("the BASIC listing did not run")
 }
 
@@ -764,6 +876,110 @@ func TestFlowMimicCPC(t *testing.T) {
 	}
 	shot(t, a, "cpc.png")
 	t.Fatal("the BASIC program did not run")
+}
+
+// bootADF: an ADF whose bootblock runs code ("DOS" and a zero byte, the checksum, the root block 880, the code at 12)
+func bootADF(code []byte) []byte {
+	adf := make([]byte, adfSize)
+	copy(adf, []byte{'D', 'O', 'S', 0})
+	binary.BigEndian.PutUint32(adf[8:], 880)
+	copy(adf[12:], code)
+	var sum uint32
+	for i := 0; i < 1024; i += 4 {
+		x := binary.BigEndian.Uint32(adf[i:])
+		if sum+x < sum {
+			sum++
+		}
+		sum += x
+	}
+	binary.BigEndian.PutUint32(adf[4:], ^sum)
+	return adf
+}
+
+// TestFlowMimicAmiga: a bootblock (COLOR00 red, then ADDQ.L #1,$70000 in a loop) from DF0: - the counter
+// counts once Kickstart has booted it; a store checkpoint at a 24-bit address stops it in the loop; the 68000's
+// registers
+func TestFlowMimicAmiga(t *testing.T) {
+	if exe := os.Getenv("MIMIC"); os.Getenv("MIMIC_TEST") == "1" {
+		if exe == "" {
+			exe = filepath.Join(core.AppsDir(), "mimic", exeName("mimic-headless"))
+		}
+		if data, err := os.ReadFile(exe); err == nil && !bytes.Contains(data, []byte("Commodore Amiga 500")) {
+			t.Skip(exe + " predates the Amiga")
+		}
+	}
+	a, srv, ev := startReal(t, "amiga", "500")
+	code := []byte{
+		0x33, 0xfc, 0x0f, 0x00, 0x00, 0xdf, 0xf1, 0x80, // move.w #$0f00,$dff180
+		0x41, 0xf9, 0x00, 0x07, 0x00, 0x00, // lea $70000,a0
+		0x52, 0x90, // loop: addq.l #1,(a0)
+		0x60, 0xfc, // bra.s loop
+	}
+	t0 := time.Now()
+	do(t, srv, "POST", "/api/mimic/load", `{"name":"boot.adf","format":"adf","data":"`+base64.StdEncoding.EncodeToString(bootADF(code))+`"}`, 200)
+	// Kickstart writes $70000 as well while it clears the memory: the stop that counts is the one in the RAM
+	var stop stopInfo
+	for {
+		from := ev.count()
+		cp := do(t, srv, "POST", "/api/mimic/checkpoints", `{"start":"$70000","end":"$70003","exec":false,"store":true}`, 200)
+		stop = waitStop(t, a, ev, from)
+		do(t, srv, "DELETE", fmt.Sprintf("/api/mimic/checkpoints/%v", cp["id"]), ``, 200)
+		if *stop.PC < 0xf80000 {
+			break
+		}
+		if time.Since(t0) > 30*time.Second {
+			shot(t, a, "amiga.png")
+			t.Fatalf("the bootblock did not run (still at $%x)", *stop.PC)
+		}
+		do(t, srv, "POST", "/api/mimic/continue", ``, 200)
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Logf("the bootblock ran after %v", time.Since(t0))
+	r := do(t, srv, "GET", "/api/mimic/registers", ``, 200)
+	for _, n := range []string{"d0", "d7", "a0", "a7", "pc", "sr", "usp", "ssp"} {
+		if r[n] == nil {
+			t.Fatalf("no %s in %v", n, r)
+		}
+	}
+	pc := int(r["pc"].(float64))
+	m, _ := base64.StdEncoding.DecodeString(do(t, srv, "GET", fmt.Sprintf("/api/mimic/memory?start=%d&end=%d", pc-2, pc+1), ``, 200)["data"].(string))
+	if r["a0"] != float64(0x70000) || !bytes.Contains(m, []byte{0x52, 0x90}) && !bytes.Contains(m, []byte{0x60, 0xfc}) {
+		t.Fatalf("stopped at $%x (%x around it): %v", *stop.PC, m, r)
+	}
+	t.Logf("stopped at $%x, registers %v", pc, r)
+	shot(t, a, "amiga.png")
+}
+
+// TestFlowMimicZX81: a .P file (machine code in the REM line, started by RAND USR) loaded with LOAD "" -
+// the program runs by itself (NXTLIN) and pokes 42 to $7000; the Z80's registers (MIMIC to a mimic with the
+// ZX81, its ROM in roms/zx81 or EMU_ROM_DIR)
+func TestFlowMimicZX81(t *testing.T) {
+	for _, model := range []string{"zx81", "ts1000"} {
+		t.Run(model, func(t *testing.T) {
+			a, srv, _ := startReal(t, "zx81", model)
+			t0 := time.Now()
+			do(t, srv, "POST", "/api/mimic/load", `{"name":"poke.p","format":"zx81-p","data":"`+zx81P+`"}`, 200)
+			loaded := time.Since(t0)
+			want := base64.StdEncoding.EncodeToString([]byte{42})
+			for time.Since(t0) < 30*time.Second {
+				if do(t, srv, "GET", "/api/mimic/memory?start=$7000&end=$7000", ``, 200)["data"] == want {
+					t.Logf("booted and loaded in %v, ran after %v", loaded, time.Since(t0))
+					do(t, srv, "POST", "/api/mimic/pause", ``, 200)
+					r := do(t, srv, "GET", "/api/mimic/registers", ``, 200)
+					for _, n := range []string{"pc", "sp", "a", "h", "l", "ix", "iy"} {
+						if r[n] == nil {
+							t.Fatalf("no %s in %v", n, r)
+						}
+					}
+					shot(t, a, "zx81-"+model+".png")
+					return
+				}
+				time.Sleep(250 * time.Millisecond)
+			}
+			shot(t, a, "zx81-"+model+".png")
+			t.Fatal("the .P file did not run")
+		})
+	}
 }
 
 // shot: the screen into MIMIC_SHOT (a folder), when it is set

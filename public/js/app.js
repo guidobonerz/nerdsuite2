@@ -414,7 +414,7 @@ async function runMain({ debug = false, onUltimate = false } = {}) {
   if (p.emulator.kind !== 'vice') {
     // the names of the formats of the launcher (backend/emu)
     const format = { amsdos: 'amsdos-bin', zx81: 'zx81-p', trs80: 'trs80-cmd', plain: { vcs: 'a26', nes: 'nes', snes: 'sfc', bbc: 'bbc-bin' }[p.emulator.platform] ?? 'plain' }[r.file.format] ?? r.file.format;
-    // the Atari XL, the 2600 and the CPC: run and debug in mimic (the Settings choose)
+    // the Atari 8-bit, the 2600, the CPC, the ZX81 and the Amiga: run and debug in mimic (the Settings choose)
     if (p.mimic && emu === 'auto' && MIMIC_FORMATS.includes(format) && await vice.chooseDebugger(p, { debug }) === 'mimic') return runInDebugger(r, p, { debug, format, download });
     if (debug) snackbar(!p.mimic ? `The debugger works with VICE and mimic: ${p.name} programs only run`
       : !MIMIC_FORMATS.includes(format) ? `mimic does not load ${r.file.name}: it only runs, in its emulator` : `The debugger works with mimic: set its path in the Settings - ${p.name} programs only run`, { timeout: 6000 });
@@ -431,7 +431,7 @@ async function runMain({ debug = false, onUltimate = false } = {}) {
 }
 
 // the files mimic loads besides a .prg (backend/mimic: load)
-const MIMIC_FORMATS = ['xex', 'atascii-lst', 'amsdos-bin', 'cpc-ascii', 'a26'];
+const MIMIC_FORMATS = ['xex', 'atascii-lst', 'amsdos-bin', 'cpc-ascii', 'a26', 'adf', 'zx81-p'];
 
 // a build in VICE or mimic (vice.js), with the debugger: a .prg, or a file of a format of mimic
 async function runInDebugger(r, p, { debug, format = null, download }) {
@@ -839,7 +839,7 @@ function showStart() {
   startView = mount(el, () => [h('img', { class: 'start-screen__logo', src: 'images/nerdsuite.png', alt: 'nerdsuite' }),
 
     h('div', { class: 'md-body-medium start-screen__text' },
-      'An IDE for 8 bit machines - Commodore, Atari, Amstrad / Schneider CPC: assembler (ACME, 6502 and Z80) and BASIC with autocompletion, the screen, sprite, char, tile and bitmap editors, the composer, a hex view, and a debugger in mimic or VICE.'),
+      'An IDE for 8 bit machines and the Amiga - Commodore, Atari, Amstrad / Schneider CPC: assembler (ACME, 6502, Z80 and 68000) and BASIC with autocompletion, the screen, sprite, char, tile and bitmap editors, the composer, a hex view, and a debugger in mimic or VICE.'),
     h('div', { class: 'start-screen__actions' },
       button('New project', { icon: 'add', variant: 'filled', onclick: newProject }),
       button('Open folder…', { icon: 'folder_open', variant: 'tonal', onclick: openProjectFolder }),

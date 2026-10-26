@@ -5,7 +5,7 @@
 // projectWizard() -> Promise<{ name, platform, files: Map path -> bytes, main } | null>
 
 import { h, signal, dialog, field, select, checkbox, icon } from './pui.js';
-import { FAMILIES, PLATFORMS, platformOf, canDebug, cpuName, starterAsm, starterBasic, starterKick } from './platforms.js';
+import { FAMILIES, PLATFORMS, platformOf, platformKin, canDebug, cpuName, starterAsm, starterBasic, starterKick } from './platforms.js';
 import { includeSource, hasMemoryMap } from './memmap.js';
 import { DIALECTS } from './basic/dialects.js';
 import { CHARGEN } from './chargen.js';
@@ -34,7 +34,7 @@ const HERO = [
 // only for an editor the machine has (video.js: no sprite on a VIC-20, no charset on a PET)
 const ASSET_EDITOR = { charset: 'chars', screen: 'screen', sprite: 'sprites', bitmap: 'bitmap' };
 // the Atari 800 XL: a screen, a font and a picture (its players come with their part of stage 3)
-const assetMade = (p, asset) => (!!p.commodore || (p.id === 'atari8' && ['charset', 'screen', 'bitmap'].includes(asset)))
+const assetMade = (p, asset) => (!!p.commodore || (platformKin(p.id) === 'atari8' && ['charset', 'screen', 'bitmap'].includes(asset)))
   && (!ASSET_EDITOR[asset] || !!videoOf(p.id).editors[ASSET_EDITOR[asset]]);
 
 // the graphics model and the files of the assets chosen (Commodore machines: the editors make VIC-II data)
@@ -136,7 +136,7 @@ export function projectWizard() {
           h('span', { class: 'ns-wiz-platform__text' },
             h('span', { class: 'ns-wiz-platform__name' }, x.name),
             h('span', { class: 'ns-wiz-platform__desc', 'data-i18n': 'off' },
-              `${cpuName(x.cpu)} · ${x.basic.length ? x.basic.map(d => DIALECTS[d]?.name ?? d).join(', ') : 'no BASIC'} · .${x.ext} · ${x.emulator.kind === 'vice' ? 'run and debug in mimic or VICE' : canDebug(x) ? `run and debug in mimic, run in ${{ atari: 'Altirra', vcs: 'Stella', cpc: 'WinAPE' }[x.emulator.platform]}` : `run in ${{ atari: 'Altirra', vcs: 'Stella', cpc: 'WinAPE', nes: 'Mesen or FCEUX', snes: 'Mesen, bsnes or Snes9x', zx81: 'EightyOne or ZEsarUX', trs80: 'trs80gp or MAME', bbc: 'BeebEm, b2 or MAME', mega65: 'Xemu' }[x.emulator.platform] ?? 'its emulator'}`}`))))),
+              `${cpuName(x.cpu)} · ${x.basic.length ? x.basic.map(d => DIALECTS[d]?.name ?? d).join(', ') : 'no BASIC'} · .${x.ext} · ${x.emulator.kind === 'vice' ? 'run and debug in mimic or VICE' : canDebug(x) ? `run and debug in mimic, run in ${{ atari: 'Altirra', vcs: 'Stella', cpc: 'WinAPE', amiga: 'WinUAE or FS-UAE', zx81: 'EightyOne or ZEsarUX' }[x.emulator.platform]}` : `run in ${{ atari: 'Altirra', vcs: 'Stella', cpc: 'WinAPE', nes: 'Mesen or FCEUX', snes: 'Mesen, bsnes or Snes9x', zx81: 'EightyOne or ZEsarUX', trs80: 'trs80gp or MAME', bbc: 'BeebEm, b2 or MAME', mega65: 'Xemu' }[x.emulator.platform] ?? 'its emulator'}`}`))))),
       ];
     },
     project: () => {
@@ -167,7 +167,7 @@ export function projectWizard() {
         x.commodore ? h('div', { class: 'section__hint' }, 'The graphics editors make the data of the VIC-II and the SID. What is ticked is made now; the editors make more at any time. A source includes it with !binary.')
           : h('div', { class: 'banner banner--info' }, icon('info'), h('span', {}, `The graphics editors and the composer make Commodore data (VIC-II, SID). For the ${x.name} they are drawing tools: the hex view and the exports give the bytes.`)),
         h('div', { class: 'ns-wiz-assets' },
-          checkbox(`A charset: a copy of the ROM font (gfx/charset/font.${x.id === 'atari8' ? 'fnt' : 'chr'})`, !!a.charset && assetMade(x, 'charset'), on => toggle('charset', on), { disabled: !assetMade(x, 'charset') }),
+          checkbox(`A charset: a copy of the ROM font (gfx/charset/font.${platformKin(x.id) === 'atari8' ? 'fnt' : 'chr'})`, !!a.charset && assetMade(x, 'charset'), on => toggle('charset', on), { disabled: !assetMade(x, 'charset') }),
           checkbox(`A title screen of ${videoOf(x.id).screen?.cols ?? 40} × ${videoOf(x.id).screen?.rows ?? 25} chars (gfx/screen/title.scr)`, !!a.screen && assetMade(x, 'screen'), on => toggle('screen', on), { disabled: !assetMade(x, 'screen') }),
           checkbox('A sprite of 24 × 21 pixels (the Sprites editor)', !!a.sprite && assetMade(x, 'sprite'), on => toggle('sprite', on), { disabled: !assetMade(x, 'sprite') }),
           checkbox('A song for the composer (audio/music/song.sng)', !!a.song && assetMade(x, 'song'), on => toggle('song', on), { disabled: !assetMade(x, 'song') }),

@@ -283,11 +283,3 @@ func (a *settingsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		core.WriteJSON(w, 404, map[string]any{"error": "not found"})
 	}
 }
-
-// the label of an emulator in the list: its id with a capital
-func capital(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
-}

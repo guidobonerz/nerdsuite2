@@ -14,12 +14,15 @@
 import { h, mount, signal, icon, iconButton, button, select, field, promptDialog, snackbar, sidePanel, section, checkbox } from './pui.js';
 import * as vice from './vice.js';
 import { hasFile, readText } from './project.js';
-import { disassemble, parseAddress, hex2, hex4, MACHINES, machineOf, readSettings, writeSettings, isCodeLine } from './nsbuild.js';
+import { disassemble, parseAddress, hex2, hex4 as hex16, MACHINES, machineOf, readSettings, writeSettings, isCodeLine } from './nsbuild.js';
 import { canDebug } from './platforms.js';
 
 // the registers shown first, the 16 bit ones, the flags and their register: the 6502 (VICE's names, mimic's
-// are made so), the Z80 of the CPC (mimic)
+// are made so), the Z80 of the CPC (mimic), the 68000 of the Amiga (mimic: 32 bit, the PC 24 bit)
+const M68K_REGS = ['d0', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'a0', 'a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7'];
 const CPUS = {
+  68000: { regs: ['pc', ...M68K_REGS], wide: [], flagReg: 'sr',
+    flags: [['T', 0x8000], ['S', 0x2000], ['I2', 0x400], ['I1', 0x200], ['I0', 0x100], ['X', 0x10], ['N', 0x08], ['Z', 0x04], ['V', 0x02], ['C', 0x01]] },
   6502: { regs: ['pc', 'a', 'x', 'y', 'sp'], wide: ['pc'], flagReg: 'fl',
     flags: [['N', 0x80], ['V', 0x40], ['-', 0x20], ['B', 0x10], ['D', 0x08], ['I', 0x04], ['Z', 0x02], ['C', 0x01]] },
   z80: { regs: ['pc', 'sp', 'a', 'b', 'c', 'd', 'e', 'h', 'l', 'ix', 'iy'], wide: ['pc', 'sp', 'ix', 'iy', "af'", "bc'", "de'", "hl'", 'wz'], flagReg: 'f',
@@ -57,7 +60,12 @@ export function createDebugView(el, bar, hooks = {}) {
   const machine = () => readSettings().machine;
   // the CPU of the settings when the machine has it (a project switched to the CPC keeps its 6510), else the machine's
   const cpu = () => { const m = machineOf(machine()), c = readSettings().cpu; return (c && m.cpus?.includes(c) ? c : m.cpu) || '6502'; };
-  const regSet = () => CPUS[cpu() === 'z80' ? 'z80' : 6502];
+  const regSet = () => CPUS[cpu() === 'z80' ? 'z80' : m68k() ? 68000 : 6502];
+  // the 68000: 24 bit addresses (6 digits), big endian words
+  const m68k = () => cpu() === '68000';
+  const top = () => (m68k() ? 0xffffff : 0xffff);
+  const hex4 = n => hex16(n).padStart(m68k() ? 6 : 4, '0');
+  const address = text => parseAddress(text, info(), top());
   const info = () => vice.debug();
   const running = () => vice.status.value.running;
   const isStopped = () => !!vice.stopped.value;
@@ -74,10 +82,10 @@ export function createDebugView(el, bar, hooks = {}) {
     await act(async () => {
       if (isStopped()) {
         st.registers = vice.stopped.value.registers ?? await vice.vice.get('registers');
-        // the stack: page 1 above S of the 6502, the 16 bytes from SP of the Z80
-        const sp = st.registers.sp ?? 0xff, z80 = cpu() === 'z80';
-        const from = z80 ? sp : 0x100 + ((sp + 1) & 0xff);
-        const stack = await vice.readMemory(from, z80 ? Math.min(0xffff, sp + 15) : 0x1ff);
+        // the stack: page 1 above S of the 6502, the 16 bytes from SP of the Z80 and from A7 of the 68000
+        const sp = st.registers.sp ?? st.registers.a7 ?? 0xff, flat = cpu() === 'z80' || m68k();
+        const from = flat ? sp & top() : 0x100 + ((sp + 1) & 0xff);
+        const stack = await vice.readMemory(from, flat ? Math.min(top(), from + 15) : 0x1ff);
         st.stack = { from, bytes: stack.slice(0, 16) };
         await disassembly();
         await readWatches();
@@ -99,7 +107,7 @@ export function createDebugView(el, bar, hooks = {}) {
   }
 
   async function readMemoryView() {
-    const start = st.memStart & 0xfff0, end = Math.min(0xffff, start + MEM_ROWS * 16 - 1);
+    const start = st.memStart & top() & ~15, end = Math.min(top(), start + MEM_ROWS * 16 - 1);
     st.mem = { start, bytes: await vice.readMemory(start, end, st.memBank) };
   }
 
@@ -114,7 +122,7 @@ export function createDebugView(el, bar, hooks = {}) {
       start = before.length ? before[Math.max(0, before.length - 6)] : pc;
       st.disStart = start;
     } else start = st.disStart;
-    const bytes = await vice.readMemory(start, Math.min(0xffff, start + DIS_LINES * 3 + 2));
+    const bytes = await vice.readMemory(start, Math.min(top(), start + DIS_LINES * (m68k() ? 10 : 3) + 2));
     st.dis = disassemble(bytes, start, cpu()).slice(0, DIS_LINES);
   }
 
@@ -129,11 +137,12 @@ export function createDebugView(el, bar, hooks = {}) {
   async function readWatches() {
     st.watchValues = new Map();
     for (const w of st.watches) {
-      const addr = parseAddress(w.expr, info());
+      const addr = address(w.expr);
       if (addr == null) { st.watchValues.set(w.expr, 'unknown'); continue; }
       const n = w.type === 'word' ? 2 : w.type === 'text' ? 16 : w.type === 'bytes' ? 8 : 1;
-      const b = await vice.readMemory(addr, Math.min(0xffff, addr + n - 1));
-      st.watchValues.set(w.expr, w.type === 'word' ? `$${hex4(b[0] | b[1] << 8)}  ${b[0] | b[1] << 8}`
+      const b = await vice.readMemory(addr, Math.min(top(), addr + n - 1));
+      const word = m68k() ? b[0] << 8 | b[1] : b[0] | b[1] << 8;
+      st.watchValues.set(w.expr, w.type === 'word' ? `$${hex16(word)}  ${word}`
         : w.type === 'text' ? `"${[...b].map(petsciiChar).join('')}"`
           : w.type === 'bytes' ? [...b].map(hex2).join(' ')
             : `$${hex2(b[0])}  ${b[0]}  %${b[0].toString(2).padStart(8, '0')}`);
@@ -260,7 +269,7 @@ export function createDebugView(el, bar, hooks = {}) {
 
   async function start() {
     const p = machineOf(machine());
-    if (!canDebug(p)) return snackbar(`${p.name} programs run in their emulator (Run, F5): the debugger works with VICE or mimic - the Commodore machines, the Atari XL, the 2600, the CPC`, { error: true, timeout: 8000 });
+    if (!canDebug(p)) return snackbar(`${p.name} programs run in their emulator (Run, F5): the debugger works with VICE or mimic - the Commodore machines, the Atari 8-bit, the 2600, the CPC, the ZX81, the Amiga`, { error: true, timeout: 8000 });
     await act(() => vice.ensureRunning(p), 'start the emulator');
     await refresh();
   }
@@ -274,7 +283,7 @@ export function createDebugView(el, bar, hooks = {}) {
   const reset = () => act(() => vice.vice.post('reset', { hard: false }), 'reset').then(refresh);
 
   async function setRegister(name, text) {
-    const v = parseAddress(text, info());
+    const v = parseAddress(text, info(), m68k() ? 0xffffffff : 0xffff);
     if (v == null) return snackbar(`'${text}' is no value`, { error: true });
     await act(async () => { st.registers = await vice.vice.post('registers', { [name]: v }); }, 'registers');
     if (name === 'pc') await disassembly();
@@ -291,14 +300,14 @@ export function createDebugView(el, bar, hooks = {}) {
         { name: 'kind', label: 'Stop when', value: preset.kind ?? 'exec', radios: [
           { value: 'exec', label: 'the CPU executes it (breakpoint)' }, { value: 'store', label: 'it is written (watchpoint)' },
           { value: 'load', label: 'it is read (watchpoint)' }, { value: 'access', label: 'it is read or written' }] },
-        { name: 'start', label: 'Address or label', value: preset.start ?? '', mono: true, row: 'a', validate: t => (parseAddress(t, info()) == null ? 'an address ($c000) or a label of the build' : null) },
-        { name: 'end', label: 'To (optional)', value: '', mono: true, row: 'a', validate: t => (t && parseAddress(t, info()) == null ? 'an address or a label' : null) },
+        { name: 'start', label: 'Address or label', value: preset.start ?? '', mono: true, row: 'a', validate: t => (address(t) == null ? 'an address ($c000) or a label of the build' : null) },
+        { name: 'end', label: 'To (optional)', value: '', mono: true, row: 'a', validate: t => (t && address(t) == null ? 'an address or a label' : null) },
         { name: 'condition', label: 'Condition (optional)', value: '', mono: true, placeholder: 'A == $10 && X > 3' },
         { name: 'temporary', label: 'Once', value: 'no', radios: [{ value: 'no', label: 'every time' }, { value: 'yes', label: 'once (temporary)' }] },
       ],
     });
     if (!v) return;
-    const s = parseAddress(v.start, info()), e = v.end ? parseAddress(v.end, info()) : s;
+    const s = address(v.start), e = v.end ? address(v.end) : s;
     await act(() => vice.vice.post('checkpoints', {
       start: s, end: Math.max(s, e), stop: true, enabled: true,
       exec: v.kind === 'exec', load: v.kind === 'load' || v.kind === 'access', store: v.kind === 'store' || v.kind === 'access',
@@ -318,7 +327,7 @@ export function createDebugView(el, bar, hooks = {}) {
   // --- memory -----------------------------------------------------------------------------------
 
   async function gotoMemory(text) {
-    const a = parseAddress(text, info());
+    const a = address(text);
     if (a == null) return snackbar(`'${text}' is no address or label`, { error: true });
     st.memStart = a; st.memText = text; persist();
     if (running()) await act(readMemoryView, 'memory');
@@ -368,16 +377,17 @@ export function createDebugView(el, bar, hooks = {}) {
     const r = st.registers;
     if (!r) return h('div', { class: 'section__hint' }, running() ? 'Pause the CPU to see its registers.' : `Start ${vice.debuggerName()} first.`);
     const { regs, wide, flags, flagReg } = regSet(), fl = r[flagReg] ?? 0;
-    const value = (n, v) => (wide.includes(n) || v > 0xff ? hex4(v ?? 0) : hex2(v ?? 0));
+    const value = (n, v) => (m68k() ? hex16(v ?? 0).padStart(n === 'pc' ? 6 : n === 'sr' ? 4 : 8, '0')
+      : wide.includes(n) || v > 0xff ? hex16(v ?? 0) : hex2(v ?? 0));
     return h('div', { class: 'ns-regs' },
-      h('div', { class: 'ns-regs__row' }, regs.map(n => h('label', { class: 'ns-reg' }, h('span', { class: 'ns-reg__name' }, n.toUpperCase()),
+      h('div', { class: `ns-regs__row ${m68k() ? 'ns-regs__row--long' : ''}` }, regs.map(n => h('label', { class: 'ns-reg' }, h('span', { class: 'ns-reg__name' }, n.toUpperCase()),
         h('input', { class: 'ns-reg__value', value: value(n, r[n]), spellcheck: false, 'data-i18n': 'off',
           onchange: e => setRegister(n, '$' + e.target.value) })))),
       h('div', { class: 'ns-flags' }, flags.map(([f, bit]) => h('button', { type: 'button', class: `ns-flag ${fl & bit ? 'ns-flag--on' : ''}`, title: `${f}: click to toggle`, onclick: () => toggleFlag(bit) }, f))),
       // other registers the emulator reports (the 6510 port, raster line, cycles, the Z80's second set ...)
       h('div', { class: 'ns-regs__more', 'data-i18n': 'off' }, Object.entries(r).filter(([k]) => !regs.includes(k) && k !== flagReg).map(([k, v]) => h('span', {}, `${k} ${typeof v === 'number' ? value(k, v) : v}`))),
       st.stack && h('div', { class: 'ns-stack', 'data-i18n': 'off' }, h('span', { class: 'ns-reg__name' }, 'Stack'),
-        [...st.stack.bytes].map((b, k) => h('span', { title: `$${hex4((st.stack.from + k) & 0xffff)}` }, hex2(b)))));
+        [...st.stack.bytes].map((b, k) => h('span', { title: `$${hex4((st.stack.from + k) & top())}` }, hex2(b)))));
   }
 
   function disView() {
@@ -400,7 +410,7 @@ export function createDebugView(el, bar, hooks = {}) {
     }));
   }
   // an operand address with its label: lda $d020 -> lda $d020 (border)
-  const labelled = text => text.replace(/\$([0-9a-f]{4})\b/i, (m, a) => { const l = info().label(parseInt(a, 16)); return l ? `${m} ‹${l}›` : m; });
+  const labelled = text => text.replace(/\$([0-9a-f]{4,6})\b/i, (m, a) => { const l = info().label(parseInt(a, 16)); return l ? `${m} ‹${l}›` : m; });
 
   function memView() {
     const m = st.mem;
@@ -408,8 +418,8 @@ export function createDebugView(el, bar, hooks = {}) {
       h('div', { class: 'ns-mem__bar' },
         field({ label: 'Address', hideLabel: true, dense: true, mono: true, value: st.memText, placeholder: '$0801 or a label',
           onchange: v => gotoMemory(v) }),
-        iconButton('chevron_left', 'Back a page', () => gotoMemory('$' + hex4((st.memStart - MEM_ROWS * 16) & 0xffff))),
-        iconButton('chevron_right', 'On a page', () => gotoMemory('$' + hex4((st.memStart + MEM_ROWS * 16) & 0xffff))),
+        iconButton('chevron_left', 'Back a page', () => gotoMemory('$' + hex4((st.memStart - MEM_ROWS * 16) & top()))),
+        iconButton('chevron_right', 'On a page', () => gotoMemory('$' + hex4((st.memStart + MEM_ROWS * 16) & top()))),
         st.banks.length ? select({ label: 'Bank', hideLabel: true, dense: true, value: String(st.memBank), cls: 'ns-bar__select',
           options: st.banks.map(b => ({ value: String(b.id), label: b.name })), onchange: v => { st.memBank = Number(v); persist(); refresh(); } }) : ''),
       !m ? h('div', { class: 'section__hint' }, running() ? 'Reading…' : `The memory shows while ${vice.debuggerName()} runs.`)
@@ -454,7 +464,7 @@ export function createDebugView(el, bar, hooks = {}) {
   async function addWatch() {
     const v = await promptDialog({ title: 'New watch', ok: 'Add', fields: [
       { name: 'expr', label: 'Address or label', value: '', mono: true, validate: t => (!t ? 'required' : null) },
-      { name: 'type', label: 'Show as', value: 'byte', options: [{ value: 'byte', label: 'byte' }, { value: 'word', label: 'word (little endian)' }, { value: 'bytes', label: '8 bytes' }, { value: 'text', label: 'text (16 chars)' }] }] });
+      { name: 'type', label: 'Show as', value: 'byte', options: [{ value: 'byte', label: 'byte' }, { value: 'word', label: 'word (the CPU\'s byte order)' }, { value: 'bytes', label: '8 bytes' }, { value: 'text', label: 'text (16 chars)' }] }] });
     if (!v) return;
     st.watches.push(v); persist();
     if (isStopped()) await readWatches();

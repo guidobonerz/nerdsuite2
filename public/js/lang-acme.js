@@ -36,6 +36,9 @@ function isMnemonic(word, cpu) {
 
 // --- tokens -----------------------------------------------------------------------------
 
+// the 68000 (!cpu 68000): its registers
+const m68k = cpu => ['68000', 'm68k', 'mc68000'].includes(String(cpu).toLowerCase());
+const M68K_REG = /^(d[0-7]|a[0-7]|sp|pc|sr|ccr|usp)$/i;
 const NUM = /^(\$[0-9a-fA-F]+|0x[0-9a-fA-F]+|%[01.#]+|&[0-7]+|\d+(\.\d+)?)/;
 const IDENT = /^[.@]?[A-Za-z_][\w]*/;
 
@@ -70,9 +73,9 @@ export function lineTokens(line, cpu = '6502') {
       if (/^af$/i.test(w) && rest[2] === "'") { push('tok-sym', "af'"); statement = false; continue; }   // the Z80's shadow AF
       if (statement && isMnemonic(w, cpu)) {
         push('tok-kw', w);
-        const size = /^\+[12]/.exec(line.slice(k));        // lda+2: the size forced
+        const size = (m68k(cpu) ? /^\.[bwls](?!\w)/i : /^\+[12]/).exec(line.slice(k));    // lda+2: the size forced, move.l: the size
         if (size) push('tok-kw', size[0]);
-      } else push(/^[xy]$/i.test(w) && /,\s*$/.test(line.slice(0, k)) ? 'tok-kw' : 'tok-sym', w);
+      } else push(m68k(cpu) ? (M68K_REG.test(w) ? 'tok-kw' : 'tok-sym') : /^[xy]$/i.test(w) && /,\s*$/.test(line.slice(0, k)) ? 'tok-kw' : 'tok-sym', w);
       statement = false;
       continue;
     }

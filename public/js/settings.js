@@ -19,6 +19,7 @@ import { DIALECTS } from './basic/dialects.js';
 import { tokenBased } from './basic/typed.js';
 
 const KEY = 'ns-editor-settings';
+const OPENED = 'ns-settings-open';       // the groups opened (Emulators, Assemblers ...; all start closed): their names, kept in this browser
 
 // --- the editor settings ---------------------------------------------------------------------------
 
@@ -121,7 +122,7 @@ async function api(method, data) {
   if (!res.ok) throw new Error(json.error || `${res.status} ${res.statusText}`);
   return json;
 }
-const PLATFORM_NAMES = { c64: 'Commodore 64', c128: 'Commodore 128', vic20: 'VIC-20', plus4: 'Plus/4', c16: 'Commodore 16', pet: 'PET / CBM', atari: 'Atari 8-bit', cpc: 'Amstrad / Schneider CPC', vcs: 'Atari 2600 (VCS)', nes: 'NES', snes: 'SNES', zx81: 'Sinclair ZX81', trs80: 'TRS-80', bbc: 'BBC Micro' };
+const PLATFORM_NAMES = { c64: 'Commodore 64', c128: 'Commodore 128', vic20: 'VIC-20', plus4: 'Plus/4', c16: 'Commodore 16', pet: 'PET / CBM', atari: 'Atari 8-bit', cpc: 'Amstrad / Schneider CPC', vcs: 'Atari 2600 (VCS)', nes: 'NES', snes: 'SNES', zx81: 'Sinclair ZX81', trs80: 'TRS-80', bbc: 'BBC Micro', amiga: 'Amiga 500' };
 // a path set that the program found does not come from: the default or the PATH stood in
 const strayed = t => t.value && t.found && !t.found.toLowerCase().replace(/\\/g, '/').startsWith(t.value.toLowerCase().replace(/\\/g, '/').replace(/\/+$/, ''));
 
@@ -206,6 +207,13 @@ function Settings() {
   const [tools, setTools] = useState(null);       // the answer of the server, or { error }
   const [, redraw] = useState(0);
   const [prefsVersion, bump] = useState(0);       // a property of a platform changed (platformprefs.js)
+  const [opened, setOpened] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem(OPENED) ?? '[]')); } catch { return new Set(); } });
+  const fold = name => setOpened(old => {
+    const next = new Set(old);
+    if (!next.delete(name)) next.add(name);
+    try { localStorage.setItem(OPENED, JSON.stringify([...next])); } catch { /* private mode */ }
+    return next;
+  });
   useEffect(() => editorSettings.subscribe(() => redraw(n => n + 1)), []);    // a change: drawn again
   const s = editorSettings.value;
   useEffect(() => { api('GET').then(setTools, e => setTools({ error: e.message })); }, []);
@@ -323,7 +331,7 @@ function Settings() {
         add('tools', 'Emulator per platform', PLATFORM_NAMES[p.id] ?? p.id, '',
           h('div', { class: 'ns-set__ctl' }, select({ label: 'Emulator', hideLabel: true, dense: true, value: p.preferred,
             options: [{ value: '', label: 'the first one found' }, ...p.emulators.map(id => {
-              const t = tools.tools.find(x => x.label.toLowerCase() === id);
+              const t = tools.tools.find(x => x.key?.toLowerCase() === id || x.label.toLowerCase() === id);
               return { value: id, label: `${t?.label ?? id}${t && !t.available ? ' (not found)' : ''}` };
             })],
             onchange: v => saveTools({ preferred: { [p.id]: v } }) })), `${p.id} run emulator preferred`);
@@ -360,11 +368,17 @@ function Settings() {
           : tools.error ? h('div', { class: 'section__hint' }, `The server did not answer: ${tools.error}`)
             : h('div', { class: 'section__hint' }, 'Kept on the server in ', h('code', { 'data-i18n': 'off' }, tools.file), '. A path set here comes before the environment variable; an empty field uses the variable or the default.')),
         !groups.length && h('div', { class: 'section__hint' }, q ? `No setting matches “${query}”` : ''),
-        groups.map(g => h('section', { class: 'ns-set__group' },
-          h('h3', { class: 'ns-set__group-title' }, g.name),
-          g.list.map(e => h('div', { class: `ns-set__row ${e.cls}` },
-            h('div', { class: 'ns-set__text' }, h('div', { class: 'ns-set__label' }, e.label), e.hint && h('div', { class: 'ns-set__hint' }, e.hint)),
-            e.control)))),
+        // a group opens and closes by its title; a search shows every group open
+        groups.map(g => {
+          const closed = !q && !opened.has(g.name);
+          return h('section', { class: `ns-set__group ${closed ? 'ns-set__group--closed' : ''}` },
+            h('h3', { class: 'ns-set__group-title' },
+              h('button', { type: 'button', class: 'ns-set__group-toggle', 'aria-expanded': String(!closed), disabled: !!q, onclick: () => fold(g.name) },
+                icon(closed ? 'chevron_right' : 'expand_more'), h('span', {}, g.name), closed ? h('span', { class: 'ns-set__count' }, g.list.length) : '')),
+            !closed && g.list.map(e => h('div', { class: `ns-set__row ${e.cls}` },
+              h('div', { class: 'ns-set__text' }, h('div', { class: 'ns-set__label' }, e.label), e.hint && h('div', { class: 'ns-set__hint' }, e.hint)),
+              e.control)));
+        }),
         !q && (section === 'editor' || section === 'colors') && h('div', { class: 'ns-set__reset' },
           button(section === 'colors' ? 'All colours as the theme has them' : 'The editor as it was', { icon: 'undo',
             onclick: () => { if (section === 'colors') setEditor({ syntax: {} }); else { resetPlatformPrefs(); bump(x => x + 1); setEditor({ ...DEFAULTS }); } } })))));

@@ -1,5 +1,5 @@
 // Package emu: the launcher of the emulators that are not VICE (Atari 8-bit, Amstrad CPC, Atari 2600,
-// NES, SNES, ZX81, TRS-80, BBC Micro, MEGA65) and the disc images it builds for them (CPC .dsk, BBC .ssd).
+// NES, SNES, ZX81, TRS-80, BBC Micro, MEGA65, Amiga 500) and the disc images it builds for them (CPC .dsk, BBC .ssd).
 //
 //	GET  /api/emu/status -> { emulators: [{ id, platform, exe, available, running }] }
 //	POST /api/emu/run { platform, emulator?, name, data /*base64*/, format, load?, exec?, machine? }
@@ -22,6 +22,8 @@
 // .ssd has the boot option 3: !BOOT does *RUN of the program or holds the BASIC listing and RUN.
 // MEGA65 (from Xemu's options, not installed here, not tried): xmega65 -prg x.prg - Xemu loads the program
 // into memory, as a C64 or a MEGA65 one by its load address ($0801 / $2001), and starts it.
+// Amiga 500 (from their docs, not installed here, not tried): winuae64 -s use_gui=no -s floppy0=x.adf,
+// fs-uae --amiga_model=A500 --floppy_drive_0=x.adf - the Kickstart is the one of their own settings.
 // Not installed here (command lines from their docs): atari800 -run x.xex,
 // cap32 -a "run\"PROG" x.dsk, mame cpc6128 -flop1 x.dsk -autoboot_command ..., mame a2600 -cart x.a26.
 //
@@ -38,9 +40,12 @@ import (
 
 func apps(p ...string) string { return filepath.Join(append([]string{core.AppsDir()}, p...)...) }
 
-// emulator: a definition; its Name is the id with its first letter upper case (the label of the settings)
+// emulator: a definition; its Name is the id with its first letter upper case (the label of the settings),
+// unless it has one
 func emulator(d core.ToolDef) core.ToolDef {
-	d.Name = strings.ToUpper(d.ID[:1]) + d.ID[1:]
+	if d.Name == "" {
+		d.Name = strings.ToUpper(d.ID[:1]) + d.ID[1:]
+	}
 	return d
 }
 
@@ -64,6 +69,8 @@ var Emulators = []core.ToolDef{
 	emulator(core.ToolDef{ID: "beebem", Platforms: []string{"bbc"}, Env: "BEEBEM", Defaults: []string{}, Dir: apps("beebem"), DirNames: []string{"BeebEm.exe"}, Path: []string{"BeebEm", "beebem"}}),
 	emulator(core.ToolDef{ID: "b2", Platforms: []string{"bbc"}, Env: "B2", Defaults: []string{}, Dir: apps("b2"), DirNames: []string{"b2.exe", "b2_Debug.exe"}, Path: []string{"b2"}}),
 	emulator(core.ToolDef{ID: "xemu", Platforms: []string{"mega65"}, Env: "XEMU", Defaults: []string{}, Dir: apps("xemu"), DirNames: []string{"xmega65.exe", "xmega65", "xemu-xmega65"}, Path: []string{"xmega65", "xemu-xmega65"}}),
+	emulator(core.ToolDef{ID: "winuae", Name: "WinUAE", Platforms: []string{"amiga"}, Env: "WINUAE", Defaults: []string{}, Dir: apps("winuae"), DirNames: []string{"winuae64.exe", "winuae.exe"}, Path: []string{"winuae64", "winuae"}}),
+	emulator(core.ToolDef{ID: "fsuae", Name: "FS-UAE", Platforms: []string{"amiga"}, Env: "FSUAE", Defaults: []string{}, Dir: apps("fs-uae"), DirNames: []string{"fs-uae.exe", "fs-uae"}, Path: []string{"fs-uae"}}),
 	emulator(core.ToolDef{ID: "mame", Platforms: []string{"cpc", "vcs", "nes", "snes", "trs80", "bbc"}, Env: "MAME",
 		Defaults: []string{apps("mame", "mame64.exe"), apps("mame", "mame.exe")},
 		Path:     []string{"mame64", "mame"}}),
@@ -86,6 +93,7 @@ var Preferred = []PlatformEmulators{
 	{"trs80", []string{"trs80gp", "mame"}},
 	{"bbc", []string{"beebem", "b2", "mame"}},
 	{"mega65", []string{"xemu"}},
+	{"amiga", []string{"winuae", "fsuae"}},
 }
 
 // formats: the program formats each platform runs, in the order of the platforms
@@ -102,6 +110,7 @@ var formats = []struct {
 	{"trs80", []string{"trs80-cmd", "trs80-ascii"}},
 	{"bbc", []string{"bbc-bin", "bbc-ascii"}},
 	{"mega65", []string{"cbm", "prg"}},
+	{"amiga", []string{"adf"}},
 }
 
 func formatsOf(platform string) ([]string, bool) {
@@ -374,6 +383,20 @@ func planRun(r runRequest, tmpDir, exe string) (plan, error) {
 		file = filepath.Join(dir, strings.ToLower(stem)+".prg")
 		files = append(files, planFile{file, data})
 		args = []string{"-prg", file}
+	case "amiga/winuae", "amiga/fsuae":
+		if r.Format != "adf" {
+			return plan{}, core.Errorf(400, "unsupported amiga format '%s'", r.Format)
+		}
+		if len(data) != 901120 {
+			return plan{}, core.Errorf(400, "an ADF is 901120 bytes (a DD disk), not %d", len(data))
+		}
+		file = filepath.Join(dir, stem+".adf")
+		files = append(files, planFile{file, data})
+		if r.Emulator == "winuae" {
+			args = []string{"-s", "use_gui=no", "-s", "floppy0=" + file}
+		} else {
+			args = []string{"--amiga_model=A500", "--floppy_drive_0=" + file}
+		}
 	default:
 		return plan{}, core.Errorf(400, "emulator '%s' does not support platform '%s'", r.Emulator, r.Platform)
 	}

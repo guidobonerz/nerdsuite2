@@ -5,6 +5,7 @@
  *   CPUS       [{ name, desc, supported }]
  */
 import { CPU_TABLES, CPU_ALIASES, MODE_SYNTAX, Z80_MNEMONICS } from './acme.js';
+import { M68K_MNEMONICS } from './m68k.js';
 
 const MNEMONIC_DESC = {
   adc: 'Add memory to accumulator with carry',
@@ -216,6 +217,53 @@ const Z80_DOCS = {
 };
 MNEMONICS.z80 = Z80_MNEMONICS.slice().sort().map(name => ({ name, desc: Z80_DOCS[name][0], modes: Z80_DOCS[name][1] }));
 
+// the 68000: [description, operands] - ea: an effective address (dn an (an) (an)+ -(an) d(an) d(an,xn) abs.w abs.l d(pc) d(pc,xn) #n)
+const CONDITIONS = { hi: 'higher', ls: 'lower or same', cc: 'carry clear', hs: 'higher or same (cc)', cs: 'carry set', lo: 'lower (cs)', ne: 'not equal', eq: 'equal',
+  vc: 'overflow clear', vs: 'overflow set', pl: 'plus', mi: 'minus', ge: 'greater or equal', lt: 'less than', gt: 'greater than', le: 'less or equal', t: 'true', f: 'false' };
+const M68K_DOCS = {
+  abcd: ['Add decimal (BCD) with extend', ['dy,dx', '-(ay),-(ax)']],
+  add: ['Add', ['ea,dn', 'dn,ea', '#n,ea']], adda: ['Add to an address register (no flags)', ['ea,an']], addi: ['Add immediate', ['#n,ea']],
+  addq: ['Add 1 to 8', ['#n,ea']], addx: ['Add with extend', ['dy,dx', '-(ay),-(ax)']],
+  and: ['AND', ['ea,dn', 'dn,ea', '#n,ea']], andi: ['AND immediate (also to ccr and sr)', ['#n,ea', '#n,ccr', '#n,sr']],
+  asl: ['Arithmetic shift left', ['dx,dy', '#n,dy', 'ea']], asr: ['Arithmetic shift right (keeps the sign)', ['dx,dy', '#n,dy', 'ea']],
+  bchg: ['Test a bit and change it', ['dn,ea', '#n,ea']], bclr: ['Test a bit and clear it', ['dn,ea', '#n,ea']],
+  bset: ['Test a bit and set it', ['dn,ea', '#n,ea']], btst: ['Test a bit (Z: the bit was 0)', ['dn,ea', '#n,ea']],
+  bra: ['Branch always (.s: a byte, else a word displacement)', ['label']], bsr: ['Branch to a subroutine', ['label']],
+  chk: ['Check a register against bounds (trap)', ['ea,dn']], clr: ['Clear', ['ea']],
+  cmp: ['Compare (destination - source, flags only)', ['ea,dn', '#n,ea']], cmpa: ['Compare an address register', ['ea,an']],
+  cmpi: ['Compare immediate', ['#n,ea']], cmpm: ['Compare memory', ['(ay)+,(ax)+']],
+  divs: ['Signed divide 32 / 16: the quotient in the low, the remainder in the high word', ['ea,dn']], divu: ['Unsigned divide 32 / 16', ['ea,dn']],
+  eor: ['Exclusive OR', ['dn,ea', '#n,ea']], eori: ['Exclusive OR immediate (also to ccr and sr)', ['#n,ea', '#n,ccr', '#n,sr']],
+  exg: ['Exchange registers', ['rx,ry']], ext: ['Sign extend (.w: a byte, .l: a word)', ['dn']], illegal: ['The illegal instruction exception', ['implied']],
+  jmp: ['Jump', ['ea']], jsr: ['Jump to a subroutine', ['ea']], lea: ['Load an effective address', ['ea,an']],
+  link: ['Link and allocate: push an, an = sp, sp += d', ['an,#d']], lsl: ['Logical shift left', ['dx,dy', '#n,dy', 'ea']],
+  lsr: ['Logical shift right', ['dx,dy', '#n,dy', 'ea']],
+  move: ['Move (also to and from ccr, sr and usp)', ['ea,ea', 'ea,ccr', 'ea,sr', 'sr,ea', 'an,usp', 'usp,an']], movea: ['Move to an address register (no flags)', ['ea,an']],
+  movem: ['Move several registers', ['d0-d7/a0-a6,-(sp)', '(sp)+,d0-d7/a0-a6']], movep: ['Move to or from every second byte (peripherals)', ['dx,d(ay)', 'd(ay),dx']],
+  moveq: ['Move a byte, sign extended to a long', ['#n,dn']],
+  muls: ['Signed multiply 16 x 16 = 32', ['ea,dn']], mulu: ['Unsigned multiply 16 x 16 = 32', ['ea,dn']],
+  nbcd: ['Negate decimal (BCD) with extend', ['ea']], neg: ['Negate', ['ea']], negx: ['Negate with extend', ['ea']], nop: ['No operation', ['implied']],
+  not: ['Complement (invert)', ['ea']], or: ['OR', ['ea,dn', 'dn,ea', '#n,ea']], ori: ['OR immediate (also to ccr and sr)', ['#n,ea', '#n,ccr', '#n,sr']],
+  pea: ['Push an effective address', ['ea']], reset: ['Reset the external devices (supervisor)', ['implied']],
+  rol: ['Rotate left', ['dx,dy', '#n,dy', 'ea']], ror: ['Rotate right', ['dx,dy', '#n,dy', 'ea']],
+  roxl: ['Rotate left through extend', ['dx,dy', '#n,dy', 'ea']], roxr: ['Rotate right through extend', ['dx,dy', '#n,dy', 'ea']],
+  rte: ['Return from an exception (supervisor)', ['implied']], rtr: ['Return and restore the condition codes', ['implied']], rts: ['Return from a subroutine', ['implied']],
+  sbcd: ['Subtract decimal (BCD) with extend', ['dy,dx', '-(ay),-(ax)']], stop: ['Load sr and stop until an interrupt (supervisor)', ['#n']],
+  sub: ['Subtract', ['ea,dn', 'dn,ea', '#n,ea']], suba: ['Subtract from an address register (no flags)', ['ea,an']], subi: ['Subtract immediate', ['#n,ea']],
+  subq: ['Subtract 1 to 8', ['#n,ea']], subx: ['Subtract with extend', ['dy,dx', '-(ay),-(ax)']], swap: ['Swap the words of a register', ['dn']],
+  tas: ['Test and set (bit 7, an indivisible cycle)', ['ea']], trap: ['Trap: exception 32 + n', ['#n']], trapv: ['Trap on overflow', ['implied']],
+  tst: ['Test (compare with 0)', ['ea']], unlk: ['Unlink: sp = an, pop an', ['an']],
+  dc: ['Data: bytes, words or longs (big endian), .b takes strings', ['n,n,...']], ds: ['Space: n bytes, words or longs of zeros', ['n']], even: ['Align to an even address', ['implied']],
+};
+for (const [cc, name] of Object.entries(CONDITIONS)) {
+  if (cc !== 't' && cc !== 'f') M68K_DOCS['b' + cc] = [`Branch if ${name}`, ['label']];
+  M68K_DOCS['db' + cc] = [`Decrement and branch until ${name} (dn = -1 ends the loop)`, ['dn,label']];
+  M68K_DOCS['s' + cc] = [`Set a byte to $ff if ${name}, else to 0`, ['ea']];
+}
+M68K_DOCS.dbra = ['Decrement and branch: loop until dn = -1 (dbf)', ['dn,label']];
+MNEMONICS['68000'] = M68K_MNEMONICS.slice().sort().map(name => ({ name, desc: M68K_DOCS[name][0], modes: M68K_DOCS[name][1] }));
+MNEMONICS.m68k = MNEMONICS.mc68000 = MNEMONICS['68000'];
+
 export const CPUS = [
   { name: '6502', desc: 'MOS 6502, documented opcodes only (default)', supported: true },
   { name: 'nmos6502', desc: 'NMOS 6502 including undocumented ("illegal") opcodes', supported: true },
@@ -224,6 +272,7 @@ export const CPUS = [
   { name: 'r65c02', desc: 'Rockwell 65C02: 65c02 plus rmb/smb/bbr/bbs', supported: true },
   { name: 'w65c02', desc: 'WDC 65C02: r65c02 plus wai/stp', supported: true },
   { name: 'z80', desc: 'Zilog Z80 (Zilog syntax, incl. undocumented ixh/ixl/iyh/iyl and sll)', supported: true },
+  { name: '68000', desc: 'Motorola 68000 (the Amiga): Motorola syntax - move.l d0,(a0)+; dc.b/dc.w/dc.l, ds, even (alias m68k)', supported: true },
   { name: '65816', desc: 'WDC 65816 (SNES): long addresses, [dp], sr,s, mvn/mvp; !al/!as and !rl/!rs set the size of immediates', supported: true },
   { name: '65ce02', desc: 'CSG 65CE02: r65c02 plus the Z register, (zp),z, 16 bit branches (lbxx, bsr), word instructions', supported: true },
   { name: '4502', desc: 'CSG 4502 (C65): 65ce02 with map and eom', supported: true },
@@ -235,7 +284,7 @@ const po = (names, syntax, desc) => names.map(n => ({ name: '!' + n, syntax: syn
 
 /** Every supported pseudo opcode including aliases. */
 export const PSEUDO_OPS = [
-  ...po(['to'], '$ "file", cbm|plain|apple|xex|amsdos|zx81|trs80', 'Set output file name and format (cbm: 2-byte load address, xex: Atari, amsdos: CPC, zx81: a .p file with the code in a REM line at $4082, trs80: a TRS-80 /CMD file)'),
+  ...po(['to'], '$ "file", cbm|plain|apple|xex|amsdos|zx81|trs80|adf', 'Set output file name and format (cbm: 2-byte load address, xex: Atari, amsdos: CPC, zx81: a .p file with the code in a REM line at $4082, trs80: a TRS-80 /CMD file, adf: a bootable Amiga disk, the code in its boot block)'),
   ...po(['byte', 'by', '8', '08'], '$ value [, value ...]', 'Insert 8-bit values'),
   ...po(['word', 'wo', '16', 'le16'], '$ value [, value ...]', 'Insert 16-bit values, little endian'),
   ...po(['be16'], '$ value [, value ...]', 'Insert 16-bit values, big endian'),
@@ -268,7 +317,7 @@ export const PSEUDO_OPS = [
   ...po(['svl'], '$ "file"', 'Write a VICE label file after assembly'),
   ...po(['pseudopc'], '$ address { block }', 'Assemble block for a different run address'),
   ...po(['realpc'], '$', 'End a block-less !pseudopc (deprecated)'),
-  ...po(['cpu'], '$ 6502|nmos6502|6510|65c02|r65c02|w65c02|z80 [{ block }]', 'Select the target processor'),
+  ...po(['cpu'], '$ 6502|nmos6502|6510|65c02|r65c02|w65c02|z80|68000 [{ block }]', 'Select the target processor'),
   ...po(['al'], '$ [{ block }]', '65816 only: accumulator is 16 bits wide (the size of the immediates)'),
   ...po(['as'], '$ [{ block }]', '65816 only: accumulator is 8 bits wide (the size of the immediates)'),
   ...po(['rl'], '$ [{ block }]', '65816 only: index registers are 16 bits wide (the size of the immediates)'),
